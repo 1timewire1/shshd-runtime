@@ -203,3 +203,54 @@ def read_file_resource(path, resource_id: int) -> bytes | None:
         payload = stream.read(stored)
     single = b'CSPUD' + struct.pack('>I', 1) + struct.pack('>HI', resource_id, 15) + header + payload
     return ExpArchive(single).read(resource_id)
+
+
+class LazyExpArchive:
+    """shshd-runtime: ExpArchive's reading of the CSPUD file at `path`, a record at a time: only the index is read when it is
+    opened, so a large addon (Claire Hart's rounds, about 480 MB; plan Stage 0, O) is never held in memory, and opening
+    one doesn't read it all. Each record is checked and decoded as it is read, as ExpArchive does (its own one-record
+    archive, as read_file_resource); the index is checked when it opens. Records aren't checked for overlapping each other,
+    which needs every record's header: ExpArchive checks that for a file held whole."""
+
+    def __init__(self, path):
+        from pathlib import Path
+        self.path = Path(path)
+        self.size = self.path.stat().st_size
+        with open(self.path, 'rb') as stream:
+            head = stream.read(9)
+            if len(head) < 9 or head[:5] != b'CSPUD':
+                raise ContentError('Not a CSPUD EXP archive')
+            count, = struct.unpack_from('>I', head, 5)
+            index_end = 9 + 6 * count
+            table = stream.read(6 * count)
+        if not count or len(table) != 6 * count or index_end > self.size:
+            raise ContentError('Invalid EXP index extent')
+        self.entries = {}
+        for i in range(count):
+            resource_id, offset = struct.unpack_from('>HI', table, 6 * i)
+            if resource_id in self.entries:
+                raise ContentError(f'Duplicate EXP resource ID {resource_id}')
+            if offset < index_end or offset + 12 > self.size:
+                raise ContentError(f'Invalid record offset for resource {resource_id}')
+            self.entries[resource_id] = offset
+
+    @lru_cache(maxsize=32)
+    def read(self, resource_id: int) -> bytes:
+        try:
+            offset = self.entries[resource_id]
+        except KeyError:
+            raise ContentError(f'EXP resource {resource_id} is absent; grouped lookup is unsupported') from None
+        with open(self.path, 'rb') as stream:
+            stream.seek(offset)
+            header = stream.read(12)
+            stored = struct.unpack_from('>I', header)[0] if len(header) == 12 else None
+            if stored is None or stored > MAX_PAYLOAD or offset + 12 + stored > self.size:
+                raise ContentError(f'Invalid record size for resource {resource_id}')
+            payload = stream.read(stored)
+        if len(payload) != stored:
+            raise ContentError(f'Truncated record for resource {resource_id}')
+        single = b'CSPUD' + struct.pack('>I', 1) + struct.pack('>HI', resource_id, 15) + header + payload
+        return ExpArchive(single).read(resource_id)
+
+    metadata = ExpArchive.metadata
+    programs = ExpArchive.programs

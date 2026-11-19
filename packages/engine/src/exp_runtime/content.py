@@ -22,7 +22,7 @@ from zipfile import BadZipFile, ZipFile, ZipInfo
 from xml.parsers.expat import ExpatError
 from zlib import error as ZlibError
 
-from .exp import ContentError, ExpArchive, Metadata, MAX_PAYLOAD
+from .exp import ContentError, ExpArchive, LazyExpArchive, Metadata, MAX_PAYLOAD
 from .decode.bytecode import decode_program
 from .games import GAMES, PROFILES, SHS_ANDROID, SHS_IOS, game_id
 from .addons import IDENTIFIER as ADDON_IDENTIFIER, addon_record
@@ -1142,11 +1142,48 @@ class ContentLibrary:
             record = dict(record, revision=record['supersedes'][addon_id])
         cached = self._addon_archives.get(record['id'])
         if cached is None:
-            data = self._content_file(record, '.exp').read_bytes()
-            if digest(data) != record['sha256']:
-                raise ContentError('Addon content does not match its imported hash')
-            cached = self._addon_archives[record['id']] = ExpArchive(data)
+            # Read a record at a time (Claire Hart plan Stage 0, O): held whole and hashed at every open, a large addon
+            # cost its size in memory and a full read each time a library opened, Sync asked or Options looked.
+            path = self._content_path(record, '.exp')
+            self._check_addon_file(record, path)
+            try:
+                cached = self._addon_archives[record['id']] = LazyExpArchive(path)
+            except OSError as error:
+                raise ContentError(f'Cannot read imported content: {error}') from error
         return record, cached
+
+    ADDON_CHECKS = 'addon_checks.json'      # beside library.json: {file name: [size, mtime_ns]} of addons hashed as imported
+
+    def _check_addon_file(self, record, path):
+        """That an addon's file is the one imported: hashed (a block at a time) the first time it opens, then known by its
+        size and time, kept in ADDON_CHECKS; a file changed since is hashed again."""
+        try:
+            stat = path.stat()
+        except OSError as error:
+            raise ContentError(f'Cannot read imported content: {error}') from error
+        checks_path = self.directory / self.ADDON_CHECKS
+        try:
+            checks = json.loads(checks_path.read_text(encoding='utf-8'))
+            checks = checks if isinstance(checks, dict) else {}
+        except (OSError, ValueError):
+            checks = {}
+        if checks.get(path.name) == [stat.st_size, stat.st_mtime_ns]:
+            return
+        try:
+            actual = file_digest(path)
+        except OSError as error:
+            raise ContentError(f'Cannot read imported content: {error}') from error
+        if actual != record['sha256']:
+            raise ContentError('Addon content does not match its imported hash')
+        present = {path.name for path in (self.directory / 'content').glob('*.exp')}
+        checks = {name: value for name, value in checks.items() if name in present}
+        checks[path.name] = [stat.st_size, stat.st_mtime_ns]
+        try:
+            temporary = checks_path.with_name(checks_path.name + '.tmp')
+            temporary.write_text(json.dumps(checks, separators=(',', ':')), encoding='utf-8', newline='\n')
+            temporary.replace(checks_path)
+        except OSError:
+            pass                                # (only a note: the next open hashes it again)
 
     def addon_on_hand(self, record: dict) -> bool:
         """shshd-runtime: whether an addon record can be read: already open (a preview's isolated copy has no files of its own), or
