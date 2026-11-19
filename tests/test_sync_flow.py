@@ -39,6 +39,34 @@ class SyncFlowTests(unittest.TestCase):
         self.assertFalse(set(options) & set(DEVICE_OPTIONS))
         app.state.persist.assert_called()
 
+    def test_options_received_on_the_chooser_are_kept_after_the_library_is_saved(self):
+        # The g54 to a computer's chooser (2026-11-19): the opened library's save put its old options back.
+        from exp_runtime.menu import MenuState
+        from exp_runtime.settings import AppSettings
+        from test_shared_settings import library
+        settings = AppSettings(self.root / 'settings.json')
+        settings.set_preferences({'music_volume': 50, 'skip_ad_intros': False})
+        state = MenuState(library(self.root, 'shs', music_volume=50), shared=settings)
+        app = SimpleNamespace(state=None, settings=settings)
+        SyncFlow(app).apply({'names': {'$USR': 'Sam'}}, {'music_volume': 20, 'skip_ad_intros': True}, state)
+        again = AppSettings(self.root / 'settings.json')
+        self.assertEqual((again.preferences['music_volume'], again.preferences['skip_ad_intros']), (20, True))
+        self.assertEqual(MenuState(library(self.root / 'next', 'cod'), shared=again).music_volume, 20)
+        self.assertEqual(state.names['$USR'], 'Sam')
+
+    def test_a_finished_sync_leaves_the_search_or_waiting_page_it_ended(self):
+        # The g54 and the PC (2026-11-19): after a sync the Choose Receiver row did nothing and Receive still said
+        # "waiting", since the finder and the receiver close with the session.
+        from exp_runtime.sync_flow import FIND_PAGE, RECEIVE_PAGE, SYNC_PAGE
+        for page, backed in ((FIND_PAGE, True), (RECEIVE_PAGE, True), (SYNC_PAGE, False)):
+            app = app_with(self.root)
+            flow = SyncFlow(app)
+            flow.ui = Mock()
+            flow.ui.screen.return_value = page
+            flow.finished(SimpleNamespace(status='failed', message='The other device said no.'))
+            self.assertEqual(flow.ui.menu.back.called, backed, page)
+            flow.ui.notify.assert_called_with('Sync Failed', 'The other device said no.')
+
     def test_a_sender_offers_imported_episodes_and_sends_only_the_options_and_names_switched_on(self):
         app = app_with(self.root, autoplay=True, music=True, vibration=True, device_vibration=False,
                        controller_confirm='south', grid_controls='hold', **{key: False for key in (

@@ -543,6 +543,12 @@
 
 ### Fixed
 
+- **Options received by Sync Devices on the game chooser were lost** (g54 to a computer, 2026-11-19): the names were
+  saved after the options, and saving them also wrote back the shared options the library had when it was opened. The
+  same happened to a second game's bundle with a game open. The names are saved first now.
+- **Sync Devices' pages stayed after a sync ended** (g54 and a computer, 2026-11-19): Choose Receiver kept listing a
+  receiver that did nothing when picked, and Receive still said it was waiting while nothing listened. A finished sync
+  now goes back to the page before (Send, or Sync Devices).
 - **New Rules' minigame arena ran at 16 fps on the g54** (device pass, 2026-11-19): the frame picture under the arena
   is opaque, but smoothscale left its alpha at 251-253, so the test meant to draw it as an opaque copy never passed and
   the whole frame was blended every frame (62 ms). Opacity is now judged on the skin's own picture and the scaled copy

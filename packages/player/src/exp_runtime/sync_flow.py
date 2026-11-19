@@ -365,6 +365,10 @@ class SyncFlow:
         pending, self.pending = self.pending, {}
         received = isinstance(session, lan_sync.ReceiveSession)
         self.stop()
+        if ui.screen() in (FIND_PAGE, RECEIVE_PAGE):
+            # Its search or waiting room closed with the session: the page before it (the g54 and the PC, 2026-11-19:
+            # a receiver listed after a send did nothing, and Receive said "waiting" while nothing listened).
+            ui.menu.back()
         app = self.app
         if session.status == 'done':
             for game, (player, options) in pending.items():
@@ -395,6 +399,9 @@ class SyncFlow:
                     state.name_sets.setdefault(str(key), {}).update({str(k): str(v) for k, v in table.items()})
         if player.get('warp_unlocked'):
             state.warp_unlocked = True
+        # Saved before the options: persist also writes `state`'s shared preferences, read when it was opened, so after
+        # them it put the old ones back (the chooser, or another game's bundle; the PC from the g54, 2026-11-19).
+        state.persist()
         if isinstance(options, dict):
             options = {key: value for key, value in options.items() if key not in DEVICE_OPTIONS}
             if app.state is not None:
@@ -405,7 +412,6 @@ class SyncFlow:
                 from .menu import shared_preference
                 app.settings.set_preferences({key: value for key, value in with_preferred(options).items()
                                               if shared_preference(key, value)})
-        state.persist()
 
     def stop(self):
         """Leave sync: the ear, the waiting room and any session closed, the receiver's stage removed."""
