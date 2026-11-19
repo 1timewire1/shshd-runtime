@@ -64,6 +64,30 @@ class DesktopUiSoundTests(unittest.TestCase):
                 ui.command(('choose', 0))
                 self.assertEqual(mixer.played, [(click, .4)])
 
+    def test_the_panels_whoosh_starts_part_way_into_the_tree_zoom_sound(self):
+        # Owner, g54, 2026-11-19: from its start the swell peaked after the 300 ms slide, a second's silence first.
+        ui, mixer = self.ui('shs')
+        ui._panels_whoosh()
+        ui._panels_whoosh()
+        self.assertEqual(mixer.assets(), [8017, 8017])
+        self.assertEqual(set(ui.ui_sounds.cache), {(8017, ui.PANELS_WHOOSH_START_MS)})     # cut once, kept
+
+    def test_a_wave_trimmed_from_a_point_keeps_its_format_and_the_rest(self):
+        import io
+        import wave
+        from exp_runtime.ui_sound import trimmed_wave
+        source = io.BytesIO()
+        with wave.open(source, 'wb') as out:
+            out.setnchannels(2)
+            out.setsampwidth(2)
+            out.setframerate(1000)
+            out.writeframes(bytes(range(200)) * 20)          # 1000 frames of 4 bytes: one second
+        with wave.open(io.BytesIO(trimmed_wave(source.getvalue(), 300))) as cut:
+            self.assertEqual((cut.getnchannels(), cut.getsampwidth(), cut.getframerate(), cut.getnframes()),
+                             (2, 2, 1000, 700))
+            self.assertEqual(cut.readframes(700), (bytes(range(200)) * 20)[1200:])
+        self.assertEqual(trimmed_wave(b'not a wave', 300), b'not a wave')
+
     def test_choice_click_respects_the_sound_switch(self):
         ui, mixer = self.ui('shs')
         ui.sound_enabled = False

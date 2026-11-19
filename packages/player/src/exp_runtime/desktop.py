@@ -1797,15 +1797,15 @@ class Desktop:
     def _menu_sound(self, *, opening=False):
         self._ui_sound('PAUSE_SOUND' if opening else 'CLICK_SOUND')
 
-    def _ui_sound(self, name, *, volume=None, stop_others=False, when_idle=False):
+    def _ui_sound(self, name, *, volume=None, stop_others=False, when_idle=False, start_ms=0):
         """Play the game profile's interface sound `name` from the base bank (ui_sound.py): at the Sound FX volume,
-        and only with Sound on, unless a `volume` of its own is given (the Music slider's preview)."""
+        and only with Sound on, unless a `volume` of its own is given (the Music slider's preview); `start_ms` into it."""
         library = self.session.resources.library
         if not self.audio or not hasattr(library, 'read_asset') or (volume is None and not self.sound_enabled):
             return
         asset = getattr(GAMES[game_id(self.session.resources)], name)
         self.ui_sounds.play(library, asset, self.sound_volume if volume is None else volume,
-                            stop_others=stop_others, when_idle=when_idle)
+                            stop_others=stop_others, when_idle=when_idle, start_ms=start_ms)
 
     # A speaker's bubble may hold extra rows in a frame taller than HD's (owner, 2026-11-11): as many whole rows (HD's
     # 26-unit line step) as fit in this share of the height the frame adds.
@@ -5589,11 +5589,16 @@ class Desktop:
         and done as they began to close it held that frame too, so they jumped shut."""
         return self.panels_overlay or self.overlay_progress > 0
 
+    # The whoosh swells for 0.6 s (under 7% of its peak for the first 0.3), so from its start its peak came after the
+    # panels' 300 ms slide had ended: a second's silence, then the sound (owner, g54, 2026-11-19). Begun this far in, it
+    # peaks as they settle. HD's own tree zoom tab keeps the whole sound.
+    PANELS_WHOOSH_START_MS = 300
+
     def _panels_whoosh(self):
         """The panels over the screen opening or closing: the whoosh HD's tree zoom tab plays on every toggle (8017,
-        `toggleDTZ`; owner, 2026-11-12), else the menus' click."""
+        `toggleDTZ`; owner, 2026-11-12), from PANELS_WHOOSH_START_MS, else the menus' click."""
         if hasattr(GAMES[game_id(self.session.resources)], 'TREE_ZOOM_SOUND'):
-            self._ui_sound('TREE_ZOOM_SOUND')
+            self._ui_sound('TREE_ZOOM_SOUND', start_ms=self.PANELS_WHOOSH_START_MS)
         else:
             self._menu_sound()
 

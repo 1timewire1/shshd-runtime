@@ -9,9 +9,27 @@ effects are not counted. See docs/MAIN_MENU.md, "Interface sounds".
 """
 from io import BytesIO
 import logging
+import wave
 
 from . import graphics as pygame
 from .content import ContentError
+
+
+def trimmed_wave(data, start_ms):
+    """A WAV file's bytes without its first `start_ms`: the same format from that frame on (pygame and the iOS host
+    both read it as they read the original). Not a WAV: unchanged."""
+    try:
+        with wave.open(BytesIO(data)) as source:
+            params = source.getparams()
+            source.setpos(min(params.nframes, params.framerate * start_ms // 1000))
+            frames = source.readframes(params.nframes)
+    except (wave.Error, EOFError):
+        return data
+    out = BytesIO()
+    with wave.open(out, 'wb') as target:
+        target.setparams(params)
+        target.writeframes(frames)
+    return out.getvalue()
 
 
 class UiSounds:
@@ -25,18 +43,21 @@ class UiSounds:
         self.channels = [channel for channel in self.channels if channel.get_busy()]
         return bool(self.channels)
 
-    def play(self, library, asset, volume, *, stop_others=False, when_idle=False):
-        """Play `asset` from `library` at `volume` (0..1). Returns whether it started."""
+    def play(self, library, asset, volume, *, stop_others=False, when_idle=False, start_ms=0):
+        """Play `asset` from `library` at `volume` (0..1), from `start_ms` into it (a WAV cut once and kept like any
+        other). Returns whether it started."""
         if when_idle and self.playing():
             return False
         try:
-            if asset not in self.cache:
-                self.cache[asset] = pygame.mixer.Sound(file=BytesIO(library.read_asset(asset)))
+            key = (asset, start_ms) if start_ms else asset
+            if key not in self.cache:
+                data = library.read_asset(asset)
+                self.cache[key] = pygame.mixer.Sound(file=BytesIO(trimmed_wave(data, start_ms) if start_ms else data))
             if stop_others:
                 for channel in self.channels:
                     channel.stop()
                 self.channels = []
-            sound = self.cache[asset]
+            sound = self.cache[key]
             sound.set_volume(volume)
             channel = sound.play()
         except (ContentError, pygame.error) as error:
