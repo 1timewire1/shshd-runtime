@@ -298,6 +298,26 @@ class EffectSizeTests(unittest.TestCase):
             self.assertLessEqual(abs(fx_side(pixels) - pixels), max(1, pixels * 0.04))
 
 
+class NativeEffectTests(unittest.TestCase):
+    def test_a_native_host_gets_its_lights_and_fades_without_adds_or_copies(self):
+        # iPad, 2026-11-19: the iOS backend added each spark and flare in Python (about 4 ms apiece) onto the battle's
+        # see-through canvas, and every faded puff was a new picture to send. pygame keeps the X360's add.
+        from types import SimpleNamespace
+        from exp_runtime import graphics as pygame
+        from exp_runtime.desktop_x360_deck import X360Deck
+        deck = X360Deck.__new__(X360Deck)
+        sprite = pygame.Surface((8, 8), pygame.SRCALPHA)
+        deck._tinted = lambda name, colour, side, additive=False: ('light' if additive else 'tint', sprite)[1]
+        calls = []
+        native = SimpleNamespace(native=True, blit=lambda image, at, special_flags=0: calls.append(('native', special_flags)))
+        plain = SimpleNamespace(blit=lambda image, at, special_flags=0: calls.append(('pygame', special_flags)))
+        deck._light(native, 'fx_spark_1', (255, 190, 60), 8, (4, 4))
+        deck._light(plain, 'fx_spark_1', (255, 190, 60), 8, (4, 4))
+        self.assertEqual(calls, [('native', 0), ('pygame', pygame.BLEND_RGB_ADD)])
+        X360Deck._faded_sprite(native, sprite, 100, (4, 4))
+        self.assertEqual(sprite.get_alpha(), None)                  # the kept sprite as it was
+
+
 class DrawingTests(unittest.TestCase):
     def setUp(self):
         os.environ['SDL_VIDEODRIVER'] = os.environ['SDL_AUDIODRIVER'] = 'dummy'

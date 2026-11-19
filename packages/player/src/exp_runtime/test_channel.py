@@ -68,6 +68,16 @@ it's done, so real clocks (fades, timers) run as in play.
     put PATH BASE64             write a file in the app's data folder (dev-modules/exp_runtime/NAME.py: a module the
                                 app loads first, from its next start)
     quit                        close the app, as its window's close does
+    sync receive                Data Management's Sync Devices, Receive (the open game's menus, or the chooser's
+                                Options), as the rows do
+    sync send [shs|cod|both] [nobackup]   Send with every switch on (Back Up Receiver First too, unless nobackup; the
+                                chooser's Games row as named), then Find Receiver
+    sync devices [SECONDS]      the receivers found so far (waits up to SECONDS for one)
+    sync choose NAME|N          connect to that receiver (the name as listed, or its position)
+    sync answer yes|no          this device's answer to the open question (the code, or a whole library)
+    sync wait [SECONDS]         until the sync ends or asks this device something; replies with `sync status`
+    sync status                 the page, the session (status, peer, code, progress), the open question, the last result
+    sync ok / sync stop         close the result's notice / leave Sync (its search or waiting closed)
 """
 import base64
 import collections
@@ -747,6 +757,124 @@ class Commands:
             return dict(ok=False, error=f'no button {rest!r}: {[str(b.label) for b in buttons]}')
         self.app.shell.stack.press(found)
         return self._idle(60)
+
+    # -- Sync Devices (owner, 2026-11-19: the device passes drove it by taps, shots and coordinates) ---------------
+    def _sync_pages(self, page):
+        """Show Data Management's Sync Devices `page` where a player reaches it: the open game's Options over its main
+        menu, or the chooser's Options."""
+        app = self.app
+        if app.library is None:
+            app.history = ['games']
+            app.app_screens.options.next_screen = page
+            app.show('options', remember=False)
+        else:
+            if app.game is not None and app.screen == 'game':
+                raise ValueError('a story is open: leave it first')
+            app.show('main', remember=False)
+            if not app.shell.pause_open:
+                app.shell.activate(('options',))
+            app.shell.pause.open(page)
+        # (A frame first: the chooser's Options take their opening page as they are first drawn, and a page opened
+        # before that was replaced, closing Receive's waiting at once.)
+        yield from self._settled(0.3)
+        return app.sync_flow()
+
+    def do_sync(self, rest):
+        from .sync_flow import ChooserPages, SYNC_PAGE
+        words = rest.split()
+        verb, args = (words[0] if words else 'status'), words[1:]
+        app = self.app
+        if verb == 'receive':
+            flow = yield from self._sync_pages(SYNC_PAGE)
+            flow.result = None
+            flow.receive()
+            result = yield from self._settled(1.0)
+            return dict(result, sync=self._sync_status())
+        if verb == 'send':
+            flow = yield from self._sync_pages(SYNC_PAGE)
+            flow.result = None
+            for key in flow.choices:
+                flow.choices[key] = True
+            flow.choices['backup'] = 'nobackup' not in args
+            named = next((word for word in args if word in ('shs', 'cod', 'both')), None)
+            if app.library is None and named is not None:
+                flow.game = None if named == 'both' else named
+            flow.show_send_page()
+            flow.find()
+            result = yield from self._settled(1.0)
+            return dict(result, sync=self._sync_status())
+        flow = getattr(app, 'sync', None)
+        if flow is None:
+            return dict(ok=False, error='Sync has not been used')
+        if verb == 'devices':
+            seconds = float(args[0]) if args else 0.
+            yield from self._until(lambda: bool(flow.devices), seconds, quiet=True)
+            return dict(ok=True, devices=[device.name for device in flow.devices])
+        if verb == 'choose':
+            wanted = ' '.join(args)
+            names = [device.name for device in flow.devices]
+            index = (int(wanted) if wanted.isdigit() and int(wanted) < len(names)
+                     else names.index(wanted) if wanted in names else None)
+            if index is None:
+                return dict(ok=False, error=f'no receiver {wanted!r}: {names}')
+            flow.choose(f'sync_device:{index}')
+            yield from self._until(lambda: flow.ui is not None and flow.ui.asking(), 15)
+            return dict(ok=True, sync=self._sync_status())
+        if verb == 'answer':
+            ui = flow.ui
+            yes = (args[:1] or ['yes'])[0].lower() in ('yes', 'y', 'send', 'receive')
+            if ui is None or not ui.asking():
+                return dict(ok=False, error='no Sync question is open', sync=self._sync_status())
+            if isinstance(ui, ChooserPages):
+                window, ui.options.ask = ui.window, None
+                if yes:
+                    window[3][-1]()
+            else:
+                buttons = self._window()[1]
+                app.shell.stack.press(buttons[-1] if yes else buttons[0])
+            yield from self._settled(0.5)
+            return dict(ok=True, sync=self._sync_status())
+        if verb == 'wait':
+            seconds = float(args[0]) if args else 120.
+
+            def waiting():
+                session = flow.current()
+                return flow.result is not None or (session is not None and session.status in ('confirm', 'confirm_full')
+                                                   and flow.ui is not None and flow.ui.asking())
+            result = yield from self._until(waiting, seconds)
+            return dict(ok=True, reached=result.get('reached'), sync=self._sync_status())
+        if verb == 'ok':
+            ui = flow.ui
+            if isinstance(ui, ChooserPages):
+                if ui.options.ask is None:
+                    return dict(ok=False, error='no notice is open')
+                ui.options.ask = None
+            else:
+                window = self._window()
+                if window is None:
+                    return dict(ok=False, error='no notice is open')
+                app.shell.stack.press(window[1][-1])
+            yield from self._settled(0.5)
+            return dict(ok=True, sync=self._sync_status())
+        if verb == 'stop':
+            flow.stop()
+            return dict(ok=True, sync=self._sync_status())
+        if verb == 'status':
+            return dict(ok=True, sync=self._sync_status())
+        return dict(ok=False, error='sync is one of receive, send, devices, choose, answer, wait, status, ok, stop')
+
+    def _sync_status(self):
+        flow = getattr(self.app, 'sync', None)
+        if flow is None:
+            return dict(active=False)
+        session, ui = flow.current(), flow.ui
+        out = dict(active=flow.active, page=ui.screen() if ui is not None else None,
+                   devices=[device.name for device in flow.devices], asking=bool(ui is not None and ui.asking()),
+                   result=list(flow.result) if flow.result else None)
+        if session is not None:
+            out.update(status=session.status, peer=session.peer, code=getattr(session, 'code', None),
+                       progress=getattr(session, 'progress', None))
+        return out
 
     def do_import(self, rest):
         """Add Episodes with a file the app can read (on Android, one in its own files folder): replies once the import

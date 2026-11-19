@@ -4,6 +4,9 @@
 
 ### Added
 
+- **Test channel: Sync Devices by command** (owner, 2026-11-19): `sync receive`, `sync send [shs|cod|both]
+  [nobackup]`, `sync devices`, `sync choose`, `sync answer yes|no`, `sync wait`, `sync status`, `sync ok` and
+  `sync stop` run a sync without taps or screenshots ([RUNTIME.md](docs/RUNTIME.md#test-channel-this-fork)).
 - **Finished episodes show green** (owner, 2026-11-19): once an episode has been played to its end, its play / pause
   icon in Now Airing and Episodes On Demand is green, in both games. Episodes whose last save ended the story count
   from before; a newer copy keeps the mark; Back Up / Restore Progress and Sync Devices carry the marks (`finished`
@@ -444,6 +447,12 @@
 
 ### Changed
 
+- **Faster launches and library openings** (roadmap 3.16): what each saved game was found to be (a story left at its
+  end, which hides Resume, or not) is kept in the library's `ended_saves.json`, by the save's name, time and size,
+  so a save is read in full only once. Checking them at every start took 0.9 s for the test library on a PC
+  (0.09 s now) and seconds on the iPad.
+- **Back Up Progress names the Decision Trees** (roadmap 9.11): "N saved games, the Decision Trees and the names
+  went to..." when the backup holds any, as Restore's question does.
 - **Options tidied** (owner, 2026-11-19):
   - **DSi Backgrounds** is one choice on Extras: Off, Sharp or Smooth. It replaces Add-Ons' switch and its DSi Pixels
     ([ADDONS.md](docs/ADDONS.md)).
@@ -553,6 +562,13 @@
 
 ### Fixed
 
+- **The chooser's Options cost a frame's time sitting still** (iPad, 2026-11-19): its pages were laid out again every
+  frame, 28 ms on a PC and 38 on the iPad. A page is drawn again as it was until something on it changes.
+- **UIKit switches over Sync's notice on the iPad** (2026-11-19): the chooser's Options placed the page's switches
+  while its own question or notice was up, and UIKit draws them over everything.
+- **The X360 notes' sparks, flames and stink on iOS** (with the hit effects): each spark and flame was added in
+  Python by the iOS drawing backend (about 4 ms apiece on a PC) and each faded puff was a new picture to send; on a
+  native host they are drawn as sprites with their brightness as alpha, and faded by the blit's own alpha.
 - **The Diss Battle stuttered on the iPad after a catch** (iPad, 2026-11-19): every particle of a hit's flares and
   puffs was made again each frame at its new size (the deck's shared store also emptied itself every 400 pictures),
   and on iOS each new sprite was tinted in Python and sent as a PNG. Sizes now go in 6% steps, the sprites keep

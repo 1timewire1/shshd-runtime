@@ -266,8 +266,25 @@ class AppOptions:
             self.menu.advance(now - self.clock)
         self.clock = now
         self.menu.pressed = self.pressed
-        page, self.buttons = self.menu.layout(self.settings())
+        settings, menu = self.settings(), self.menu
+        key = None if menu.animating() else self.page_key(settings)
+        if key is not None and self._page is not None and self._page[0] == key:
+            page, self.buttons = self._page[1], list(self._page[2])
+        else:
+            page, self.buttons = menu.layout(settings)
+            self._page = (key, page, list(self.buttons)) if key is not None else None
         layer.blit(page, (0, 0))
+
+    _page = None                    # (page_key, the page laid out, its buttons): the last page, while nothing changes
+
+    def page_key(self, settings):
+        """What the menu's page is drawn from: while it is the same and nothing slides or moves, the page laid out last
+        is drawn again. Laid out every frame, the chooser's Options cost 28 ms a frame on a PC and 38 on the iPad
+        sitting still (2026-11-19)."""
+        menu, state = self.menu, self.menu.state
+        return (repr(sorted(settings.items())), state.screen, state.scroll, state.drag, state.focus, menu.pressed,
+                menu.frame_height, getattr(menu, 'top_pad', 0), getattr(menu, 'bottom_pad', 0),
+                repr(menu.row_pages), repr(menu.text_pages))
 
     # -- what a row does ---------------------------------------------------------------------------------------
 
@@ -997,8 +1014,10 @@ class AppScreens:
                 self.buttons = []                       # nothing takes a tap while it slides
         if self.slide is None:
             canvas.blit(layer, (0, 0))
-            if screen == 'options' and self.options is not None and not (app.busy or app.message
-                                                                           or app.update_prompt is not None):
+            if screen == 'options' and self.options is not None and self.options.ask is None and not (
+                    app.busy or app.message or app.update_prompt is not None):
+                # (Not under a question or notice of its own: UIKit's switches show over everything, and after Sync
+                # Devices its "Sync Complete" had the page's switches on top, iPad 2026-11-19.)
                 # The switches and sliders as the host's own (iOS's UISwitches and UISliders), in the frame's points:
                 # the page is drawn on the frame's own canvas, so its points are the frame's.
                 from .desktop_pause_hd import place_controls

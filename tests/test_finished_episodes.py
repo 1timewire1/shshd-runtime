@@ -31,7 +31,8 @@ class FinishedEpisodesTests(unittest.TestCase):
 
     def app(self):
         from exp_runtime import application
-        app = SimpleNamespace(state=SimpleNamespace(finished=set(), persist=Mock()), _attempt=lambda work: work())
+        app = SimpleNamespace(state=SimpleNamespace(finished=set(), persist=Mock(), remember_ended=Mock()),
+                               _attempt=lambda work: work())
         app.library = SimpleNamespace(episodes=[{'id': 'old'}, {'id': 'new', 'carries': ['older']}, {'id': 'other'}])
         app.finished_ids = lambda library=None, state=None: application.Application.finished_ids(app, library, state)
         return app, application.Application

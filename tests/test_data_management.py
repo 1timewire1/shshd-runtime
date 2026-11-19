@@ -322,6 +322,8 @@ class LibraryActionTests(unittest.TestCase):
         self.assertEqual([entry['id'] for entry in manifest['saved']], ['a', 'b'])
         app.backed_up((path, manifest))
         self.assertIn('2 saved games', app.shell.notify.call_args.args[1])
+        app.backed_up((path, dict(manifest, trees=3)))             # (roadmap 9.11: the trees named when it has them)
+        self.assertIn('2 saved games, the Decision Trees and the names', app.shell.notify.call_args.args[1])
         # Newer progress: a save deleted, a name changed.
         app.delete_save('a')
         app.state.names['$USR'] = 'Max'

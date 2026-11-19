@@ -920,8 +920,10 @@ class Application:
     def backed_up(self, result):
         path, manifest = result
         count = len(manifest['saved'])
-        self.shell.notify('Progress Backed Up', f'{count} saved game{"s" if count != 1 else ""} and the names went '
-                          f'to {self.folder_text(path.parent)}, as "{path.stem}".')
+        # (The Decision Trees go too, as Restore's question says: roadmap 9.11, owner 2026-11-19.)
+        trees = ', the Decision Trees' if manifest.get('trees') else ''
+        self.shell.notify('Progress Backed Up', f'{count} saved game{"s" if count != 1 else ""}{trees} and the names '
+                          f'went to {self.folder_text(path.parent)}, as "{path.stem}".')
 
     def backups(self):
         """This game's backups in backup_folder (and the default one, when another was chosen), newest first:
@@ -1624,6 +1626,7 @@ class Application:
             self.saved.add(self.game.session.resources.record['id'])
         if len(state.finished) != known:
             self._attempt(state.persist)        # (a save left at a story's end, found: State.resume_path)
+        state.remember_ended()                  # (what the saves were found to be, for the next launch: roadmap 3.16)
         self.finished = self.finished_ids()
 
     def finished_ids(self, library=None, state=None):

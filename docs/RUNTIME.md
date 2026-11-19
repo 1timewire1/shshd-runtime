@@ -430,6 +430,15 @@ working set, Linux's and Android's VmRSS/VmHWM, iOS's phys_footprint, the figure
 Python's and the host's drawing time). `open` waits for the requested story itself, so opening one from inside another
 no longer replies with the old one's screen.
 
+Sync Devices runs by command too (owner, 2026-11-19: the device passes drove it by taps, screenshots and coordinates):
+`sync receive` and `sync send [shs|cod|both] [nobackup]` open Data Management's Sync Devices where a player reaches it
+(the open game's Options over its main menu, or the chooser's) and start Receive, or Send with every switch on and Find
+Receiver; `sync devices [SECONDS]` lists the receivers found, `sync choose NAME|N` connects, `sync answer yes|no` answers
+the open question (the code, or a whole library), `sync wait [SECONDS]` lasts until the sync ends or asks this device
+something, and `sync status` reports the page, the session (status, peer, code, progress), whether a question is open
+and the last result's notice; `sync ok` closes that notice and `sync stop` leaves Sync. Two copies of the app on one
+computer (`SHSHD_SYNC_LOOPBACK=1`, `SHSHD_DEVICE_NAME`, play-sync-test.ps1) sync this way with no window shown.
+
 `tools/test_channel.py` is the client. On Android, `--adb SERIAL --enable` writes the variable into the app's
 `p4a_env_vars.txt` with `run-as`, so only a debuggable build can have it (a release build never listens); an update
 resets that file. `--adb` forwards the port over USB. An iOS app gets no environment from its launch, so the channel

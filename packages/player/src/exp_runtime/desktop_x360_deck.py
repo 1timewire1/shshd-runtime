@@ -227,32 +227,53 @@ class X360Deck:
         sprites = self._sprites('fx_puff')
         for i in range(3):
             phase = (now / 1400 + i / 3 + index * .13) % 1
-            side = max(1, round(size[0] * (.4 + .5 * phase)))
-            image = self._tinted(sprites[i % len(sprites)], (150, 176, 128), side).copy()
-            image.set_alpha(round(110 * (1 - phase)))
-            surface.blit(image, image.get_rect(center=(round(centre[0] + (i - 1) * size[0] * .18),
-                                                       round(centre[1] - size[1] * (.1 + .7 * phase)))))
+            side = fx_side(size[0] * (.4 + .5 * phase))
+            self._faded_sprite(surface, self._tinted(sprites[i % len(sprites)], (150, 176, 128), side),
+                               round(110 * (1 - phase)), (round(centre[0] + (i - 1) * size[0] * .18),
+                                                          round(centre[1] - size[1] * (.1 + .7 * phase))))
 
     def _sparks(self, surface, centre, size, now, index):
         sprites = self._sprites('fx_spark')
         for i in range(3):
             phase = (now / 900 + i / 3 + index * .17) % 1
-            side = max(1, round(size[0] * .16 * (1 - phase)))
-            image = self._tinted(sprites[i % len(sprites)], (255, 190, 60), side, additive=True)
+            side = fx_side(size[0] * .16 * (1 - phase))
             x = centre[0] + size[0] * .55 * math.sin(i * 2.4 + index) * (.4 + phase)
             y = centre[1] - size[1] * .3 + size[1] * phase * phase
-            surface.blit(image, image.get_rect(center=(round(x), round(y))), special_flags=pygame.BLEND_RGB_ADD)
+            self._light(surface, sprites[i % len(sprites)], (255, 190, 60), side, (round(x), round(y)))
 
     def _flames(self, surface, centre, size, now, index):
         sprites = self._sprites('fx_spark')
         for i in range(5):
             phase = (now / 500 + i / 5 + index * .11) % 1
-            side = max(1, round(size[0] * (.55 - .35 * phase)))
+            side = fx_side(size[0] * (.55 - .35 * phase))
             colour = (255, round(200 - 150 * phase), 20)
-            image = self._tinted(sprites[i % len(sprites)], colour, side, additive=True)
             x = centre[0] + size[0] * .32 * math.sin(i * 1.9 + now / 170)
             y = centre[1] + size[1] * .3 - size[1] * .9 * phase
-            surface.blit(image, image.get_rect(center=(round(x), round(y))), special_flags=pygame.BLEND_RGB_ADD)
+            self._light(surface, sprites[i % len(sprites)], colour, side, (round(x), round(y)))
+
+    def _light(self, surface, name, colour, side, centre):
+        """A glowing sprite added over what is under it (BLEND_RGB_ADD), as the X360 adds its sparks and flames; on a
+        native host (iOS), which adds light only onto opaque pixels and did each one here in Python, the sprite in its
+        colour with its brightness as alpha: the same light over the dark record and notes (iPad, 2026-11-19)."""
+        if getattr(surface, 'native', False):
+            image = self._tinted(name, colour, side)
+            surface.blit(image, image.get_rect(center=centre))
+            return
+        image = self._tinted(name, colour, side, additive=True)
+        surface.blit(image, image.get_rect(center=centre), special_flags=pygame.BLEND_RGB_ADD)
+
+    @staticmethod
+    def _faded_sprite(surface, image, alpha, centre):
+        """A kept sprite drawn at `alpha`: a native host takes the alpha with the blit (no copy, so no new picture to send
+        it); pygame fades a copy, the sprite kept as it was."""
+        if getattr(surface, 'native', False):
+            image.set_alpha(alpha // 8 * 8)
+            surface.blit(image, image.get_rect(center=centre))
+            image.set_alpha(None)
+            return
+        image = image.copy()
+        image.set_alpha(alpha)
+        surface.blit(image, image.get_rect(center=centre))
 
     def _sprites(self, prefix):
         return [name for name in self.x360()[0]['pictures'] if name.startswith(prefix + '_')]
@@ -311,6 +332,13 @@ class X360Deck:
             y = y0 + vy * seconds + 0.5 * spec['gravity'] * FX_SPEED * seconds * seconds
             scale = (1 - t) if not spec['grow'] else 1 + (spec['grow'] - 1) * t
             side = fx_side(size * FX_SIZE * scale * k)
+            if kind in ADDED and native:
+                # A native host (iOS) can only add light onto an opaque surface; on this see-through canvas its drawing
+                # backend added each flare in Python, about 4 ms apiece (iPad, 2026-11-19). The sprite drawn in its
+                # colour with its brightness as its alpha is the same light over the dark record they burst on.
+                image = self._tinted(name, colour, side)
+                surface.blit(image, image.get_rect(center=(round(x * k), round(y * k))))
+                continue
             image = self._tinted(name, colour, side, additive=kind in ADDED)
             if kind in ADDED:                  # the flares glow over what's under them, as the X360 adds them
                 surface.blit(image, image.get_rect(center=(round(x * k), round(y * k))),

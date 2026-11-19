@@ -22,6 +22,9 @@ from .ui_assets import Rect
 
 EPISODE_HEADER_HEIGHT = 24
 EPISODE_ROW_HEIGHT = 42
+# resume_path's answers kept between launches (MenuState.remember_ended), in the library's folder beside player.json:
+# not under saves/, so Back Up, Restore and Sync leave it alone.
+ENDED_CACHE = 'ended_saves.json'
 
 
 @dataclass(frozen=True)
@@ -116,6 +119,8 @@ class MenuState:
         # resume_path's answer for a save whose checkpoint is an ending, by (path, mtime, size): checking it opens the
         # whole episode, and the menus ask for every episode each time they refresh (seconds once many are finished).
         self.ended_saves = {}
+        self._ended_known = None        # ENDED_CACHE's entries, read when first needed (`_ended_disk`)
+        self._ended_dirty = False
         self._preference_defaults()
         self.selected = None
         # The app's name-replacement table (`SHSEntityTable` renames, kept in shs_options.sav): `$USR`, a series lead's
@@ -362,13 +367,20 @@ class MenuState:
                 key = (path, stat.st_mtime_ns, stat.st_size)
                 if key in self.ended_saves:
                     return None if self.ended_saves[key] else path
-                saved = json.loads(path.read_text(encoding='utf-8'))
-                pending = saved.get('pending') if isinstance(saved, dict) else None
-                ended = False
-                if isinstance(pending, dict) and pending.get('name') in ('episode_exit', 'finished'):
-                    # A validated terminal checkpoint masks older progress.
-                    # Keep the manual slot available for an explicit load.
-                    ended = Session.from_snapshot(self.library.open_episode(episode), saved).episode_ended
+                known = self._ended_disk().get(path.name)
+                if (isinstance(known, list) and len(known) == 3 and known[:2] == [stat.st_mtime_ns, stat.st_size]
+                        and type(known[2]) is bool):
+                    ended = known[2]            # (checked at an earlier launch, the file unchanged since)
+                else:
+                    saved = json.loads(path.read_text(encoding='utf-8'))
+                    pending = saved.get('pending') if isinstance(saved, dict) else None
+                    ended = False
+                    if isinstance(pending, dict) and pending.get('name') in ('episode_exit', 'finished'):
+                        # A validated terminal checkpoint masks older progress.
+                        # Keep the manual slot available for an explicit load.
+                        ended = Session.from_snapshot(self.library.open_episode(episode), saved).episode_ended
+                    self._ended_disk()[path.name] = [stat.st_mtime_ns, stat.st_size, ended]
+                    self._ended_dirty = True
                 self.ended_saves[key] = ended
                 if ended:
                     # A save left at the story's end: played to its end (this fills in finishes from before the
@@ -380,6 +392,38 @@ class MenuState:
                 # a malformed completion marker must not discard progress.
                 pass
         return path
+
+    def _ended_disk(self):
+        """ENDED_CACHE's entries: {save file name: [mtime_ns, size, ended]}, {} when it is missing or unreadable."""
+        if self._ended_known is None:
+            try:
+                data = json.loads((self.library.directory / ENDED_CACHE).read_text(encoding='utf-8'))
+            except (OSError, ValueError):
+                data = None
+            self._ended_known = data if isinstance(data, dict) else {}
+        return self._ended_known
+
+    def remember_ended(self):
+        """Keep what resume_path worked out for the next launch (roadmap 3.16): each save's answer in ENDED_CACHE, by its
+        name, time and size. A save left at a story's end was opened in full each launch to check it (0.9 s for this
+        fork's test library on a PC; 12-13 s on the iPad, where the chooser's Sync and Data Management pages open a
+        library for each game, 2026-11-19). Entries of saves gone are dropped."""
+        if not self._ended_dirty:
+            return
+        self._ended_dirty = False
+        folder = self.library.directory / 'saves'
+        present = set(os.listdir(folder)) if folder.is_dir() else set()
+        known = {name: value for name, value in self._ended_disk().items() if name in present}
+        self._ended_known = known
+        target = self.library.directory / ENDED_CACHE
+        try:
+            with tempfile.NamedTemporaryFile('w', dir=self.library.directory, prefix='.ended-', suffix='.json',
+                                             delete=False, encoding='utf-8', newline='\n') as stream:
+                temporary = Path(stream.name)
+                json.dump(known, stream, separators=(',', ':'))
+            temporary.replace(target)
+        except OSError:
+            pass                                # (only a cache: the next launch checks again)
 
     def persist(self):
         data = dict(version=1, selected=self.selected, music=self.music, sound=self.sound, vibration=self.vibration,

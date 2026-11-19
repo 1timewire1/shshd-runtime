@@ -167,6 +167,7 @@ class SyncFlow:
         self.stage = None               # the receiver's folder for what arrives
         self.provider = None            # the sender's SendProvider (its folder holds the bundles it packed)
         self.pending = {}               # game -> (names data, options) for the UI thread to apply, from the receiver
+        self.result = None              # (title, message) of the last sync's notice (the test channel's `sync status`)
 
     # -- pages --------------------------------------------------------------------------------------------------
 
@@ -387,11 +388,13 @@ class SyncFlow:
                     app.game = None             # (a game left for the main menu would hide what came: see delete_save)
                 app.refresh_saves()
                 app.picker = None
-            ui.notify('Sync Complete', session.message or 'Done.')
+            self.result = ('Sync Complete', session.message or 'Done.')
+            ui.notify(*self.result)
             if received and app.library is not None:
                 app.prepare_previews()          # the episodes that came (the picker's previews)
         else:
-            ui.notify('Sync Failed', session.message or lan_sync.LOST)
+            self.result = ('Sync Failed', session.message or lan_sync.LOST)
+            ui.notify(*self.result)
 
     def apply(self, player, options, state=None):
         """A received bundle's names (merged: the sender's win, the receiver's others stay), warp lock, finished episodes
