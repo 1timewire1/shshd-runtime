@@ -450,7 +450,9 @@
 - **Add-ons are read a record at a time** (Claire Hart plan Stage 0): an add-on was read whole into memory and hashed
   each time a library opened (and by Sync, Options and the Creator asking about it). Now only its index is read, each
   record as it's needed, and its file is hashed the first time and then known by its size and time
-  (`addon_checks.json`). A 503 MB add-on opens in under 10 ms instead of 1.2 s, and adds 43 MB of memory, not 525.
+  (`content_checks.json`). A 503 MB add-on opens in under 10 ms instead of 1.2 s, and adds 43 MB of memory, not 525.
+- **Libraries open faster** (iPad, 2026-11-19): each opening hashed the game's own apps whole (its APK or IPA, the music
+  APK, the HD IPA: over 100 MB on the iPad); every imported file is now hashed once and then known by its size and time.
 - **Faster launches and library openings** (roadmap 3.16): what each saved game was found to be (a story left at its
   end, which hides Resume, or not) is kept in the library's `ended_saves.json`, by the save's name, time and size,
   so a save is read in full only once. Checking them at every start took 0.9 s for the test library on a PC

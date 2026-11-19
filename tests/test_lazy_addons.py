@@ -69,8 +69,8 @@ class LazyAddonTests(unittest.TestCase):
             with ContentLibrary(self.target) as library:
                 library.addon('shsnr')
             self.assertEqual(addons_hashed(), 1)                    # known by its size and time: not hashed again
-        checks = json.loads((self.target / ContentLibrary.ADDON_CHECKS).read_text(encoding='utf-8'))
-        self.assertEqual(list(checks), [Path(record['file']).name])
+        checks = json.loads((self.target / ContentLibrary.CONTENT_CHECKS).read_text(encoding='utf-8'))
+        self.assertIn(Path(record['file']).name, checks)
         # A file changed since is hashed again, and refused.
         path = self.target / record['file']
         data = bytearray(path.read_bytes())
@@ -81,6 +81,16 @@ class LazyAddonTests(unittest.TestCase):
             with self.assertRaises(ContentError):
                 library.addon('shsnr')
 
+
+    def test_the_games_own_app_is_hashed_once_too(self):
+        # iPad, 2026-11-19: each library open hashed the game's apps whole (over 100 MB for an HD library).
+        from exp_runtime import content
+        with ContentLibrary(self.target):
+            pass
+        with patch('exp_runtime.content.file_digest', wraps=content.file_digest) as hashed:
+            with ContentLibrary(self.target):
+                pass
+        self.assertEqual([call.args[0].suffix for call in hashed.call_args_list], [])
 
 if __name__ == '__main__':
     unittest.main()

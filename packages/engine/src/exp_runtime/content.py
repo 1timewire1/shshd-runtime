@@ -18,6 +18,7 @@ import shutil
 import stat
 import struct
 import tempfile
+import threading
 from zipfile import BadZipFile, ZipFile, ZipInfo
 from xml.parsers.expat import ExpatError
 from zlib import error as ZlibError
@@ -1070,12 +1071,7 @@ class ContentLibrary:
         if record.get('file') != expected:
             raise ContentError('Invalid content path in library')
         path = self.directory / expected
-        try:
-            actual = file_digest(path)
-        except OSError as error:
-            raise ContentError(f'Cannot read imported content: {error}') from error
-        if actual != sha:
-            raise ContentError(f'Imported content changed: {path.name}')
+        self._check_content_file(record, path, f'Imported content changed: {path.name}')
         return path
 
     def select(self, selector: str) -> dict:
@@ -1145,45 +1141,64 @@ class ContentLibrary:
             # Read a record at a time (Claire Hart plan Stage 0, O): held whole and hashed at every open, a large addon
             # cost its size in memory and a full read each time a library opened, Sync asked or Options looked.
             path = self._content_path(record, '.exp')
-            self._check_addon_file(record, path)
+            self._check_content_file(record, path, 'Addon content does not match its imported hash')
             try:
                 cached = self._addon_archives[record['id']] = LazyExpArchive(path)
             except OSError as error:
                 raise ContentError(f'Cannot read imported content: {error}') from error
         return record, cached
 
-    ADDON_CHECKS = 'addon_checks.json'      # beside library.json: {file name: [size, mtime_ns]} of addons hashed as imported
+    # Beside library.json: {file name: [size, mtime_ns]} of imported files found as imported (_check_content_file).
+    CONTENT_CHECKS = 'content_checks.json'
 
-    def _check_addon_file(self, record, path):
-        """That an addon's file is the one imported: hashed (a block at a time) the first time it opens, then known by its
-        size and time, kept in ADDON_CHECKS; a file changed since is hashed again."""
+    def _check_content_file(self, record, path, refusal):
+        """That an imported file (the game's app, its music APK or HD IPA, an episode, an addon) is the one imported: hashed
+        (a block at a time) the first time it's opened, then known by its size and time, kept in CONTENT_CHECKS; a file
+        changed since is hashed again, and `refusal` raised if it no longer matches. Each library open hashed the game's
+        apps whole, over 100 MB on the iPad for an HD library (2026-11-19)."""
         try:
             stat = path.stat()
         except OSError as error:
             raise ContentError(f'Cannot read imported content: {error}') from error
-        checks_path = self.directory / self.ADDON_CHECKS
-        try:
-            checks = json.loads(checks_path.read_text(encoding='utf-8'))
-            checks = checks if isinstance(checks, dict) else {}
-        except (OSError, ValueError):
-            checks = {}
-        if checks.get(path.name) == [stat.st_size, stat.st_mtime_ns]:
-            return
+        known = [stat.st_size, stat.st_mtime_ns]
+        with self._checks_lock:
+            if self._content_checks().get(path.name) == known:
+                return
         try:
             actual = file_digest(path)
         except OSError as error:
             raise ContentError(f'Cannot read imported content: {error}') from error
         if actual != record['sha256']:
-            raise ContentError('Addon content does not match its imported hash')
-        present = {path.name for path in (self.directory / 'content').glob('*.exp')}
-        checks = {name: value for name, value in checks.items() if name in present}
-        checks[path.name] = [stat.st_size, stat.st_mtime_ns]
-        try:
-            temporary = checks_path.with_name(checks_path.name + '.tmp')
-            temporary.write_text(json.dumps(checks, separators=(',', ':')), encoding='utf-8', newline='\n')
-            temporary.replace(checks_path)
-        except OSError:
-            pass                                # (only a note: the next open hashes it again)
+            raise ContentError(refusal)
+        with self._checks_lock:
+            checks = self._content_checks()
+            checks[path.name] = known
+            try:
+                with tempfile.NamedTemporaryFile('w', dir=self.directory, prefix='.checks-', suffix='.json', delete=False,
+                                                 encoding='utf-8', newline='\n') as stream:
+                    temporary = Path(stream.name)
+                    json.dump(checks, stream, separators=(',', ':'))
+                temporary.replace(self.directory / self.CONTENT_CHECKS)
+            except OSError:
+                pass                            # (only a note: the next open hashes it again)
+
+    _checks = None
+    _checks_lock = threading.Lock()
+
+    def _content_checks(self):
+        """CONTENT_CHECKS' entries, read once (those of files no longer imported dropped); called under _checks_lock."""
+        if self._checks is None:
+            try:
+                checks = json.loads((self.directory / self.CONTENT_CHECKS).read_text(encoding='utf-8'))
+                checks = checks if isinstance(checks, dict) else {}
+            except (OSError, ValueError):
+                checks = {}
+            try:
+                present = {item.name for item in (self.directory / 'content').iterdir()}
+            except OSError:
+                present = set()
+            self._checks = {name: value for name, value in checks.items() if name in present}
+        return self._checks
 
     def addon_on_hand(self, record: dict) -> bool:
         """shshd-runtime: whether an addon record can be read: already open (a preview's isolated copy has no files of its own), or
