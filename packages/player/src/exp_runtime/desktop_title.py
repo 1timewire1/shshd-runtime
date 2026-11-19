@@ -8,6 +8,7 @@ from .desktop_pause import draw_pause_gear
 from .atlas import AtlasFont
 from .content import ContentError
 from .fonts import TextStyle, layout_label
+from .frame_shape import COLUMN_WIDTH as COLUMN_UNITS, FRAME_WIDTH as FRAME_WIDTH_UNITS
 from .menu import MenuStrings
 from .title_screen import title_labels
 from .ui_assets import Rect, read_ui
@@ -114,9 +115,24 @@ class HdTitleRenderer:
         return self.FRAME[0], max(1, round(self.FRAME[0] * tall / width))
 
     def subtitle_region(self):
-        """SUBTITLE_REGION, as far from the canvas's bottom as from HD's frame's."""
+        """SUBTITLE_REGION, as far from the canvas's bottom as from HD's frame's, and kept off a narrow frame's edges."""
         x, y, width, height = self.SUBTITLE_REGION
-        return x, y + self.canvas_size()[1] - self.FRAME[1], width, height
+        nudge = self.edge_nudge()
+        return x + nudge, y + self.canvas_size()[1] - self.FRAME[1], width - 2 * nudge, height
+
+    def title_region(self):
+        """TITLE_REGION, kept off a narrow frame's edges."""
+        x, y, width, height = self.TITLE_REGION
+        nudge = self.edge_nudge()
+        return x + nudge, y, width - 2 * nudge, height
+
+    # Points more margin each side of the title and subtitle, from nothing at 2:3 (HD's width) to this from 9:16 on (the
+    # column's): HD's 20 read as touching a phone's edge at 9:20 (owner, 2026-11-18, from title_edge_mockup.png).
+    NARROW_NUDGE = 24
+
+    def edge_nudge(self):
+        narrow = (FRAME_WIDTH_UNITS - self.frame_units[0]) / (FRAME_WIDTH_UNITS - COLUMN_UNITS)
+        return round(self.NARROW_NUDGE * max(0., min(1., narrow)))
     WIPE_S, BLACK_HOLD_S, BLACK_END_S, SUBTITLE_FROM_S, SUBTITLE_TO_S = 2., 1.8, 3., 1., 2.
 
     def __init__(self, resources, art):
@@ -176,7 +192,7 @@ class HdTitleRenderer:
             canvas.fill((0, 0, 0, 0))
         title_font, subtitle_font = self.fonts()
         # Title: revealed left to right.
-        left, top, region_width, region_height = self.TITLE_REGION
+        left, top, region_width, region_height = self.title_region()
         width = min(region_width, title_font.width(details['title']))
         visible = round(width * min(1., seconds / self.WIPE_S))
         if visible:
@@ -237,6 +253,9 @@ class CodTitleRenderer(HdTitleRenderer):
 
     def subtitle_region(self):
         return self.SUBTITLE_REGION         # in CoD points, placed from the column (ORIGIN)
+
+    def edge_nudge(self):
+        return 0                            # (laid out in its own column: ORIGIN)
 
     def __init__(self, resources, art, title_renderer):
         super().__init__(resources, art)

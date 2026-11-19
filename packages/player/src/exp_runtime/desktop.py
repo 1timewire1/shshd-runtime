@@ -916,7 +916,8 @@ class Desktop:
         self._x360_tutorial_music(stream, now)
         self._end_x360_music(stream, engine, now)
         stream.update(now, enabled=enabled, menu_open=self.menu_open,
-                      paused=not self.active or engine.music_paused or self._panels_hold_music(),
+                      paused=(not self.active or engine.music_paused or self._panels_hold_music()
+                              or self._cutscene_waiting()),
                       held_back=self.pause_song is not None)
         self._sync_pause_song(now)
 
@@ -1641,6 +1642,17 @@ class Desktop:
             self.autoplay_ms = 0
             self._answer()
 
+    _cutscene_drawn = _cutscene_started = None      # the cutscene (engine.cutscene) last drawn / let run
+    _snapshotting = False                           # snapshot()'s render: a saved game's picture, not the screen
+
+    def _cutscene_waiting(self):
+        """A cutscene's clock and music wait until its first frame is on the screen: drawing it loads all its pictures,
+        which took a phone seconds while the episode's loading screen stayed up and the music, and the clock that
+        follows it, ran on (owner's g54, 2026-11-18: most of Day of Diss's first sweep was missed)."""
+        action = self.session.pending
+        game = self.session.engine.cutscene
+        return action is not None and action.name == 'cutscene' and game is not None and self._cutscene_started is not game
+
     def _sync_cutscene(self):
         """A cutscene that names a track runs on that track's position, so its sounds land on their beats. With Music off, or
         once a press has jumped, it runs on the session's clock."""
@@ -2087,6 +2099,8 @@ class Desktop:
             try:
                 engine = self.session.engine
                 self.cutscene_renderer.draw(self.session)
+                if not self._snapshotting:
+                    self._cutscene_drawn = engine.cutscene       # (shown, not a saved game's picture: _cutscene_waiting)
                 self.story_layer = self.cutscene_renderer.canvas
                 self.story_centred = True           # no taller than its spec serves: centred, backdrop round it
                 self.panel_alpha = None
@@ -5397,9 +5411,11 @@ class Desktop:
         # "Want More Content?" card flashing over raw gameplay chrome first instead of appearing straight over
         # the sepia backdrop, the one the pause menu's own equivalent path never does.
         was_capture, self.capture = self.capture, True
+        self._snapshotting = True
         try:
             self.render()
         finally:
+            self._snapshotting = False
             self.menu_open = opened
             self.capture = was_capture
             self.aspect_ratio = shape
@@ -5490,6 +5506,11 @@ class Desktop:
                 else:
                     game.remaining_ms = 0
                 self.choice_closing = dict(action=pending, index=None, ms=SELECT_MS)
+            elif self._cutscene_waiting():
+                # Held until its first frame is drawn; the tick after that (whose time is that frame's loading) lets
+                # it run from 0, its music with it.
+                if self._cutscene_drawn is self.session.engine.cutscene:
+                    self._cutscene_started = self._cutscene_drawn
             else:
                 self._attempt(lambda: self.session.tick(elapsed_ms))
                 self._sync_cutscene()

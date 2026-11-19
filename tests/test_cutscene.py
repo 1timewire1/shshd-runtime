@@ -284,6 +284,25 @@ class PlayerTests(unittest.TestCase):
             self.assertEqual(session.engine.cutscene.elapsed_ms, 1260)      # another track, or Music off: its own clock
             stream.current = None
 
+    def test_it_waits_for_its_first_frame_on_the_screen(self):
+        """Its first draw loads all its pictures (seconds on a phone, under the episode's loading screen): the clock and
+        its music wait for that frame, and the time it took isn't counted (owner's g54, 2026-11-18)."""
+        with tempfile.TemporaryDirectory() as temporary:
+            ui, session = self.desktop(temporary)
+            game = session.engine.cutscene
+            ui.tick(500)                                     # not drawn yet
+            self.assertEqual(game.elapsed_ms, 0)
+            self.assertTrue(ui._cutscene_waiting())
+            ui.snapshot()                                    # a saved game's picture isn't the screen
+            ui.tick(500)
+            self.assertEqual(game.elapsed_ms, 0)
+            ui.render()
+            ui.tick(2500)                                    # the frame that loaded it: let go, not counted
+            self.assertEqual(game.elapsed_ms, 0)
+            self.assertFalse(ui._cutscene_waiting())
+            ui.tick(100)
+            self.assertEqual(game.elapsed_ms, 100)
+
 
 if __name__ == '__main__':
     unittest.main()

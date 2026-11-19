@@ -507,6 +507,12 @@
 
 ### Fixed
 
+- **The X360 cutscenes started under the loading screen on a phone** (owner's g54, 2026-11-18): a storyboard's first
+  frame loads all its pictures, which took the phone seconds while the episode's loading screen stayed up, and its
+  music, which the cutscene's clock follows, played on, so most of Day of Diss's first sweep was missed. The clock and
+  the music now wait for that first frame.
+- **Episode title cards keep off a narrow screen's edges** (owner, 2026-11-18): from 9:16 on, the title and subtitle
+  sit 24 points further in each side (none at 3:4 or 2:3), where HD's own margin read as touching a phone's edge.
 - **A saved game's picture lost the choice at 9:16 and taller** (2026-11-18, the switch matrix at 9:20): the picker's
   tile is drawn at 3:4, which from 9:16 lays the story out at another density, and that restarted the choice's fade-in,
   so the picture (and the frame after it) showed the scene with no choice or portrait. A phone at Fit Screen saved every
