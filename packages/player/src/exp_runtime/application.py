@@ -370,7 +370,7 @@ class Application:
 
         @contextmanager
         def opened():
-            library = ContentLibrary(self.library_path(game))
+            library = ContentLibrary(self.library_path(game), remember_checks=True)
             try:
                 yield library, MenuState(library, shared=self.settings)
             finally:
@@ -1527,7 +1527,7 @@ class Application:
         return 200
 
     def open_library(self, directory, *, remember=False):
-        library = ContentLibrary(directory)
+        library = ContentLibrary(directory, remember_checks=True)
         try:
             if self.selected_game and library.game_id != self.selected_game:
                 raise ContentError(f'This library belongs to {library.game_title}. '

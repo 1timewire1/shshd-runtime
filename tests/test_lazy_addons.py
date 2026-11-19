@@ -55,10 +55,10 @@ class LazyAddonTests(unittest.TestCase):
 
     def test_an_addon_opens_lazily_and_is_hashed_once(self):
         from exp_runtime import content
-        with ContentLibrary(self.target) as library:
+        with ContentLibrary(self.target, remember_checks=True) as library:
             library.add_episodes([self.write('pack.exp', addon()), self.write('story.exp', episode())])
         with patch('exp_runtime.content.file_digest', wraps=content.file_digest) as hashed:
-            with ContentLibrary(self.target) as library:
+            with ContentLibrary(self.target, remember_checks=True) as library:
                 record, held = library.addon('shsnr')
                 self.assertIsInstance(held, LazyExpArchive)
                 self.assertEqual(held.read(26001), b'addon art')
@@ -66,7 +66,7 @@ class LazyAddonTests(unittest.TestCase):
             addons_hashed = lambda: sum(1 for call in hashed.call_args_list if call.args[0].suffix == '.exp'
                                         and call.args[0].name == Path(record['file']).name)
             self.assertEqual(addons_hashed(), 1)
-            with ContentLibrary(self.target) as library:
+            with ContentLibrary(self.target, remember_checks=True) as library:
                 library.addon('shsnr')
             self.assertEqual(addons_hashed(), 1)                    # known by its size and time: not hashed again
         checks = json.loads((self.target / ContentLibrary.CONTENT_CHECKS).read_text(encoding='utf-8'))
@@ -77,7 +77,7 @@ class LazyAddonTests(unittest.TestCase):
         data[-1] ^= 0xff
         path.write_bytes(bytes(data))
         os.utime(path, ns=(path.stat().st_atime_ns, path.stat().st_mtime_ns + 1_000_000_000))
-        with ContentLibrary(self.target) as library:
+        with ContentLibrary(self.target, remember_checks=True) as library:
             with self.assertRaises(ContentError):
                 library.addon('shsnr')
 
@@ -85,12 +85,18 @@ class LazyAddonTests(unittest.TestCase):
     def test_the_games_own_app_is_hashed_once_too(self):
         # iPad, 2026-11-19: each library open hashed the game's apps whole (over 100 MB for an HD library).
         from exp_runtime import content
-        with ContentLibrary(self.target):
+        with ContentLibrary(self.target, remember_checks=True):
             pass
         with patch('exp_runtime.content.file_digest', wraps=content.file_digest) as hashed:
-            with ContentLibrary(self.target):
+            with ContentLibrary(self.target, remember_checks=True):
                 pass
         self.assertEqual([call.args[0].suffix for call in hashed.call_args_list], [])
+
+    def test_a_library_opened_outside_the_player_writes_nothing(self):
+        # The Creator and tools read a library without writing to it (test_creator_libraries).
+        with ContentLibrary(self.target):
+            pass
+        self.assertFalse((self.target / ContentLibrary.CONTENT_CHECKS).exists())
 
 if __name__ == '__main__':
     unittest.main()

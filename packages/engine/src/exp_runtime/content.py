@@ -715,8 +715,11 @@ def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, hd
 
 
 class ContentLibrary:
-    def __init__(self, directory: Path):
+    def __init__(self, directory: Path, *, remember_checks=False):
         self.directory = Path(directory)
+        # Whether opening it may write CONTENT_CHECKS: the player app's own openings pass True; the Creator, tools and
+        # tests read a library without writing to it (test_creator_libraries), checking within each opening.
+        self.remember_checks = remember_checks
         try:
             self.manifest = json.loads((self.directory / 'library.json').read_text(encoding='utf-8'))
         except (OSError, ValueError) as error:
@@ -1173,6 +1176,8 @@ class ContentLibrary:
         with self._checks_lock:
             checks = self._content_checks()
             checks[path.name] = known
+            if not self.remember_checks:
+                return
             try:
                 with tempfile.NamedTemporaryFile('w', dir=self.directory, prefix='.checks-', suffix='.json', delete=False,
                                                  encoding='utf-8', newline='\n') as stream:

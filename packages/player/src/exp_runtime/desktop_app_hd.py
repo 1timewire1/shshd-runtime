@@ -807,7 +807,7 @@ class ChooserList:
         from .episode_picker import PickerModel
         from .menu import MenuState
         self.app, self.kind, self.game = app, kind, game
-        self.library = ContentLibrary(app.library_path(game))
+        self.library = ContentLibrary(app.library_path(game), remember_checks=True)
         try:
             state = MenuState(self.library, shared=app.settings)
             self.allowed = app.choice_allowed(kind, self.library)
