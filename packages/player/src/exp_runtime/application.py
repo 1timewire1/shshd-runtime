@@ -12,6 +12,7 @@ import logging
 import os
 from pathlib import Path
 from types import SimpleNamespace
+import sys
 import tempfile
 
 os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
@@ -104,8 +105,10 @@ FOLDER_LABEL = 22               # the rows' value: a longer folder name is short
 
 # A library's own parts (Delete Library removes these and nothing else its folder holds): library.json first, so a
 # delete cut short never leaves a library the app would try to open; and the folders a job stages in (`.sync-...`).
+# shshd-runtime: also DSi Backgrounds' record of the episodes that show them (dsi.COVERAGE_FILE; it kept the folder after a
+# delete on the g54, 2026-11-19).
 LIBRARY_PARTS = ('library.json', 'content', 'saves', 'dtsaves', 'dtview', 'dtview_tree.json', 'player.json', 'thumbs',
-                 'hd_twins', 'fonts')
+                 'hd_twins', 'fonts', 'dsi_backgrounds.json')
 LIBRARY_STAGES = ('.sync-', '.sync-send-', '.restore-', '.merge-', '.exp-import-', '.player-', '.library-')
 
 
@@ -118,7 +121,9 @@ def remove_library(directory):
     for name in LIBRARY_PARTS:
         path = directory / name
         if path.is_dir():
-            shutil.rmtree(path, onexc=lambda function, failed, error: left.append(failed))
+            # onexc is Python 3.12's; onerror, the same call, every version this supports (3.10 on).
+            note = (lambda function, failed, error: left.append(failed))
+            shutil.rmtree(path, **({'onexc': note} if sys.version_info >= (3, 12) else {'onerror': note}))
         elif path.exists():
             try:
                 path.unlink()

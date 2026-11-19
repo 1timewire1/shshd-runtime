@@ -382,6 +382,7 @@ class LibraryActionTests(unittest.TestCase):
             (directory / name).mkdir()
             (directory / name / 'x').write_bytes(b'x')
         (directory / 'library.json').write_text('{}')
+        (directory / 'dsi_backgrounds.json').write_text('{}')                # DSi Backgrounds' record (dsi.py)
         self.assertEqual(remove_library(directory), 0)
         self.assertFalse(directory.exists())                                   # nothing else was there
         app = self.app()
