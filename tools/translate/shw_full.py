@@ -62,7 +62,8 @@ from exp_runtime.exp import Metadata, encode_exp  # noqa: E402
 from exp_runtime.vm import KiwiVM, StopKind  # noqa: E402
 from kiwi_rewrite import Rewriter  # noqa: E402
 
-PACK, EPISODE, VERSION = 31700, 1, 2    # episode 1: the lite moves to 2 (owner, 2026-11-14); 2: the owner's g54 notes (2026-11-17)
+PACK, EPISODE, VERSION = 31700, 1, 3    # episode 1: the lite moves to 2 (owner, 2026-11-14); 2: the owner's g54 notes (2026-11-17);
+                                        # 3: the cards on SHS HD's sunset city (CARD_PICTURE, 2026-11-19)
 TITLE, SUFFIX = 'The Bright Lights', ' (SHW)'
 ADDON_REQUIRED = 8                      # shshw: the sun as the daytime badge's icon (5), the silhouettes (6), turned (8)
 DRIVER = 25001
@@ -149,7 +150,10 @@ NIGHT_SLOT = 5                          # the moon from 9 PM (SLOT_SKY's night)
 MAP_DAY, MAP_NIGHT = 3008, 3009         # the map's music by day and by night (engine/shw.js mapTurn)
 SOUND_CUES = frozenset({3006, 3010, 3014})      # the fail and success tones and the ringtone play over the music
 JOURNAL_CUE = 3014
-CITY = 1523                             # the city from the hills: the map (1100), the date and title cards
+CITY = 1523                             # the city from the hills: the map (1100)
+# The title card and every date card (owner, 2026-11-19): SHS's city skyline at sunset (shared bank 1137, catalogue 0112), which
+# SHS HD shows in its HD copy, as the other translations' cards; the demo's city and its dingy living room have no HD equal.
+CARD_PICTURE = 1137
 HOME_PICTURE = 1505
 MAP_PICTURE = 1100
 WHERE_TITLE = 'Where to?'
@@ -1554,7 +1558,7 @@ class Script:
 
     def chapter(self, pc, argc):
         """73: (`chapter 1`, `the bright lights`): SHS's title card, the story's name over the chapter's."""
-        p = shw.BACKGROUND_BASE + shw.SKY_MODES * (CITY - 1500) + SUNSET_SKY
+        p = CARD_PICTURE
         self.r.redirect(pc, 'chapter', lambda s: (clear_badge(s), s.text(TITLE), s.text('Chapter 1'), s.push(p), s.push(0), s.call(8, 4),
                                                   s.result(0)))
 
@@ -1792,7 +1796,7 @@ class Driver:
             get_global(s, DAY_KEY); s.push(sched['days']); s.emit(0x0d); s.jump_if_nonzero(finished)
             clear_badge(s)                                  # (the bedtime card's, when the sleep script said nothing)
             s.text(TITLE); table_get(s, t.dates(), lambda: get_global(s, DAY_KEY))
-            s.push(shw.BACKGROUND_BASE + shw.SKY_MODES * (HOME_PICTURE - 1500) + DAY_SKY); s.push(0); s.call(8, 4)
+            s.push(CARD_PICTURE); s.push(0); s.call(8, 4)
             s.jump(the_map)
 
             # The quest journal: the quest script has just rebuilt the quests.

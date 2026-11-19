@@ -42,6 +42,9 @@ data and its state in saved numbers.
 
 - **The month.** 29 days of eight slots (8 AM to 3 AM, then bedtime). Each morning opens on a date card, `Monday, February 2`.
   At bedtime the player goes home and sleeps into the next day.
+- **Cards.** The title card and every date card show SHS's city skyline at sunset (shared bank 1137, catalogue 0112, in its HD
+  copy with SHS HD), as the other translations' cards show SHS pictures (owner, 2026-11-19; `CARD_PICTURE`; version 3). They were
+  the demo's city from the hills and its living room, which have no HD equal.
 - **Where to?** On the map the driver runs a pending script, else the slot's forced event, else asks **Where to?**: SHS's
   choice of the places open now, each `District: Place` with its opening hours under it in smaller letters, then **Quest
   Journal** and **Stats** (money, looks, body, stress). A place runs its story event if one is due, else its kind's script,
@@ -76,7 +79,8 @@ the same scripts and the same numbers to the end.
 ## The Bright Lights (Lite)
 
 The 1.0.4 demo's Chapter 1 (`shw_lite.py`), in the same art, frame, sounds and catch game, with place badges (the demo's star:
-1.0.4 keeps no clock, so they carry no time), a title card and the same names table. Its catch game (the peanut-butter dodge)
+1.0.4 keeps no clock, so they carry no time), a title card (the same sunset city as the full chapter's; version 2) and the
+same names table. Its catch game (the peanut-butter dodge)
 plays behind Use Translated Mini-Games, else as a word game; its instructions open it as a page, as the BREW games' catch pages
 do. The fight's four action-menu rounds are a timed word game (71). It matches the untranslated script line for
 line on all 112 of its answer paths.

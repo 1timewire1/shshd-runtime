@@ -56,7 +56,8 @@ from exp_runtime.episode_version import RESOURCE as VERSION_RECORD, version_byte
 from exp_runtime.exp import ExpArchive, Metadata, encode_exp  # noqa: E402
 from kiwi_rewrite import Rewriter  # noqa: E402
 
-PACK, EPISODE, VERSION = 31700, 2, 1      # episode 2: the full chapter (shw_full.py) is 1 (owner, 2026-11-14)
+PACK, EPISODE, VERSION = 31700, 2, 2      # episode 2: the full chapter (shw_full.py) is 1 (owner, 2026-11-14); 2: the card on
+                                          # SHS HD's sunset city (2026-11-19)
 TITLE, SUFFIX = 'The Bright Lights (Lite)', ' (SHW)'
 ADDON_REQUIRED = 4                      # shshw: the catch star by number and the map star badge
 SCRIPT, STORY = 10002, 25001
@@ -83,7 +84,7 @@ DAY, NIGHT, SUNSET = 0, 1, 2
 # and the night after, then the next days, the club at night.
 SITE_SKY = {438: SUNSET, 501: SUNSET, 600: NIGHT, 647: NIGHT, 675: DAY, 733: DAY, 814: NIGHT, 918: DAY, 1090: DAY,
             1159: DAY, 1220: DAY}
-CARD_PICTURE = (1523, SUNSET)           # the title card: the city from the hills, at sunset
+CARD_PICTURE = 1137                     # the title card: SHS's city skyline at sunset (shared bank; owner, 2026-11-19)
 SOUNDS = {45: shw.MUSIC_BASE + 3014 - 3000, 14: shw.MUSIC_BASE + 3006 - 3000}
 # The catch list's pictures: 1.0.4's peanut butter (2028) is 1.0.2's jar (2531). Its items are (value, picture, count): two
 # kinds, 15 and 25 of them, each hit 1.
@@ -289,7 +290,7 @@ class Lite:
 
     def chapter(self, pc, argc):
         """73: (`Chapter 1`, `The Bright Lights`): SHS's title card, the story's name over the chapter's."""
-        picture = shw.BACKGROUND_BASE + shw.SKY_MODES * (CARD_PICTURE[0] - 1500) + CARD_PICTURE[1]
+        picture = CARD_PICTURE
 
         def build(s):
             s.arg(2); s.arg(1); s.push(picture); s.push(0); s.call(8, 4); s.result(0)

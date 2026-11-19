@@ -443,6 +443,9 @@
   - Data Management's **Exports Folder** and **Backups Folder** show the folder under their name, as General's choices
     do, instead of on an orange button.
   - **Surviving Hollywood** is listed between '07 and '08 in the episode lists.
+- **Surviving Hollywood's title and date cards** (owner, 2026-11-19; [HOLLYWOOD.md](docs/HOLLYWOOD.md)) show SHS HD's city
+  skyline at sunset (1137) in both chapters, in place of the demo's pixel city and living room (The Bright Lights version 3,
+  Lite version 2).
 - **Named lines without a portrait in the translated episodes** (owner, 2026-11-18; reference/TRANSLATION_AUDITS.md):
   - **New Rules** (25 stories, revision 2; [NEW_RULES.md](docs/NEW_RULES.md#how-a-script-is-translated)):
     - A cast member speaking off stage now has their own portrait (Skazz, Howard, Taylor, Kel, Dexter, Kim, Mallika,
