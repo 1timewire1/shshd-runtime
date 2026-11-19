@@ -549,6 +549,9 @@
 
 ### Fixed
 
+- **The iPad's episode picker stuttered while its tiles filled in** (iPad, 2026-11-19): each tile's picture was
+  decoded on the drawing thread, as on a computer, and the picker held 17-28 fps. The iPad now loads them behind the
+  scene with the placeholder meanwhile, as Android does.
 - **Backups and exports on iPhone and iPad** (iPad, 2026-11-19): Back Up Progress, a sync's Back Up Receiver First
   and Export Episodes wrote beside the app's data, where iOS lets no app write (Sync Devices failed with "Operation
   not permitted"). They now go in the app's Documents (SHSHD Runtime Backups, SHSHD Runtime Episodes), which the

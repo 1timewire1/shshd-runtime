@@ -30,6 +30,8 @@ class IosWindowTests(unittest.TestCase):
         self.addCleanup(icon_surface.cache_clear)
         from exp_runtime.application import Application
         self.addCleanup(setattr, Application, 'USER_FOLDER_ROOT', Application.USER_FOLDER_ROOT)   # (Host sets it)
+        from exp_runtime import desktop_episode_picker
+        self.addCleanup(setattr, desktop_episode_picker, 'BACKGROUND_PREVIEWS', desktop_episode_picker.BACKGROUND_PREVIEWS)
         host = Host(self.root, backend=backend, library_root=self.root / 'libraries', check_updates=False,
                     view_size=view_size)
         self.addCleanup(host.app.close)
@@ -41,6 +43,12 @@ class IosWindowTests(unittest.TestCase):
                     logger.removeHandler(handler)
         self.addCleanup(drop_log)
         return host
+
+    def test_the_pickers_tiles_load_behind_the_scene(self):
+        # iPad, 2026-11-19: at 2x the tiles were decoded on the drawing thread (the picker held 17-28 fps filling).
+        from exp_runtime import desktop_episode_picker
+        self.host()
+        self.assertTrue(desktop_episode_picker.BACKGROUND_PREVIEWS)
 
     def test_backups_and_exports_go_in_the_apps_documents(self):
         # iPad, 2026-11-19: a sync's "before sync" backup went to the app's container (home: no Downloads there),

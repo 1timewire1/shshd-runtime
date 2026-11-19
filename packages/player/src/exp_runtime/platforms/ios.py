@@ -103,6 +103,11 @@ class Host:
         from ..application import Application
         from .. import momentum
         momentum.ENABLED = True                     # flicked lists, the wall and the tree glide on (as Android)
+        # The episode picker's tiles load behind the scene with the placeholder meanwhile, as on Android (which draws
+        # its menus at 1x and so had it from desktop_episode_picker's own test): at 2x the iPad decoded each tile on
+        # the drawing thread, and the picker held 17-28 fps while it filled (iPad, 2026-11-19).
+        from .. import desktop_episode_picker
+        desktop_episode_picker.BACKGROUND_PREVIEWS = True
         graphics.native_controls = []               # the options' switches and sliders are UIKit's (controls)
         graphics.device_name = device_name          # Sync Devices' name for this device (not the socket's "localhost")
         self.directory = Path(directory)

@@ -28,6 +28,8 @@ class IosImportTests(unittest.TestCase):
         self.addCleanup(icon_surface.cache_clear)
         from exp_runtime.application import Application
         self.addCleanup(setattr, Application, 'USER_FOLDER_ROOT', Application.USER_FOLDER_ROOT)   # (Host sets it)
+        from exp_runtime import desktop_episode_picker
+        self.addCleanup(setattr, desktop_episode_picker, 'BACKGROUND_PREVIEWS', desktop_episode_picker.BACKGROUND_PREVIEWS)
         host = Host(root, backend=backend, library_root=root / 'libraries', check_updates=False)
         self.addCleanup(host.app.close)
         self.addCleanup(self.drop_log_handlers)
