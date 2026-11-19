@@ -612,6 +612,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
     private var working = false
     private var started = false             // the first request has gone (with the canvas's size)
     private var running = true
+    private var suspendedAt: CFTimeInterval?    // when `suspend` paused the runtime (the safety net in `frame`)
     // The view report in the runtime log (ios.Host: the black screen after a launch, 2026-11-13): often for the first
     // ten seconds, then every five, and at once after the app's activation changes.
     private let launchedAt = CACurrentMediaTime()
@@ -721,6 +722,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
     @objc private func suspend() {
         reportNext = true
         running = false
+        suspendedAt = CACurrentMediaTime()
         activityGeneration += 1
         events.removeAll()
         canvas.resignFirstResponder()
@@ -739,6 +741,7 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
         canvas.refreshComposed()
         activityGeneration += 1
         running = true
+        suspendedAt = nil
         lastFrame = CACurrentMediaTime()
         requests.append(["operation": "active", "active": true])
         frame()
@@ -751,6 +754,15 @@ final class RuntimeController: UIViewController, UIDocumentPickerDelegate {
     }
 
     @objc private func frame() {
+        // Paused, yet the app is in front again (iPad, 2026-11-19: an audio interruption's end, or the return to the
+        // foreground, never came, and the app sat on its last frame with every tap ignored until iOS closed it): carry
+        // on as a return to the foreground does. A second's grace keeps a real move to the background (whose
+        // willResignActive comes while the state still reads active) from resuming at once.
+        if !running, let since = suspendedAt, UIApplication.shared.applicationState == .active,
+           CACurrentMediaTime() - since > 1 {
+            resume()
+            return
+        }
         guard !working, !failed, rendering < 2, running || !requests.isEmpty else { return }
         // The app starts once the canvas has its size: the first frame's size picks the menus' scale (ios.Host).
         if !verifying && !started && canvas.pixelSize.width < 320 { return }

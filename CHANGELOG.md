@@ -549,6 +549,10 @@
 
 ### Fixed
 
+- **The iPad could freeze on its last frame** (iPad, 2026-11-19): when iOS paused the app (an audio interruption, or
+  the app leaving the front) without telling it later that it was back, the host kept the runtime paused while
+  the app was on screen: the picture stayed, taps did nothing, and after some minutes iOS closed it. The host now
+  carries on by itself once the app has been in front for a second.
 - **Fall '06's week 1 card showed the bedroom** (owner, 2026-11-19): a title card shows the first picture its story does, which since the bedroom went behind the first day's line was that bedroom. The season's cards keep the owner's pick again, the school every week shows (version 6).
 - **Tall menu pages ran under a phone's status and navigation bars** (owner, g54, 2026-11-19): Help's and About's text pages, the chooser's (Receive, Library Info) and the file browser filled the frame's height. They now keep 12 points clear of both bars where a phone has them (`menu_top_pad` / `menu_bottom_pad`); a computer is unchanged.
 - **The panels' whoosh came a second late** (owner, g54, 2026-11-19): opening or closing the panels over the screen played HD's tree zoom whoosh from its start, which swells for 0.6 s, so its peak came after the 300 ms slide. It now starts 300 ms in (a copy cut once, `ui_sound.trimmed_wave`); the tree zoom tab keeps the whole sound.
