@@ -139,6 +139,9 @@ def resolve_face(face):
                     'IPA asset import does not require fonts.')
 
 
+ANDROID_FONTS = Path('/system/fonts')
+
+
 def _system_default(face):
     if sys.platform == 'darwin':
         for filename in (('SFNSItalic.ttf', 'SFNS.ttf') if face.style == 'Italic' else
@@ -150,6 +153,13 @@ def _system_default(face):
         yield directory / filename, 0
         yield directory / 'segoeui.ttf', 0
     else:
+        # shshd-runtime: Android has no fontconfig; its own Roboto in the style, as the Android host draws a missing face
+        # (platforms/android.font_finder). Without it a CoD story that needs Trebuchet MS Italic would not open on a phone
+        # whose player supplied no fonts (the g54 pass, 2026-11-19).
+        if ANDROID_FONTS.is_dir():
+            for filename in (f'Roboto-{face.style}.ttf', 'Roboto-Regular.ttf', 'RobotoStatic-Regular.ttf',
+                             'Roboto[wdth,wght].ttf', 'NotoSans-Regular.ttf', 'DroidSans.ttf'):
+                yield ANDROID_FONTS / filename, 0
         # Ask fontconfig for its configured generic sans family. Here a
         # substitution is intentional: this is the user's requested fallback.
         generic = FontFace('sans-serif', face.style, ())

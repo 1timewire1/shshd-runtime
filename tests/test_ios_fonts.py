@@ -50,6 +50,19 @@ class IOSFontMetricsTests(unittest.TestCase):
             offset += len(table)
         return BytesIO(data + b''.join(table for _, table in tables))
 
+    def test_a_phone_falls_back_to_androids_own_roboto(self):
+        # The g54 pass (2026-11-19): with no fonts supplied, a CoD story (Trebuchet MS Italic) would not open on Android,
+        # which has no fontconfig. Android's Roboto in the style comes first, as the Android host draws a missing face.
+        import tempfile
+        from unittest.mock import patch
+        from exp_runtime import ios_fonts
+        with tempfile.TemporaryDirectory() as temporary, patch.object(ios_fonts.sys, 'platform', 'linux'),                 patch.object(ios_fonts, 'ANDROID_FONTS', Path(temporary)):
+            face = ios_fonts.FontFace('Trebuchet MS', 'Italic', ())
+            first = [path.name for path, _ in list(ios_fonts._system_default(face))[:3]]
+            self.assertEqual(first, ['Roboto-Italic.ttf', 'Roboto-Regular.ttf', 'RobotoStatic-Regular.ttf'])
+        with patch.object(ios_fonts.sys, 'platform', 'linux'), patch.object(ios_fonts, 'ANDROID_FONTS', Path('/no/such')):
+            self.assertNotIn('Roboto-Italic.ttf', [p.name for p, _ in ios_fonts._system_default(face)])
+
     def test_cap_height_and_descent_use_font_design_units(self):
         design = SimpleNamespace(getbbox=lambda c, **_: (0, -701 if c == 'H' else -722, 500, 0),
                                  getlength=lambda c: 333)
