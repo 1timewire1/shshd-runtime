@@ -394,8 +394,9 @@ class SyncFlow:
             ui.notify('Sync Failed', session.message or lan_sync.LOST)
 
     def apply(self, player, options, state=None):
-        """A received bundle's names (merged: the sender's win, the receiver's others stay), warp lock and options
-        (those this app knows, outside DEVICE_OPTIONS), into `state` (the open library's by default)."""
+        """A received bundle's names (merged: the sender's win, the receiver's others stay), warp lock, finished episodes
+        (added to the receiver's) and options (those this app knows, outside DEVICE_OPTIONS), into `state` (the open
+        library's by default)."""
         app = self.app
         state = state if state is not None else app.state
         names, name_sets = player.get('names'), player.get('name_sets')
@@ -407,6 +408,8 @@ class SyncFlow:
                     state.name_sets.setdefault(str(key), {}).update({str(k): str(v) for k, v in table.items()})
         if player.get('warp_unlocked'):
             state.warp_unlocked = True
+        if isinstance(player.get('finished'), list):        # (finished on either device: finished on both)
+            state.finished.update(key for key in player['finished'] if isinstance(key, str))
         # Saved before the options: persist also writes `state`'s shared preferences, read when it was opened, so after
         # them it put the old ones back (the chooser, or another game's bundle; the PC from the g54, 2026-11-19).
         state.persist()
@@ -469,6 +472,7 @@ class SendProvider:
             player.update(names=dict(state.names), name_sets={k: dict(v) for k, v in state.name_sets.items()})
         if 'progress' in self.categories:
             player['warp_unlocked'] = state.warp_unlocked
+            player['finished'] = sorted(state.finished)
         return player
 
     def shared_options(self):

@@ -152,6 +152,8 @@ class MenuState:
                     self.logging_disabled = data['logging_disabled']
                 if type(data.get('warp_unlocked')) is bool:
                     self.warp_unlocked = data['warp_unlocked']
+                if isinstance(data.get('finished'), list):
+                    self.finished = {key for key in data['finished'] if isinstance(key, str)}
                 if type(data.get('vibration')) is bool:
                     self.vibration = data['vibration']
                 if type(data.get('device_vibration')) is bool:
@@ -256,6 +258,9 @@ class MenuState:
         self.hd_art = 'fill'           # higher-density art for standard episodes: 'off', 'twins' or 'fill' (hd_twins.py);
                                         # 'fill' is the only one reachable without hand-editing player.json
         self.warp_unlocked = False     # `SHSEngine +0x6490a` (a lock) is set at first run and cleared when Football Season ends
+        # Episodes played to their end at least once (owner, 2026-11-19: their play icon goes green in the lists): library
+        # ids, kept in player.json, carried by a newer copy (its `carries`), backed up and synced (progress_bundle).
+        self.finished = set()
         self.choice_hints = False
         # ask whether to play, win or lose each football game / word grid: this fork's counterpart of exp-runtime
         # v0.6.0's `minigame_skips` (minigame_skip.py), kept under its own key
@@ -366,6 +371,9 @@ class MenuState:
                     ended = Session.from_snapshot(self.library.open_episode(episode), saved).episode_ended
                 self.ended_saves[key] = ended
                 if ended:
+                    # A save left at the story's end: played to its end (this fills in finishes from before the
+                    # marks were kept, while that save is the episode's latest).
+                    self.finished.add(self.library.select(episode)['id'])
                     return None
             except (SaveError, OSError, ValueError, AttributeError):
                 # Invalid saves remain resumable so loading reports the error;
@@ -378,7 +386,7 @@ class MenuState:
                     device_vibration=self.device_vibration,
                     order=self.order,
                     music_volume=self.music_volume, sound_volume=self.sound_volume, logging_disabled=self.logging_disabled,
-                    warp_unlocked=self.warp_unlocked, hd_art=self.hd_art,
+                    warp_unlocked=self.warp_unlocked, finished=sorted(self.finished), hd_art=self.hd_art,
                     preferred_language=self.preferred_language, choice_hints=self.choice_hints,
                     skip_minigames=self.skip_minigames, skip_ad_intros=self.skip_ad_intros,
                     skip_upsell_intros=self.skip_upsell_intros,

@@ -4,6 +4,10 @@
 
 ### Added
 
+- **Finished episodes show green** (owner, 2026-11-19): once an episode has been played to its end, its play / pause
+  icon in Now Airing and Episodes On Demand is green, in both games. Episodes whose last save ended the story count
+  from before; a newer copy keeps the mark; Back Up / Restore Progress and Sync Devices carry the marks (`finished`
+  in the library's player.json), and Delete All Saves clears them.
 - **Sync Devices on iPhone and iPad** (owner, 2026-11-19: every version alike): a sender also probes each address of its
   network directly, as iOS blocks an app's broadcasts, so an iOS device finds receivers and is found. iOS asks for Local
   Network access with the app's own reason, and the device calls itself "iPad" or "iPhone". Sync protocol 3: every

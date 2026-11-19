@@ -5,10 +5,10 @@ tree is named by it; so a bundle restores into any library of the same game, and
 lacks waits there until the episode is added. Back Up / Restore Progress write and read bundles; LAN sync sends one
 and merges it (`merge_bundle`: each episode it holds replaces that episode's saves and tree, the rest stay).
 
-A bundle holds `manifest.json` (what it is and what it holds), `player.json` (the library's name tables and its warp
-lock, PLAYER_KEYS) and the library's own progress files (FOLDERS and FILES), at their paths in the library. Options
-(shared by both games, in the app's settings.json) are in `options.json` only when a sync put them there: its
-backup of what it would overwrite, or what it sends.
+A bundle holds `manifest.json` (what it is and what it holds), `player.json` (the library's name tables, its warp
+lock and its finished episodes, PLAYER_KEYS) and the library's own progress files (FOLDERS and FILES), at their paths
+in the library. Options (shared by both games, in the app's settings.json) are in `options.json` only when a sync put
+them there: its backup of what it would overwrite, or what it sends.
 """
 from datetime import datetime
 import json
@@ -22,7 +22,7 @@ FORMAT, VERSION = 'shshd-progress', 1
 MANIFEST, PLAYER, OPTIONS = 'manifest.json', 'player.json', 'options.json'
 FOLDERS = ('saves', 'dtsaves', 'dtview')
 FILES = ('dtview_tree.json',)
-PLAYER_KEYS = ('names', 'name_sets', 'warp_unlocked')
+PLAYER_KEYS = ('names', 'name_sets', 'warp_unlocked', 'finished')
 # A progress file's path in the library: a file of FOLDERS (Decision Tree scenes one folder deeper), or FILES.
 MEMBER = re.compile(r'(?:saves|dtsaves|dtview)/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)?|dtview_tree\.json')
 SAVE_SUFFIXES = ('.shs-auto.json', '.shs-save.json')

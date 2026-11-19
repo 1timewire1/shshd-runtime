@@ -244,6 +244,7 @@ class Application:
         self.scope = 'all'
         self.selected = None
         self.saved = set()
+        self.finished = set()           # library ids whose list rows show the finished (green) icon: finished_ids
         self.query = ''
         self.scroll = 0
         self.episode_scroll = 0
@@ -412,6 +413,8 @@ class Application:
                 shutil.rmtree(path)
         (directory / 'dtview_tree.json').unlink(missing_ok=True)
         state.ended_saves.clear()
+        state.finished.clear()                                  # the finished marks go with them (owner, 2026-11-19)
+        self._attempt(state.persist)
         if library is self.library:
             self.game = None                                    # (a game left for the main menu: see delete_save)
             self.shot_cache.clear()
@@ -895,7 +898,7 @@ class Application:
         """The library's own player.json data a backup carries (taken on the UI thread, before a job starts)."""
         state = state or self.state
         return dict(names=dict(state.names), name_sets={key: dict(table) for key, table in state.name_sets.items()},
-                    warp_unlocked=state.warp_unlocked)
+                    warp_unlocked=state.warp_unlocked, finished=sorted(state.finished))
 
     def back_up_progress(self, library, player, note='', **bundle):
         """Back Up Progress: the library's saved games, Decision Trees and names into a new file in backup_folder.
@@ -1075,8 +1078,8 @@ class Application:
 
     @staticmethod
     def restore_player(state, player):
-        """A restored backup's player.json data (its name tables, replacing the library's, and its warp lock) into a
-        library's menu state, persisted."""
+        """A restored backup's player.json data (its name tables, replacing the library's, its warp lock and its finished
+        episodes) into a library's menu state, persisted."""
         names, name_sets = player.get('names'), player.get('name_sets')
         if isinstance(names, dict):
             state.names.clear()
@@ -1087,6 +1090,8 @@ class Application:
                                     for key, table in name_sets.items() if isinstance(table, dict)})
         if 'warp_unlocked' in player:
             state.warp_unlocked = bool(player['warp_unlocked'])
+        if isinstance(player.get('finished'), list):
+            state.finished = {key for key in player['finished'] if isinstance(key, str)}
         state.persist()
 
     def progress_restored(self, result):
@@ -1437,6 +1442,7 @@ class Application:
             episode_thumbnails.release_game_caches()        # the game's menus and art go with its library
         self.library = self.state = self.game = None
         self.saved = set()
+        self.finished = set()
         self.selected = None
         self.ui_sounds = None
 
@@ -1612,9 +1618,29 @@ class Application:
             self.message = ' '.join(str(error) for error in errors)
 
     def refresh_saves(self):
-        self.saved = {e['id'] for e in self.library.episodes if self.state.resume_path(e['id'])}
+        state, known = self.state, len(self.state.finished)
+        self.saved = {e['id'] for e in self.library.episodes if state.resume_path(e['id'])}
         if self.game and not self.game.session.episode_ended:
             self.saved.add(self.game.session.resources.record['id'])
+        if len(state.finished) != known:
+            self._attempt(state.persist)        # (a save left at a story's end, found: State.resume_path)
+        self.finished = self.finished_ids()
+
+    def finished_ids(self, library=None, state=None):
+        """The library's episodes played to their end once (State.finished), a newer copy by the copies it replaced
+        (`carries`): the lists show their play icon green (owner, 2026-11-19)."""
+        library, state = library or self.library, state or self.state
+        done = state.finished
+        return {e['id'] for e in library.episodes if e['id'] in done or done.intersection(e.get('carries') or ())}
+
+    def mark_finished(self):
+        """A story played to its end: its episode is finished for good (State.finished), kept at once."""
+        session = self.game.session
+        if session.episode_ended and self.state is not None:
+            record_id = session.resources.record['id']
+            if record_id not in self.state.finished:
+                self.state.finished.add(record_id)
+                self._attempt(self.state.persist)
 
     def can_resume(self, episode=None):
         return (episode or self.state.selected) in self.saved
@@ -2490,6 +2516,7 @@ class Application:
         # pause menu has closed.
         kept = self.game.take_pause_song() if self.audio and not self.game.session.episode_ended else None
         self.unlock_warp_if_football_finished()
+        self.mark_finished()
         # Keep the live session even if a filesystem error prevents a checkpoint.
         if self.game.session.engine.word_grid:
             self.game.session.grid_pointer('cancel')
@@ -2928,6 +2955,7 @@ class Application:
                 picker.top_pad = self.menu_top_pad(picker.height)
                 picker.bottom_pad = self.menu_bottom_pad(picker.height)
         picker.saved = self.saved
+        picker.finished = self.finished
         pending = picker.alert
         if self.message:
             picker.alert = (self.game_title, self.message)

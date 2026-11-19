@@ -80,6 +80,8 @@ ROW_SUBTITLE_ALPHA = 150
 ICON_SIZE = 34
 ICON_RING = (60, 157, 255)
 ICON_GLYPH = (10, 133, 255)
+# An episode played to its end once (owner, 2026-11-19): its icon in green, at the same alphas.
+FINISHED_RING, FINISHED_GLYPH = (52, 190, 92), (18, 158, 62)
 
 
 TICK_SIZE = 30                  # a choice row's tick box, in the play / pause icon's place
@@ -108,6 +110,8 @@ class HdEpisodeList(HdEpisodePicker):
     TEXT_ROW_COLOR, LIST_FILL = ROW_TEXT, ROW_WHITE
     ICON_RING_COLOR, PLAY_COLOR, PAUSE_COLOR = ICON_RING, ICON_GLYPH, ICON_GLYPH
     RING_ALPHA, PLAY_ALPHA, PAUSE_ALPHA = 140, 220, 220
+    FINISHED_RING_COLOR, FINISHED_GLYPH_COLOR = FINISHED_RING, FINISHED_GLYPH
+    finished = frozenset()          # the library ids played to their end (Application.finished_ids), set by the app
 
     card = None                     # the game's menu card renderer (HdPauseMenu / CodPauseMenu), set by the app
     choosing = None                 # an EpisodeChoice while the list is Data Management's multi-select
@@ -245,24 +249,28 @@ class HdEpisodeList(HdEpisodePicker):
 
     # ------------------------------------------------------------ drawing
 
-    def draw_icon(self, layer, cx, cy, saved):
+    def draw_icon(self, layer, cx, cy, saved, finished=False):
         """The pale blue play/pause icon a row carries instead of a preview (frames 101/96 of the APK's own
-        pack 16, reproduced as flat shapes in their sampled colors -- see the module docstring)."""
+        pack 16, reproduced as flat shapes in their sampled colors -- see the module docstring); green, play or pause,
+        once the episode has been played to its end (this fork's, owner 2026-11-19)."""
+        ring = self.FINISHED_RING_COLOR if finished else self.ICON_RING_COLOR
+        play = self.FINISHED_GLYPH_COLOR if finished else self.PLAY_COLOR
+        pause = self.FINISHED_GLYPH_COLOR if finished else self.PAUSE_COLOR
         size = ICON_SIZE * S
         surface = pygame.Surface((size, size), pygame.SRCALPHA)
         center = (size / 2, size / 2)
         radius = ICON_SIZE / 2 * S
-        pygame.draw.circle(surface, (*self.ICON_RING_COLOR, self.RING_ALPHA), center, radius)
+        pygame.draw.circle(surface, (*ring, self.RING_ALPHA), center, radius)
         pygame.draw.circle(surface, (255, 255, 255, 235), center, radius - 4 * S)
         if saved:
             for dx in (-5, 5):
                 bar = pygame.Rect(0, 0, 4 * S, 14 * S)
                 bar.center = (center[0] + dx * S, center[1])
-                pygame.draw.rect(surface, (*self.PAUSE_COLOR, self.PAUSE_ALPHA), bar, border_radius=2 * S)
+                pygame.draw.rect(surface, (*pause, self.PAUSE_ALPHA), bar, border_radius=2 * S)
         else:
             points = [(center[0] - 5 * S, center[1] - 8 * S), (center[0] - 5 * S, center[1] + 8 * S),
                       (center[0] + 8 * S, center[1])]
-            pygame.draw.polygon(surface, (*self.PLAY_COLOR, self.PLAY_ALPHA), points)
+            pygame.draw.polygon(surface, (*play, self.PLAY_ALPHA), points)
         layer.blit(surface, (round(cx * S - size / 2), round(cy * S - size / 2)))
 
     def draw_tick(self, layer, cx, cy, ticked):
@@ -346,7 +354,7 @@ class HdEpisodeList(HdEpisodePicker):
         if self.choosing is not None:
             self.draw_tick(layer, icon_cx, rect.centery, record['id'] in self.choosing.chosen)
         else:
-            self.draw_icon(layer, icon_cx, rect.centery, record['id'] in self.saved)
+            self.draw_icon(layer, icon_cx, rect.centery, record['id'] in self.saved, record['id'] in self.finished)
         right = icon_cx - ICON_SIZE / 2 - 10
         info = None
         if self.model.has_info(record) and self.choosing is None:

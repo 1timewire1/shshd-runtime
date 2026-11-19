@@ -70,6 +70,7 @@ class CodPickerStyle(CodButtons):
     # Pack 16's play / pause icon (frames 101 / 96) at the frames' own alphas; the info button takes them too.
     ICON_RING_COLOR, PLAY_COLOR, PAUSE_COLOR = (102, 120, 213), (60, 85, 205), (50, 70, 161)
     RING_ALPHA, PLAY_ALPHA, PAUSE_ALPHA = 128, 102, 128
+    FINISHED_RING_COLOR, FINISHED_GLYPH_COLOR = (88, 176, 112), (48, 150, 78)     # a finished episode's, CoD's tones
 
     @staticmethod
     def available(library):

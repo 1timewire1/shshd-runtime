@@ -50,7 +50,7 @@ DATA_CONFIRMATIONS = {
     'reset_names': ('Reset Names?', 'The names you typed in ~game~ will be forgotten: new games ask for them again '
                     '(or take their defaults). Saved games keep the names they were saved with.', 'Reset'),
     'delete_saves': ('Delete All Saves?', 'Every saved game of ~game~ will be deleted, with the Decision Tree\'s '
-                     'saved scenes. Episodes, names and settings stay.', 'Delete'),
+                     'saved scenes and the finished marks. Episodes, names and settings stay.', 'Delete'),
     'reset_settings': ('Reset Settings?', 'Every option (both games share them) goes back to its default: Start In, '
                        'Check for Updates and the chosen folders too. Saves and names stay.', 'Reset'),
     'verify_library': ('Verify Library?', 'Every file of ~game~ is checked against its checksum, which can take a few '

@@ -680,7 +680,7 @@ class AppOptions:
         def done(results):
             self.notice('Saves Deleted', ' '.join(message for _, (_, message) in results))
         self.confirm('Delete All Saves?', f'Every saved game of {self.titles()} will be deleted, with the Decision '
-                     'Trees\' saved scenes. Episodes, names and settings stay.', 'Delete',
+                     'Trees\' saved scenes and the finished marks. Episodes, names and settings stay.', 'Delete',
                      lambda: self.each('Deleting saves', lambda library, state: self.app.delete_all_saves(library, state),
                                        done))
 

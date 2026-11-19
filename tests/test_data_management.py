@@ -147,8 +147,10 @@ class LibraryActionTests(unittest.TestCase):
         app.game = game = self.live_game('a')
         other = SimpleNamespace(directory=self.root / 'other', game_id='cod')
         (other.directory / 'saves').mkdir(parents=True)
-        app.delete_all_saves(other, SimpleNamespace(ended_saves=set()))
+        other_state = SimpleNamespace(ended_saves=set(), finished={'x'}, persist=lambda: None)
+        app.delete_all_saves(other, other_state)
         self.assertIs(app.game, game)
+        self.assertEqual(other_state.finished, set())                # the finished marks go with the saves
 
     def test_delete_all_saves_takes_every_save_and_every_tree(self):
         app = self.app()
@@ -159,7 +161,8 @@ class LibraryActionTests(unittest.TestCase):
         for name in ('saves', 'dtsaves', 'dtview', 'dtview_tree.json'):
             self.assertFalse((directory / name).exists(), name)
         self.assertEqual((app.saved, app.picker, app.shot_cache), (set(), None, {}))
-        self.assertEqual(json.loads((directory / 'player.json').read_text())['names'], {'$USR': 'Zoe'})
+        player = json.loads((directory / 'player.json').read_text())
+        self.assertEqual((player['names'], player['finished']), ({'$USR': 'Zoe'}, []))
 
     def test_reset_names_empties_the_tables(self):
         app = self.app()
