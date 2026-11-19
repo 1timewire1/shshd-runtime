@@ -185,6 +185,75 @@ class TestChannelTests(unittest.TestCase):
         self.assertIn('--- MainThread', text)
         self.assertIn('test_a_silent_app_thread_has_its_stacks_written', text)
 
+    def test_library_commands_name_one_record_and_delete_as_data_management(self):
+        """`episodes`/`addons` list; `delete` and `delete-addon` take one id prefix (6+) or title, run Data Management's
+        own work, and refuse a story on screen (roadmap 3.22, 2026-11-18)."""
+        channel = self.module.TestChannel(free_port(), Path(self.temporary.name))
+        self.addCleanup(channel.server.close)
+        records = [dict(id='aaaaaa111111', titles=['Dating Beth'], file='x.exp', pack_id=31400),
+                   dict(id='bbbbbb222222', titles=['Dating Beth Again'], file='y.exp'),
+                   dict(id='cccccc333333', titles=['Football Star'], builtin=True)]
+        addons = [dict(id='dddddd444444', addon='shs11', title="Surviving High School '11", revision=3)]
+        removed = []
+        library = SimpleNamespace(episodes=records, addons=addons,
+                                  remove_addons=lambda ids: removed.extend(ids) or len(ids))
+        playing = SimpleNamespace(session=SimpleNamespace(resources=SimpleNamespace(record=records[1])))
+        app = SimpleNamespace(screen='game', library=library, busy=False, saved={'bbbbbb222222'}, game=playing, picker=1,
+                              refresh_saves=lambda: None, addon_deleted=lambda: removed.append('deleted'))
+
+        def data_job(title, work, done):
+            app.job_done = lambda: done(work(library))
+        app.start_data_job = data_job
+        app.delete_episodes = lambda lib, ids: removed.extend(ids) or ('Episodes Deleted', 'done')
+        commands = self.module.Commands(channel, app)
+
+        def finish(job):
+            if not hasattr(job, '__next__'):
+                return job
+            try:
+                next(job)
+                app.job_done()                              # (the work's result back on the app's thread)
+                while True:
+                    next(job)
+            except StopIteration as stop:
+                return stop.value
+        listed = commands.do_episodes('beth')
+        self.assertEqual([row['saved'] for row in listed['episodes']], [False, True])
+        self.assertEqual(commands.do_addons('')['addons'][0]['name'], 'shs11')
+        with self.assertRaises(ValueError):
+            finish(commands.do_delete('Beth'))              # (two match: an exact title or an id is needed)
+        self.assertFalse(finish(commands.do_delete('Football Star'))['ok'])           # built in
+        self.assertIn('open', finish(commands.do_delete('Dating Beth Again'))['error'])  # on screen
+        app.screen = 'main'                                  # held for Resume behind the menu: let go, then deleted
+        reply = finish(commands.do_delete('bbbbbb'))
+        self.assertEqual((reply['ok'], reply['deleted'], app.game, app.picker), (True, 'bbbbbb222222', None, None))
+        reply = finish(commands.do_delete('Dating Beth'))  # (an exact title wins over one containing it)
+        self.assertEqual(reply['deleted'], 'aaaaaa111111')
+        reply = finish(commands.do_delete_addon('shs11'))
+        self.assertTrue(reply['ok'])
+        self.assertEqual(removed, ['bbbbbb222222', 'aaaaaa111111', 'dddddd444444', 'deleted'])
+
+    def test_timing_groups_and_memory(self):
+        channel = self.module.TestChannel(free_port(), Path(self.temporary.name))
+        self.addCleanup(channel.server.close)
+        engine = SimpleNamespace(sound_serial=0)
+        game = SimpleNamespace(session=SimpleNamespace(engine=engine, pending=SimpleNamespace(name='dialogue')),
+                               menu_open=False, host_prompt=None)
+        app = SimpleNamespace(screen='game', game=game)
+        commands = self.module.Commands(channel, app)
+        commands.do_timing('on')
+        for frame in range(6):
+            if frame == 3:
+                engine.sound_serial += 1                    # a sound starts in this frame
+            channel.poll(app)
+        reply = commands.do_timing('off groups')
+        groups = {(group['showed'], group['sound']): group['frames'] for group in reply['groups']}
+        self.assertEqual(groups, {('dialogue', False): 5, ('dialogue', True): 1})
+        memory = commands.do_memory('')
+        self.assertTrue(memory['ok'])
+        if os.name == 'nt' or Path('/proc/self/status').exists():
+            self.assertGreater(memory['resident_mb'], 1)
+
     def test_it_listens_on_this_machine_only(self):
         port = free_port()
         channel = self.module.TestChannel(port, Path(self.temporary.name))

@@ -25,6 +25,7 @@ it's done, so real clocks (fades, timers) run as in play.
     back                        Android's Back (Escape)
     skip / undo                 Skip Ahead / Undo
     pause / resume              the pause menu
+    menu                        the pause menu's Main Menu: the story saved and kept for Resume, the main menu shown
     set KEY on|off              a switch, as Options does (undo, skip_ahead, java_look, arena_minigames, ...);
                                 `set dsi_pixels sharp|smooth`, `set preferred_language en|fr|it|de|es` (the titles,
                                 and the DSi's, '11's and the Creator's stories where they have it)
@@ -41,7 +42,16 @@ it's done, so real clocks (fades, timers) run as in play.
                                 stop = anything Skip Ahead stops at), or SECONDS (default 60) pass
     wait SECONDS                let the app run
     timing on|off               frame times since `on`: fps, median, p90, worst, and the slowest (100 ms+) with
-                                the command running and what showed after each
+                                the command running and what showed after each; `timing off groups` adds them by
+                                what each frame showed (its screen) and whether a sound started in it, and on iOS
+                                Python's and the host's drawing time per frame
+    episodes [TEXT]             the library's episodes (title containing TEXT, or id starting with it): id, title,
+                                pack, episode, version, whether a saved game holds it
+    addons                      the library's add-ons: name, revision, id
+    delete ID|TITLE             Delete Episodes for one episode, as Data Management does (its saves, screenshots,
+                                previews and Decision Tree too); an id prefix (6+) or a title only one matches
+    delete-addon NAME|ID        Delete for one add-on, as Data Management's Add-Ons page does
+    memory                      the app process's memory in MB: resident now and its peak (iOS: Jetsam's footprint)
     profile on|off              profile the app's thread (cProfile) between the two; `off` replies with the costliest
                                 calls by their own time and by their total (`profile off WORD`: only those whose
                                 file or function name contains WORD; `profile off callers NAME`: the callers
@@ -59,9 +69,9 @@ it's done, so real clocks (fades, timers) run as in play.
 """
 import base64
 import collections
-import io
 import json
 import logging
+import math
 import os
 from pathlib import Path
 import queue
@@ -152,6 +162,8 @@ class TestChannel:
         self.job = None                 # (generator, reply queue) of a command still running
         self.frames = None              # frame times (ms) since `timing on`, or None
         self.slow = []                  # frames of SLOW_MS or more since `timing on`: (ms, command, what showed after)
+        self.tags = []                  # each frame since `timing on`: (ms, what showed, a sound started, python, render)
+        self.sounds = None              # the sound counters at the frame before (_frame_tag)
         self.command = None             # the latest command, for `slow`
         self.profiler = None            # a cProfile.Profile while `profile on`
         self.last = time.perf_counter()
@@ -220,6 +232,10 @@ class TestChannel:
         if self.frames is not None:
             ms = (now - self.last) * 1000
             self.frames.append(ms)
+            try:
+                self.tags.append(_frame_tag(self, app, ms))
+            except Exception:                           # (a tag is for `timing off groups` only: never the frame)
+                self.tags.append((ms, '?', False, None, None))
             if ms >= SLOW_MS:                           # (what the slow frame ended on, to find what made it slow)
                 self.slow.append((ms, self.command, _label(app)))
         self.last = now
@@ -262,6 +278,119 @@ def _label(app):
     if game.fade:
         words.append('fade')
     return ', '.join(str(word) for word in words)
+
+
+def _sound_counters(app):
+    """The counters a started sound moves: the open story's engine's, and the drawing backend's mixer's (iOS)."""
+    game = app.game if app.screen == 'game' else None
+    engine = game.session.engine if game is not None else None
+    mixer = getattr(pygame, 'mixer', None)
+    return getattr(engine, 'sound_serial', None), getattr(mixer, 'sound_serial', None)
+
+
+def _host_times():
+    """iOS: Python's time on the frame before and the host's CoreGraphics drawing of the one before that (ms), from
+    the frame stats the iOS module keeps (platforms.ios.FrameStats); (None, None) elsewhere."""
+    import sys
+    module = sys.modules.get('exp_runtime.platforms.ios')
+    rows = getattr(getattr(getattr(module, '_host', None), 'frame_stats', None), 'rows', None)
+    if not rows:
+        return None, None
+    return rows[-1][1], rows[-1][3]
+
+
+def _frame_tag(channel, app, ms):
+    """One frame for `timing off groups`: (ms, what showed, whether a sound started, python ms, render ms)."""
+    counters = _sound_counters(app)
+    sound = channel.sounds is not None and any(now is not None and before is not None and now != before
+                                               for now, before in zip(counters, channel.sounds))
+    channel.sounds = counters
+    game = app.game if app.screen == 'game' else None
+    if game is None:
+        what = app.screen
+    elif game.menu_open:
+        what = 'pause'
+    elif game.host_prompt is not None:
+        what = 'prompt'
+    else:
+        action = game.session.pending
+        what = action.name if action is not None else 'running'
+    return (ms, what, sound) + _host_times()
+
+
+def _group_frames(tags):
+    """`timing off groups`: the frames by what showed and whether a sound started, each with its count, median, p90,
+    worst and how many took over 20 ms (iOS: Python's and the host's median and worst too), most frames first."""
+    groups = collections.defaultdict(list)
+    for tag in tags:
+        groups[(tag[1], tag[2])].append(tag)
+    out = []
+    for (what, sound), rows in sorted(groups.items(), key=lambda item: -len(item[1])):
+        times = sorted(row[0] for row in rows)
+        entry = dict(showed=what, sound=sound, frames=len(times), median_ms=round(statistics.median(times), 1),
+                     p90_ms=round(times[math.ceil(.9 * len(times)) - 1], 1), worst_ms=round(times[-1], 1),
+                     over_20ms=sum(1 for t in times if t > 20))
+        for index, name in ((3, 'python'), (4, 'render')):
+            values = [row[index] for row in rows if row[index] is not None]
+            if values:
+                entry[name + '_median_ms'] = round(statistics.median(values), 1)
+                entry[name + '_worst_ms'] = round(max(values), 1)
+        out.append(entry)
+    return out
+
+
+def _memory():
+    """The process's memory in MB: resident now and its peak, by the platform's own count."""
+    import sys
+    out = {}
+    if sys.platform == 'win32':
+        import ctypes
+        from ctypes import wintypes
+
+        class Counters(ctypes.Structure):
+            _fields_ = [('cb', wintypes.DWORD), ('PageFaultCount', wintypes.DWORD),
+                        ('PeakWorkingSetSize', ctypes.c_size_t), ('WorkingSetSize', ctypes.c_size_t),
+                        ('QuotaPeakPagedPoolUsage', ctypes.c_size_t), ('QuotaPagedPoolUsage', ctypes.c_size_t),
+                        ('QuotaPeakNonPagedPoolUsage', ctypes.c_size_t), ('QuotaNonPagedPoolUsage', ctypes.c_size_t),
+                        ('PagefileUsage', ctypes.c_size_t), ('PeakPagefileUsage', ctypes.c_size_t)]
+        counters = Counters()
+        counters.cb = ctypes.sizeof(counters)
+        kernel = ctypes.windll.kernel32
+        kernel.GetCurrentProcess.restype = wintypes.HANDLE
+        kernel.K32GetProcessMemoryInfo.argtypes = (wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD)
+        if kernel.K32GetProcessMemoryInfo(kernel.GetCurrentProcess(), ctypes.byref(counters), counters.cb):
+            out.update(resident_mb=counters.WorkingSetSize / 2**20, peak_mb=counters.PeakWorkingSetSize / 2**20,
+                       committed_mb=counters.PagefileUsage / 2**20)
+    elif Path('/proc/self/status').exists():           # Linux, Android
+        keys = {'VmRSS': 'resident_mb', 'VmHWM': 'peak_mb', 'VmSwap': 'swapped_mb'}
+        for line in Path('/proc/self/status').read_text().splitlines():
+            key, _, value = line.partition(':')
+            if key in keys and value.strip().endswith('kB'):
+                out[keys[key]] = int(value.split()[0]) / 1024
+    else:                                               # iOS, macOS
+        try:
+            import resource
+            out['peak_mb'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**20     # (bytes on Darwin)
+        except (ImportError, OSError):
+            pass
+        try:
+            out.update(_mach_footprint())
+        except Exception as error:                      # (a best effort: the peak above still answers)
+            out['footprint_error'] = f'{type(error).__name__}: {error}'
+    return {key: round(value, 1) if isinstance(value, float) else value for key, value in out.items()}
+
+
+def _mach_footprint():
+    """Darwin's task_info(TASK_VM_INFO): resident, its peak and phys_footprint, the figure Jetsam ends an app by (MB)."""
+    import ctypes
+    import ctypes.util
+    system = ctypes.CDLL(ctypes.util.find_library('System') or '/usr/lib/libSystem.B.dylib')
+    task = ctypes.c_uint.in_dll(system, 'mach_task_self_')
+    info = (ctypes.c_uint64 * 40)()
+    count = ctypes.c_uint(38)                           # TASK_VM_INFO_REV0_COUNT: through phys_footprint
+    if system.task_info(task, 22, ctypes.byref(info), ctypes.byref(count)) != 0:     # 22: TASK_VM_INFO
+        raise OSError('task_info failed')
+    return dict(resident_mb=info[2] / 2**20, resident_peak_mb=info[3] / 2**20, footprint_mb=info[18] / 2**20)
 
 
 class Commands:
@@ -472,6 +601,11 @@ class Commands:
         self._need_game().command(('resume',))
         return self._settled(0.6)
 
+    def do_menu(self, _):
+        """The pause menu's Main Menu row: the story saved and kept for Resume, the main menu showing."""
+        self._need_game().command(('main_menu',))
+        return self._settled(1.0)
+
     def do_set(self, rest):
         key, _, value = rest.partition(' ')
         wanted = value.strip() in ('on', 'true', '1')
@@ -556,9 +690,17 @@ class Commands:
         end = time.perf_counter() + 600
         while self.app.busy and time.perf_counter() < end:
             yield
+        before = self.app.game
         self.app.state.selected = self.app.selected = record_id
         self.app.enter_episode(resume=resume)
-        result = yield from self._until(lambda: self.game is not None and self.game.session.pending is not None, 60)
+
+        def shown():
+            # The requested story's first screen: not the one open before (whose screen would answer at once,
+            # 2026-11-18: `open` from Dating Beth replied with Dating Beth), unless it is that story resumed.
+            game = self.game
+            return (game is not None and game.session.pending is not None
+                    and game.session.resources.record['id'] == record_id and (game is not before or resume))
+        result = yield from self._until(shown, 60)
         return result
 
     def _window(self):
@@ -641,18 +783,117 @@ class Commands:
 
     def do_timing(self, rest):
         channel = self.channel
-        if rest == 'on':
-            channel.frames, channel.slow = [], []
+        words = rest.split()
+        if words[:1] == ['on']:
+            channel.frames, channel.slow, channel.tags, channel.sounds = [], [], [], None
             return dict(ok=True)
-        frames, channel.frames = channel.frames or [], None if rest == 'off' else channel.frames
+        frames, tags = channel.frames or [], channel.tags
+        if words[:1] == ['off']:
+            channel.frames = None
         if not frames:
             return dict(ok=True, frames=0)
         ordered = sorted(frames)
-        return dict(ok=True, frames=len(frames), fps=round(1000 * len(frames) / sum(frames), 1),
-                    median_ms=round(statistics.median(frames), 1), p90_ms=round(ordered[int(.9 * (len(ordered) - 1))], 1),
-                    worst_ms=round(ordered[-1], 1),
-                    slow=[dict(ms=round(ms, 1), command=command, after=label)
-                          for ms, command, label in sorted(channel.slow, reverse=True)[:8]])
+        out = dict(ok=True, frames=len(frames), fps=round(1000 * len(frames) / sum(frames), 1),
+                   median_ms=round(statistics.median(frames), 1), p90_ms=round(ordered[int(.9 * (len(ordered) - 1))], 1),
+                   worst_ms=round(ordered[-1], 1),
+                   slow=[dict(ms=round(ms, 1), command=command, after=label)
+                         for ms, command, label in sorted(channel.slow, reverse=True)[:8]])
+        if 'groups' in words[1:]:
+            out['groups'] = _group_frames(tags)
+        return out
+
+    def do_memory(self, _):
+        return dict(ok=True, **_memory())
+
+    # -- the library --------------------------------------------------------------------------------------------------
+
+    def _library(self):
+        if self.app.library is None:
+            raise ValueError('no library is open (`game shs` opens one)')
+        return self.app.library
+
+    def do_episodes(self, rest):
+        library, wanted = self._library(), rest.strip().lower()
+        saved = getattr(self.app, 'saved', None) or set()
+        rows = []
+        for record in library.episodes:
+            titles = record.get('titles') or ['']
+            if wanted and not record['id'].startswith(wanted) and not any(wanted in (t or '').lower() for t in titles):
+                continue
+            rows.append(dict(id=record['id'][:12], title=titles[0], pack=record.get('pack_id'),
+                             episode=record.get('episode_id'), revision=record.get('revision'),
+                             category=record.get('category'), builtin=bool(record.get('builtin')) or 'file' not in record,
+                             saved=record['id'] in saved))
+        return dict(ok=True, count=len(rows), episodes=rows)
+
+    def do_addons(self, _):
+        library = self._library()
+        return dict(ok=True, addons=[dict(name=addon.get('addon'), title=addon.get('title'), revision=addon.get('revision'),
+                                          id=addon['id'][:12]) for addon in getattr(library, 'addons', ())])
+
+    @staticmethod
+    def _one(records, rest, what):
+        """The one record an id prefix (6+) or a title names (exactly, else containing it); a ValueError naming the
+        matches otherwise."""
+        wanted = rest.strip().lower()
+        if not wanted:
+            raise ValueError(f'which {what}?')
+
+        def names(record):
+            return [(name or '').lower() for name in (record.get('titles') or [record.get('title')]) + [record.get('addon')]]
+        found = [r for r in records if len(wanted) >= 6 and r['id'].startswith(wanted)]
+        found = found or [r for r in records if wanted in names(r)]
+        found = found or [r for r in records if any(wanted in name for name in names(r))]
+        if len(found) != 1:
+            listed = [f"{r['id'][:12]} {(r.get('titles') or [r.get('title')])[0]}" for r in found[:10]]
+            raise ValueError(f'{len(found)} {what}s match {rest!r}' + (f': {listed} (use an id)' if found else ''))
+        return found[0]
+
+    def _data_job(self, title, work, done):
+        """A job: Data Management's background work (app.start_data_job), until its result is back on the app's thread
+        and `done(result)` has made the reply."""
+        end = time.perf_counter() + 600
+        while self.app.busy and time.perf_counter() < end:
+            yield
+        box = []
+        self.app.start_data_job(title, work, lambda result: box.append(done(result)))
+        end = time.perf_counter() + 600
+        while not box and time.perf_counter() < end:
+            yield
+        return box[0] if box else dict(ok=False, error=f'{title}: not done in 600 s')
+
+    def do_delete(self, rest):
+        """Delete Episodes for one episode (its saves, screenshots, previews, Decision Tree), as Data Management's list
+        does. Not one being played: a story on screen is refused; one kept for Resume behind the menu is let go first."""
+        library = self._library()
+        record = self._one(library.episodes, rest, 'episode')
+        if record.get('builtin') or 'file' not in record:
+            return dict(ok=False, error='a built-in episode is extracted again: not deleted')
+        held = self.app.game
+        if held is not None and held.session.resources.record['id'] == record['id']:
+            if self.app.screen == 'game':
+                return dict(ok=False, error='that episode is open: leave it first (`menu`)')
+            self.app.game = None                            # (held for Resume: its saves go with it)
+
+        def done(result):
+            self.app.refresh_saves()
+            self.app.picker = None
+            return dict(ok=True, deleted=record['id'][:12], title=(record.get('titles') or [''])[0], notice=list(result))
+        result = yield from self._data_job('Deleting episodes',
+                                           lambda lib: self.app.delete_episodes(lib, [record['id']]), done)
+        return result
+
+    def do_delete_addon(self, rest):
+        """Delete for one add-on, as Data Management's Add-Ons page does (the episodes that need it say so until it's
+        imported again)."""
+        library = self._library()
+        addon = self._one(getattr(library, 'addons', []), rest, 'add-on')
+
+        def done(count):
+            self.app.addon_deleted()
+            return dict(ok=bool(count), deleted=addon['id'][:12], name=addon.get('addon'), title=addon.get('title'))
+        result = yield from self._data_job('Deleting add-on', lambda lib: lib.remove_addons([addon['id']]), done)
+        return result
 
     def do_profile(self, rest):
         import cProfile

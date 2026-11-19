@@ -419,6 +419,17 @@ folder only) and `quit`. Actions wait for a fade or
 transition before and after, as a player would; `answer` refuses a row a player couldn't pick rather than hand it to
 the game.
 
+For the phone passes (roadmap 3.22, 2026-11-18) it also has `menu` (the pause menu's Main Menu: the story saved and
+kept for Resume), `episodes [TEXT]` (id, title, pack, episode, revision, category, whether it is built in and whether a
+saved game holds it), `addons` (name, title, revision, id), `delete ID|TITLE` and `delete-addon NAME|ID` (Data
+Management's own Delete for one episode, with its saves, screenshots, previews and Decision Tree, or one add-on; an id
+prefix of 6 or more, an exact title, or the one title that contains the text; a story on screen is refused, one kept for
+Resume is let go first), `memory` (the process's resident memory and its peak by the platform's own count: Windows'
+working set, Linux's and Android's VmRSS/VmHWM, iOS's phys_footprint, the figure Jetsam ends an app by) and
+`timing off groups` (the frames grouped by what showed and whether a sound started in them; on iOS each group also has
+Python's and the host's drawing time). `open` waits for the requested story itself, so opening one from inside another
+no longer replies with the old one's screen.
+
 `tools/test_channel.py` is the client. On Android, `--adb SERIAL --enable` writes the variable into the app's
 `p4a_env_vars.txt` with `run-as`, so only a debuggable build can have it (a release build never listens); an update
 resets that file. `--adb` forwards the port over USB. An iOS app gets no environment from its launch, so the channel
