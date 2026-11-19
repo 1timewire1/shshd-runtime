@@ -189,6 +189,30 @@ class ArenaRenderTests(unittest.TestCase):
         self.assertEqual(renderer.canvas.get_at((3, 3))[:3], (10, 200, 30))
         self.assertEqual(renderer.canvas.get_at((renderer.canvas.get_width() - 3, 600))[:3], (10, 200, 30))
 
+    def test_an_opaque_frame_picture_is_kept_as_an_opaque_copy_at_3_4_and_spread(self):
+        # g54, 2026-11-19: smoothscale left the opaque picture's alpha at 251-253, so the scaled copy was blended over
+        # the whole frame every frame (62 ms, 16 fps). Judged on the skin's picture, the copy has no alpha at all.
+        from unittest.mock import patch
+        from exp_runtime import hd_scale
+        from exp_runtime.nr_arena import NRArena
+        files = skin_files(self.pygame, frame=(10, 200, 30))
+        names = {**self.module.SKIN, 'frame.png': self.module.FRAME_PICTURE}
+        by_id = {resource: files[name] for name, resource in names.items()}
+        resources = SimpleNamespace(raw_asset=by_id.__getitem__, exists=by_id.__contains__)
+        for units in ((384, 512), (320, 711)):
+            renderer = self.module.NRArenaRenderer(resources)
+            renderer.frame_units = units
+            self.assertTrue(renderer.skin().frame_opaque())
+            with patch.object(hd_scale, 'S', 1):
+                renderer.draw(None, self.session(NRArena.opened(False, False)), now_ms=0)
+            scaled = renderer._frame_scaled[1]
+            self.assertEqual(scaled.get_masks()[3], 0, units)
+            self.assertEqual(scaled.get_at((scaled.get_width() // 2, 3))[:3], (10, 200, 30))
+        # A picture with a clear pixel stays blended.
+        skin = self.module.NRArenaRenderer(resources).skin()
+        skin.frame.set_at((0, 0), (0, 0, 0, 0))
+        self.assertFalse(skin.frame_opaque())
+
     def test_on_a_phone_the_arena_goes_straight_to_the_frames_size_without_its_sprites_edges_going_bright(self):
         from unittest.mock import patch
         from exp_runtime import hd_scale

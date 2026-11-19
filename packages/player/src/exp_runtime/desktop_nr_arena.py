@@ -253,6 +253,13 @@ class Skin:
             if resource in self.fonts and other in self.fonts:
                 self.fonts[resource].switch(ch, self.fonts[other])
 
+    def frame_opaque(self):
+        """Whether the frame's picture is wholly opaque (every pixel's alpha 255), judged once."""
+        if not hasattr(self, '_frame_opaque'):
+            from .desktop import opaque_enough
+            self._frame_opaque = self.frame is not None and opaque_enough(self.frame, 255)
+        return self._frame_opaque
+
     @staticmethod
     def _image(data):
         from io import BytesIO
@@ -587,13 +594,14 @@ class NRArenaRenderer:
                 # spread (fills_frame): the whole lengthened picture behind the whole frame
                 picture = long if self.fills_frame else long.subsurface(
                     (0, long.get_height() - picture.get_height(), *picture.get_size()))
-            scaled = pygame.transform.smoothscale(picture, size)
             # Wholly opaque (New Rules' backdrop is), it is drawn as a copy: blended, the frame's whole height every
-            # frame was most of a spread arena's 61 ms on the g54 (2026-11-17). The same pixels.
-            mask = getattr(pygame, 'mask', None)
-            if (mask is not None and scaled.get_masks()[3]
-                    and mask.from_surface(scaled, 254).count() == size[0] * size[1]):
-                scaled = scaled.convert()
+            # frame was most of a spread arena's 61 ms on the g54 (2026-11-17). The same pixels. Judged on the skin's
+            # own picture and scaled without its alpha: smoothscale (here and in `extend`) leaves an opaque picture's
+            # alpha at 251-253 all over, so a test of the scaled copy never passed and the arena blended it every
+            # frame (g54, 2026-11-19: 16 fps).
+            if skin.frame_opaque():
+                picture = picture.convert()
+            scaled = pygame.transform.smoothscale(picture, size)
             self._frame_scaled = ((size, self.frame_units), scaled)
         self.canvas.blit(self._frame_scaled[1], (0, 0))
         if self._layer_scaled is None or self._layer_scaled.get_size() != size:

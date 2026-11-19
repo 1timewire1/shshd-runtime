@@ -543,6 +543,10 @@
 
 ### Fixed
 
+- **New Rules' minigame arena ran at 16 fps on the g54** (device pass, 2026-11-19): the frame picture under the arena
+  is opaque, but smoothscale left its alpha at 251-253, so the test meant to draw it as an opaque copy never passed and
+  the whole frame was blended every frame (62 ms). Opacity is now judged on the skin's own picture and the scaled copy
+  has no alpha, in both looks: 16 -> 33-43 fps on the g54 (still climbing as its clocks rose).
 - **Fall '06's first day line had no background** (owner, 2026-11-19): `Monday, September 13.`, right after week 1's card,
   came before any event set a scene. The bedroom, where the day begins, is behind it now (version 5).
 - **A Creator episode's photo post showed an empty frame on the Faceplace wall** (owner's Creator tests, 2026-11-19): the

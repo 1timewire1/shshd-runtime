@@ -482,7 +482,10 @@ class X360ArenaRenderer(X360Deck, NRArenaRenderer):
         skin = self.skin()
         if skin.frame is not None:
             if self._frame_scaled is None or self._frame_scaled[0] != whole_size:
-                self._frame_scaled = (whole_size, pygame.transform.smoothscale(skin.frame, whole_size))
+                # Scaled as an opaque copy when the picture is (New Rules' is), else blended each frame: see
+                # NRArenaRenderer.draw (g54, 2026-11-19).
+                picture = skin.frame.convert() if skin.frame_opaque() else skin.frame
+                self._frame_scaled = (whole_size, pygame.transform.smoothscale(picture, whole_size))
             surface.blit(self._frame_scaled[1], (0, 0))
         else:
             surface.fill((0, 0, 0))
