@@ -1140,6 +1140,22 @@ class BrewShimTests(unittest.TestCase):
         rewriter.prologue(brew.opening_scene)
         self.assertEqual(yields(rewriter.finish()), [(11, (0, 26120))])
 
+    def test_fall_06s_cards_keep_the_owners_pick_not_its_first_picture(self):
+        # Owner, 2026-11-19: with the bedroom set first (SEASON_OPENING_SCENE), the story's first picture made week 1's card the
+        # bedroom (1015). A season's second build takes no first picture, so its cards are CARD_BY_TITLE's school (1108).
+        from unittest.mock import patch
+        brew = self.brew
+        cards = []
+        with patch.object(brew, '_translate', side_effect=lambda *a, **k: cards.append(a[6]) or b'story'), \
+                patch.object(brew, 'opening_picture', return_value=brew.SEASON_OPENING_SCENE), \
+                patch.object(brew, 'day_pictures', return_value={}):
+            brew.translate({}, 'res_xlarge.pud', {}, brew.PACK_SEASON, 1, calendar='season', title=brew.SEASON_TITLE)
+            brew.translate({}, 'story.pud', {}, brew.PACK_CAMPAIGN, 1)
+        self.assertEqual(cards, [-1, -1, -1, brew.SEASON_OPENING_SCENE])         # (each built twice: the first with no card)
+        self.assertEqual(brew.title_card(-1, brew.SEASON_TITLE, {}), 1108)
+        self.assertEqual(brew.title_card(brew.SEASON_OPENING_SCENE, brew.SEASON_TITLE, {}), 1015)
+        self.assertGreaterEqual(brew.SEASON_VERSION, 6)
+
     def test_07s_player_name_is_kept_by_the_leads_gender(self):
         # TRANSLATION_AUDITS.md §2 (owner, 2026-11-18): eight male and eight female '07 stories and Fall '06 (male); '08's
         # Campaign and the M.A.S.H. packs (76-81) keep `$USR`. Each key is a valid presentation record.

@@ -3484,8 +3484,10 @@ def translate(archive_resources, name, spec, pack=PACK_CAMPAIGN, episode=0, suff
         first = _translate(archive_resources, name, spec, pack, episode, suffix, -1, calendar, title_extra, title)
         # A calendar story's date cards each show the pick for the scene their day opens on (owner, 2026-11-11)
         days = day_pictures(first) if calendar is True else {}
-        return _translate(archive_resources, name, spec, pack, episode, suffix, opening_picture(first), calendar, title_extra,
-                          title, days)
+        # A season's cards keep the owner's pick for it (CARD_BY_TITLE: Fall '06's school), not its first picture, which is now
+        # SEASON_OPENING_SCENE's bedroom (owner, 2026-11-19: week 1's card turned into the bedroom).
+        card = -1 if calendar == 'season' else opening_picture(first)
+        return _translate(archive_resources, name, spec, pack, episode, suffix, card, calendar, title_extra, title, days)
     finally:
         _EVENT_LAYOUT['base'] = EVENT_BASE
         _SCENE_LAYOUT.update(location=SCENE_LOCATION_KEY, sky=SCENE_SKY_KEY)
@@ -3651,7 +3653,7 @@ NAME_KEYS_VERSION = 4                   # 4: the player's name under $USR_M / $U
 # line showed only the frame's backdrop (owner, 2026-11-19). Behind it now: the bedroom by day (location 40), where its first event
 # (`See tutorial?`) begins. Later days' lines keep the scene the day before ended on, as BREW's do.
 SEASON_OPENING_SCENE = BACKGROUND_BASE + SKY_MODES * 40
-SEASON_VERSION = 5                      # 5: SEASON_OPENING_SCENE
+SEASON_VERSION = 6                      # 5: SEASON_OPENING_SCENE; 6: its cards the owner's pick again, not that bedroom
 
 
 EMPTY_SCRIPT = b'kiwi\x01\x00' + bytes(6) + b'\x00\x01' + bytes((0x33,))   # KiWi v1: no data, one instruction, HALT
