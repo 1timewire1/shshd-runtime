@@ -250,6 +250,74 @@ class SyncTests(unittest.TestCase):
         self.assertEqual(finder.devices(), [])
 
 
+class ProbeTests(unittest.TestCase):
+    """Owner, 2026-11-19: Sync on iOS, which can't send or hear beacons: the sender also probes its network directly."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.discovery = free_port()
+
+    def receiver(self, host=None):
+        receiver = Receiver(self.root / 'stage', name='iPad', app_version='1.1.0', game='shs', host=host or Host(),
+                            port=0, bind='127.0.0.1', beacon_addresses=['127.0.0.1'], discovery_port=free_port())
+        self.addCleanup(receiver.stop)
+        return receiver
+
+    def test_a_probe_is_answered_with_the_receivers_name_and_nothing_else_happens(self):
+        receiver = self.receiver()
+        device = lan_sync.probe('127.0.0.1', receiver.port)
+        self.assertEqual((device.name, device.game, device.address, device.port, device.ttl),
+                         ('iPad', 'shs', '127.0.0.1', receiver.port, lan_sync.SCAN_TTL_S))
+        time.sleep(0.2)
+        self.assertIsNone(receiver.session)                            # a probe is no sender
+        self.assertIsNone(lan_sync.probe('127.0.0.1', free_port()))      # nothing listening there
+        with socket.create_connection(('127.0.0.1', receiver.port)) as stranger:   # a stranger's bytes are let go
+            stranger.sendall(b'GET / HTTP/1.0\r\n\r\n')
+        self.assertIsNotNone(lan_sync.probe('127.0.0.1', receiver.port))  # and it still answers
+
+    def test_a_finder_lists_a_receiver_its_probes_find_without_any_beacon(self):
+        receiver = self.receiver()
+        receiver.beacon.stop()                                         # as on iOS: no beacon reaches anyone
+        finder = Finder(port=self.discovery, bind='127.0.0.1', scan=['127.0.0.1'], scan_port=receiver.port)
+        self.addCleanup(finder.stop)
+        self.assertTrue(wait(self, lambda: [d.name for d in finder.devices()] == ['iPad']))
+        self.assertEqual(finder.devices('cod'), [])
+
+    def test_a_finder_still_probes_when_its_beacon_port_is_taken(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as holder:
+            holder.bind(('127.0.0.1', self.discovery))
+            with self.assertRaises(OSError):
+                Finder(port=self.discovery, bind='127.0.0.1')          # (without probes: as before)
+            receiver = self.receiver()
+            finder = Finder(port=self.discovery, bind='127.0.0.1', scan=['127.0.0.1'], scan_port=receiver.port)
+            self.addCleanup(finder.stop)
+            self.assertTrue(wait(self, lambda: finder.devices()))
+
+    def test_a_sync_after_probes_runs_as_before(self):
+        host, provider = Host(have={'a'}), Provider(self.root, ['a', 'b'])
+        receiver = self.receiver(host)
+        for _ in range(3):
+            self.assertIsNotNone(lan_sync.probe('127.0.0.1', receiver.port))
+        sender = SendSession('127.0.0.1', receiver.port, name='PC', app_version='1.1.0', games=('shs',),
+                             categories=('progress', 'episodes'), backup=False, provider=provider).start()
+        self.addCleanup(sender.cancel)
+        self.assertTrue(wait(self, lambda: sender.status == 'confirm' and receiver.session is not None
+                             and receiver.session.status == 'confirm'))
+        sender.confirm(True)
+        receiver.session.confirm(True)
+        self.assertTrue(wait(self, lambda: sender.finished and receiver.session.finished))
+        self.assertEqual((sender.status, receiver.session.status), ('done', 'done'))
+        self.assertEqual(host.applied[2], {'shs/progress.zip': b'bundle bytes', 'shs/episodes/0/b.exp': b'episode b' * 10000})
+
+    def test_the_addresses_probed_are_the_rest_of_the_network(self):
+        addresses = lan_sync.scan_addresses('10.0.0.8')
+        self.assertEqual((len(addresses), addresses[0], addresses[-1]), (253, '10.0.0.1', '10.0.0.254'))
+        self.assertNotIn('10.0.0.8', addresses)
+        self.assertEqual(lan_sync.scan_addresses('127.0.0.1'), [])
+
+
 class OlderProtocolTests(unittest.TestCase):
     def test_a_beacon_on_another_protocol_is_not_listed(self):
         probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

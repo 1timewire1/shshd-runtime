@@ -28,6 +28,14 @@ def native_binary(*, platform=2, signed=False):
 
 
 class IOSPrototypeTests(unittest.TestCase):
+    def test_sync_names_the_device_by_its_kind_and_the_app_asks_for_the_local_network(self):
+        # iPad, 2026-11-19: the Receive page named the iPad "localhost"; iOS's prompt had no reason of the app's own.
+        from exp_runtime.platforms.ios import device_name
+        self.assertEqual([device_name(m) for m in ('iPad11,1', 'iPhone14,2', 'iPod9,1', 'arm64')],
+                         ['iPad', 'iPhone', 'iPod', 'iOS device'])
+        info = plistlib.loads((ROOT / 'ios' / 'EXPRuntime' / 'Info.plist').read_bytes().replace(b'$(', b'('))
+        self.assertIn('Sync Devices', info['NSLocalNetworkUsageDescription'])
+
     def test_embedded_distribution_version_comes_from_project_metadata(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary)

@@ -148,6 +148,12 @@ class SyncFlow:
     # The network the sessions use (a test on one machine keeps them to its loopback).
     BIND, BEACON_ADDRESSES = ('127.0.0.1', ['127.0.0.1']) if LOOPBACK else ('0.0.0.0', None)
     DISCOVERY_PORT, PORT = lan_sync.DISCOVERY_PORT, lan_sync.PORT
+    # The sender also probes each address of its network (lan_sync.probe): iOS can't send or hear beacons. Not on the
+    # loopback, where both copies' beacons are heard.
+    SCAN = not LOOPBACK
+
+    def scan_addresses(self):
+        return lan_sync.scan_addresses() if self.SCAN else None
 
     def __init__(self, app):
         self.app = app
@@ -205,7 +211,8 @@ class SyncFlow:
             ui.menu.row_pages = dict(ui.menu.row_pages, **{SEND_PAGE: ('Send', tuple(rows), SYNC_PAGE)})
 
     def find(self):
-        """Find Receiver: listen for receivers' beacons, and list them on a page as they are heard."""
+        """Find Receiver: listen for receivers' beacons and probe the network for them, and list them on a page as they
+        are found."""
         ui = self.ui or self.pages()
         if not any(self.choices[key] for key, _ in SYNC_CATEGORIES):
             ui.notify('Nothing to Send', 'Turn on at least one of the things to send.')
@@ -213,7 +220,8 @@ class SyncFlow:
         self.stop()
         hold_multicast(True)
         try:
-            self.finder = lan_sync.Finder(port=self.DISCOVERY_PORT, bind=self.BIND)
+            self.finder = lan_sync.Finder(port=self.DISCOVERY_PORT, bind=self.BIND, scan=self.scan_addresses(),
+                                          scan_port=self.PORT)
         except OSError as error:
             hold_multicast(False)
             logging.warning('Sync: cannot listen for receivers: %s', error)

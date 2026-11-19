@@ -4,6 +4,10 @@
 
 ### Added
 
+- **Sync Devices on iPhone and iPad** (owner, 2026-11-19: every version alike): a sender also probes each address of its
+  network directly, as iOS blocks an app's broadcasts, so an iOS device finds receivers and is found. iOS asks for Local
+  Network access with the app's own reason, and the device calls itself "iPad" or "iPhone". Sync protocol 3: every
+  device needs this version to sync.
 - **User-Created Episodes in Now Airing** (owner, 2026-11-19): the Creator's episodes, which have no airdate, are listed
   last under their own row in both games, as On Demand lists them, instead of under Date Unknown.
 - **Zack and the doberman in the X360 leash game** (B1, owner, 2026-11-17/18; X360 add-on revision 21,

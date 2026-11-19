@@ -20,5 +20,6 @@
         <string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string>
     </array>
     <key>UIFileSharingEnabled</key><true/>
+    <key>NSLocalNetworkUsageDescription</key><string>Sync Devices finds your other devices running SHSHD Runtime on this network and sends your progress, episodes and add-ons between them.</string>
     <key>LSSupportsOpeningDocumentsInPlace</key><true/>
 </dict></plist>

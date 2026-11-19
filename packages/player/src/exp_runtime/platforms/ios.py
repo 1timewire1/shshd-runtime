@@ -27,6 +27,16 @@ LOG_NAME = 'shshd-runtime.log'
 LOG_LIMIT = 2 * 1024 * 1024
 
 
+def device_name(machine=None):
+    """This device's name for Sync Devices: its kind ("iPad", "iPhone"). iOS gives an app the owner's own name for the
+    device only with an entitlement, and the socket's host name is "localhost" (iPad, 2026-11-19)."""
+    machine = machine if machine is not None else os.uname().machine          # 'iPad11,1', 'iPhone14,2'
+    for kind in ('iPad', 'iPhone', 'iPod'):
+        if machine.startswith(kind):
+            return kind
+    return 'iOS device'
+
+
 def install_log(directory):
     """The runtime's log in the app's Documents (UIFileSharingEnabled: the Files app shows it under On My iPad), so a
     tester can send what went wrong. One file, started afresh once it passes LOG_LIMIT; warnings and errors only."""
@@ -94,6 +104,7 @@ class Host:
         from .. import momentum
         momentum.ENABLED = True                     # flicked lists, the wall and the tree glide on (as Android)
         graphics.native_controls = []               # the options' switches and sliders are UIKit's (controls)
+        graphics.device_name = device_name          # Sync Devices' name for this device (not the socket's "localhost")
         self.directory = Path(directory)
         install_log(self.directory)
         self.update_future = None

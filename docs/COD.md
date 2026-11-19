@@ -952,8 +952,11 @@ CoD's colours (`cod/hd_art.positional_frames`).
       - **Result:** both devices show the result, or the short reason it failed.
 
       Discovery is a UDP beacon from the receiver (port 47915), and the transfer runs over TCP (port 47914, or any
-      free port). Each side lists only receivers of its own protocol, so a device on an older build is not listed, and
-      one reached by its address says to update.
+      free port). The sender also probes each address of its network on port 47914 (`lan_sync.probe`, protocol 3; owner,
+      2026-11-19), since iOS blocks an app's broadcasts without Apple's multicast entitlement: an iPhone or iPad finds
+      receivers, and is found, that way, after the player allows Local Network access (the app's own reason,
+      `NSLocalNetworkUsageDescription`). An iOS device calls itself "iPad" or "iPhone". Each side lists only receivers
+      of its own protocol, so a device on an older build is not listed, and one reached by its address says to update.
 
       **Backups Folder** (Progress) and **Exports Folder** (Episodes) are offered on a computer only (owner,
       2026-10-30). Each row's value button shows the folder in use. Pressing it opens the file browser that Add

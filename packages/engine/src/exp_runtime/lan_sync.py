@@ -4,7 +4,10 @@ and what a receiver does with it.
 
 **Finding each other.** The receiver listens on TCP PORT (or any free port, if that one is taken) and announces itself
 with a small UDP beacon to the network's broadcast addresses every BEACON_S. The sender listens for beacons on
-DISCOVERY_PORT (an Android host holds a multicast lock meanwhile), or is given the receiver's address by hand.
+DISCOVERY_PORT (an Android host holds a multicast lock meanwhile), and also asks each address of its own network on
+PORT directly (`probe` -> `here` {app, protocol, name, game, port}, then the connection closes): iOS blocks an app's
+broadcasts without Apple's multicast entitlement, so an iPhone or iPad is found, and finds others, that way (owner,
+2026-11-19: Sync on every platform).
 
 **A connection** carries frames: a 4-byte big-endian length, a JSON header of that length, then `size` bytes of
 payload when the header names one. The conversation (a sync is of one game or of both, owner 2026-10-30):
@@ -41,12 +44,17 @@ import struct
 import threading
 import time
 
-PROTOCOL = 2                    # 2: a sync of both games, and a missing library sent whole
+PROTOCOL = 3                    # 2: a sync of both games, and a missing library sent whole; 3: receivers answer a probe
 APP = 'shshd-sync'
 PORT = 47914                    # the receiver's TCP port, when it is free (the address typed by hand needs no port)
 DISCOVERY_PORT = 47915          # the sender's UDP port, for receivers' beacons
 BEACON_S = 1.0
 DEVICE_TTL_S = 4.0              # a device not heard from for this long has gone
+SCAN_TTL_S = 15.0               # ...or, found by a probe, not answering one for this long (a sweep takes a few seconds)
+SCAN_S = 2.0                    # the pause between a sender's sweeps of its network
+PROBE_S = 0.4                   # how long a probe waits to connect to an address (most have nothing listening)
+PROBE_REPLY_S = 2.0             # ...and for the receiver's answer
+SCAN_WORKERS = 32
 CONNECT_S = 5.0
 IDLE_S = 30.0                   # a peer silent this long (outside the confirmations) is gone
 CONFIRM_S = 300.0               # how long a person has to answer the confirmation
@@ -92,6 +100,32 @@ def broadcast_addresses():
     if not address.startswith('127.'):
         found.append(address.rsplit('.', 1)[0] + '.255')
     return found
+
+
+def scan_addresses(own=None):
+    """The addresses a sender probes: the rest of its own network (assumed a /24, as broadcast_addresses does), none
+    without one."""
+    own = own or local_address()
+    if own.startswith('127.') or own.count('.') != 3:
+        return []
+    prefix = own.rsplit('.', 1)[0]
+    return [f'{prefix}.{n}' for n in range(1, 255) if f'{prefix}.{n}' != own]
+
+
+def probe(address, port=PORT, *, timeout=PROBE_S, reply_timeout=PROBE_REPLY_S):
+    """Ask `address` whether a receiver of this protocol waits on `port`: its Device, or None."""
+    try:
+        with socket.create_connection((address, port), timeout=timeout) as sock:
+            sock.settimeout(reply_timeout)
+            channel = Channel(sock)
+            channel.send(dict(type='probe', app=APP, protocol=PROTOCOL))
+            here = channel.header()
+    except (OSError, SyncError):
+        return None
+    if (here.get('type') != 'here' or here.get('app') != APP or here.get('protocol') != PROTOCOL
+            or not isinstance(here.get('port'), int) or not isinstance(here.get('name'), str)):
+        return None
+    return Device(here['name'][:40], str(here.get('game', '')), address, here['port'], ttl=SCAN_TTL_S)
 
 
 def pairing_code(sender_nonce, receiver_nonce):
@@ -186,6 +220,7 @@ class Device:
     address: str
     port: int
     seen: float = field(default_factory=time.monotonic)
+    ttl: float = DEVICE_TTL_S       # (SCAN_TTL_S when a probe found it)
 
     @property
     def key(self):
@@ -223,20 +258,46 @@ class Beacon:
 
 class Finder:
     """The sender's ear for beacons: `devices()` are the receivers heard in the last DEVICE_TTL_S (those speaking
-    this PROTOCOL)."""
+    this PROTOCOL). With `scan` (addresses), it also probes each of them on `scan_port` in turn, every SCAN_S: a
+    receiver found so lasts SCAN_TTL_S. A host whose broadcasts are blocked (iOS) still finds receivers by probing."""
 
-    def __init__(self, *, port=DISCOVERY_PORT, bind='0.0.0.0'):
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.sock.bind((bind, port))
-        self.sock.settimeout(0.1)
+    def __init__(self, *, port=DISCOVERY_PORT, bind='0.0.0.0', scan=None, scan_port=PORT):
         self.found = {}
         self.lock = threading.Lock()
         self.stopped = threading.Event()
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            self.sock.bind((bind, port))
+        except OSError:
+            self.sock.close()
+            if not scan:
+                raise
+            self.sock = None                    # (no beacons heard here; probes still find receivers)
+        else:
+            self.sock.settimeout(0.1)
         self.thread = threading.Thread(target=self._run, name='sync-finder', daemon=True)
         self.thread.start()
+        self.scanner = None
+        if scan:
+            self.scanner = threading.Thread(target=self._scan, args=(list(scan), scan_port), name='sync-scan',
+                                            daemon=True)
+            self.scanner.start()
+
+    def _scan(self, addresses, port):
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(SCAN_WORKERS, thread_name_prefix='sync-probe') as pool:
+            while not self.stopped.is_set():
+                for device in pool.map(lambda address: None if self.stopped.is_set() else probe(address, port),
+                                       addresses):
+                    if device is not None:
+                        with self.lock:
+                            self.found[device.key] = device
+                self.stopped.wait(SCAN_S)
 
     def _run(self):
+        if self.sock is None:
+            return
         try:
             while not self.stopped.is_set():
                 try:
@@ -261,13 +322,15 @@ class Finder:
     def devices(self, game=None):
         now = time.monotonic()
         with self.lock:
-            return [device for device in self.found.values() if now - device.seen < DEVICE_TTL_S
+            return [device for device in self.found.values() if now - device.seen < device.ttl
                     and (game is None or device.game in ('', game))]
 
     def stop(self):
         """Stop listening; the port is free on return (macOS won't bind it again while the thread still holds it)."""
         self.stopped.set()
         self.thread.join(1)
+        if self.scanner is not None:
+            self.scanner.join(PROBE_S + PROBE_REPLY_S + 1)
 
 
 # -- sessions -------------------------------------------------------------------------------------------------------
@@ -464,16 +527,24 @@ class ReceiveSession(Session):
       <game>/episodes/<n>/<file>.exp); returns the success message;
     - `install(game, folder)`: a whole library arrived in `folder` (its files at their paths); returns the message."""
 
-    def __init__(self, sock, stage, *, name, app_version, host):
+    def __init__(self, sock, stage, *, name, app_version, host, first=None):
         super().__init__(name, app_version)
         self.sock, self.stage, self.host = sock, Path(stage), host
+        self.first = first              # its first frame, when the Receiver read it already (to tell a probe apart)
         self.hello = None
         self.full = None                # (games, bytes) of the whole libraries offered after the sync
 
     def _run(self):
         self.sock.settimeout(IDLE_S)
         channel = self.channel = Channel(self.sock)
-        hello = self.hello = channel.expect('hello')
+        if self.first is not None:
+            if self.first['type'] == 'cancel':
+                raise SyncError(self.first.get('message') or CANCELLED)
+            if self.first['type'] != 'hello':
+                raise SyncError(LOST)
+            hello = self.hello = self.first
+        else:
+            hello = self.hello = channel.expect('hello')
         if hello.get('protocol') != PROTOCOL:
             channel.send(dict(type='hello', protocol=PROTOCOL, app=self.app_version, name=self.name,
                               nonce=self.nonce, error=VERSION))
@@ -566,6 +637,7 @@ class Receiver:
     def __init__(self, stage, *, name, app_version, game, host, port=PORT, bind='0.0.0.0', beacon_addresses=None,
                  discovery_port=DISCOVERY_PORT):
         self.stage, self.name, self.app_version, self.host = Path(stage), name, app_version, host
+        self.game = game
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             self.server.bind((bind, port))
@@ -593,9 +665,24 @@ class Receiver:
                 if self.session is not None and not self.session.finished:
                     sock.close()
                     continue
+                # The first frame: a sender's probe is answered and let go; anything else starts the session.
+                try:
+                    sock.settimeout(PROBE_REPLY_S)
+                    first = Channel(sock).header()
+                except (OSError, SyncError):
+                    sock.close()
+                    continue
+                if first['type'] == 'probe':
+                    try:
+                        Channel(sock).send(dict(type='here', app=APP, protocol=PROTOCOL, name=self.name,
+                                                game=self.game, port=self.port))
+                    except OSError:
+                        pass
+                    sock.close()
+                    continue
                 self.beacon.stop()
                 self.session = ReceiveSession(sock, self.stage, name=self.name, app_version=self.app_version,
-                                              host=self.host).start()
+                                              host=self.host, first=first).start()
         finally:
             self.server.close()
 
