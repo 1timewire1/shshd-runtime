@@ -328,7 +328,7 @@ finds them by name. Take one by reference (**Use from add-on**) for a character'
 ### Optional art
 
 **Optional art…** (SHS projects) lets an optional add-on stand in for your own pictures while a player has it and its switch
-is on: Surviving Hollywood's pictures by number (**Hollywood Art**), or a DSi location for each of your backgrounds (**DSi
+is on: Surviving Hollywood's pictures by number (**Use SHW Art in Preview**, called Hollywood Art until 2026-11-19), or a DSi location for each of your backgrounds (**DSi
 Backgrounds**; the DSi's two screens, as its own stories show them, once every background the episode can show has one). The
 add-on is never required: players without it see your pictures. The export writes the map into resource 3
 ([SCHEMA.md](SCHEMA.md#presentation-extension-shshd-runtime)), and MCP's `project_update` takes it as `optional_art`.

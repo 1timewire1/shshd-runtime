@@ -466,11 +466,15 @@ class CodPauseTests(unittest.TestCase):
 
     def test_the_add_ons_page_holds_the_translated_games_switches(self):
         from exp_runtime.desktop_pause_hd import ADDON_KEYS, EXTRAS_KEYS, GENERAL_KEYS
-        # The episode lists' order of their games, '07 to '11, then CoD's; the X360 Arena Skin, which needs two add-ons,
-        # last (owner, 2026-11-19).
-        self.assertEqual(ADDON_KEYS, ('arena_minigames', 'brew_08_backgrounds', 'hollywood_art', 'java_look', 'hires_portraits',
-                                      'ms3_characters', 'smartphone_music', 'word_grid_skin', 'ch_portraits', 'ch_backdrop',
+        # The episode lists' order of their games, '07 to '11, then CoD's; last the two that need two add-ons, Use SHW Art in
+        # Preview and the X360 Arena Skin, each with the other game's name in its colour (owner, 2026-11-19).
+        from exp_runtime.desktop_pause_hd import LABEL_TINTS, SWITCH_LABELS, TITLE_LOOK_NAMES, TITLE_MUSIC_NAMES
+        self.assertEqual(ADDON_KEYS, ('arena_minigames', 'brew_08_backgrounds', 'java_look', 'hires_portraits', 'ms3_characters',
+                                      'smartphone_music', 'word_grid_skin', 'ch_portraits', 'ch_backdrop', 'hollywood_art',
                                       'arena_skin'))
+        self.assertEqual((SWITCH_LABELS['hollywood_art'], LABEL_TINTS['hollywood_art']), ('Use SHW Art in Preview', 'SHW'))
+        self.assertEqual(list(TITLE_MUSIC_NAMES)[2:], ['brew', 'shw', 'nr', 'x360', 'shs11'])
+        self.assertEqual(list(TITLE_LOOK_NAMES)[2:], ['brew07', 'shw', 'brew08', 'nr', 'x360', 'shs11'])
         self.assertFalse(set(ADDON_KEYS) & (set(GENERAL_KEYS) | set(EXTRAS_KEYS)))
         self.assertEqual(self.menu.option_rows('addons', self.settings, self.menu.strings()), [])   # CoD: no such rows
         self.settings.update(ms3_characters=False, arena_minigames=True)

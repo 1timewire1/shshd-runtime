@@ -230,7 +230,7 @@ ADDON_EDITIONS = {'shsbrew': ('08', '07')}
 JOURNAL_STATS = 8                       # the most stats a quest journal shows
 # The optional add-ons whose pictures a project can show in place of its own (presentation `optional_art`), with the switch that
 # turns each on: Surviving Hollywood's (the profile's OPTIONAL_ART) and the DSi backgrounds (exp_runtime.dsi).
-OPTIONAL_ART_ADDONS = {'shshw': 'Hollywood Art', 'shsdsi': 'DSi Backgrounds'}
+OPTIONAL_ART_ADDONS = {'shshw': 'Use SHW Art in Preview', 'shsdsi': 'DSi Backgrounds'}     # each add-on's player option
 
 
 def primary_addon(project):

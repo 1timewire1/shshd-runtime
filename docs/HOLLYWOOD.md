@@ -19,7 +19,7 @@ None of the demo's code runs here, and no file of it ships with the runtime: `to
 | 1: *The Bright Lights* | The 1.0.2 demo's month-long Chapter 1 (21 scripts, 2,901 lines) | [`shshw`](ADDONS.md#shshw-surviving-hollywood) revision 8 |
 | 2: *The Bright Lights (Lite)* | The 1.0.4 demo's short retelling of it | `shshw` revision 4 |
 
-The add-on also gives the BREW games' *Surviving Hollywood Preview* the demo's look: see [Hollywood Art](#hollywood-art).
+The add-on also gives the BREW games' *Surviving Hollywood Preview* the demo's look: see [Use SHW Art in Preview](#use-shw-art-in-preview).
 
 ## Building
 
@@ -81,10 +81,10 @@ plays behind Use Translated Mini-Games, else as a word game; its instructions op
 do. The fight's four action-menu rounds are a timed word game (71). It matches the untranslated script line for
 line on all 112 of its answer paths.
 
-## Hollywood Art
+## Use SHW Art in Preview
 
-The BREW games' *Surviving Hollywood Preview* (31100, 73) was a trailer for this game. With `shshw` imported and the **Hollywood
-Art** switch on (the '07 tag, on by default), it shows the demo's painted portraits and backgrounds, its panel as the frame, its
+The BREW games' *Surviving Hollywood Preview* (31100, 73) was a trailer for this game. With `shshw` imported and the **Use SHW Art
+in Preview** switch on (the '07 tag, on by default; "Hollywood Art" until 2026-11-19), it shows the demo's painted portraits and backgrounds, its panel as the frame, its
 music by scene, its catch game's look, its moon on the time badge and its red carpet for the welcome dream.
 The Preview names those pictures and sounds itself (`optional_art`); [ADDONS.md](ADDONS.md#shshw-surviving-hollywood) has the
 mapping.
@@ -93,7 +93,7 @@ mapping.
 
 - **Title Screen Music** and **Title Screen Look** offer the demo's main-menu tune and its spotlight panel over the city map.
 - **Use Translated Mini-Games** and **Ask to Skip Mini-Games**, as for the other translated games.
-- **Hollywood Art**, for the Preview.
+- **Use SHW Art in Preview**, for the Preview.
 
 ## Not done
 

@@ -372,12 +372,12 @@ class HdShell:
         if len(offered) > 2:                            # (Default and Auto alone choose nothing)
             from .desktop_pause_hd import TITLE_MUSIC_NAMES
             settings['title_music'] = TITLE_MUSIC_NAMES[state.title_music]
-            settings['title_music_names'] = {key: TITLE_MUSIC_NAMES[key] for key in offered}
+            settings['title_music_names'] = {key: name for key, name in TITLE_MUSIC_NAMES.items() if key in offered}
         offered = self.app.title_look_offered()
         if len(offered) > 2:
             from .desktop_pause_hd import TITLE_LOOK_NAMES
             settings['title_look'] = TITLE_LOOK_NAMES[state.title_look]
-            settings['title_look_names'] = {key: TITLE_LOOK_NAMES[key] for key in offered}
+            settings['title_look_names'] = {key: name for key, name in TITLE_LOOK_NAMES.items() if key in offered}
         # Data Management's rows (main menu only).
         if self.app.library.addons:
             settings['manage_addons'] = True

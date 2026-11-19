@@ -250,7 +250,7 @@ turned silhouettes or phone.
 | 27101-27152 | The same portraits turned the other way. The player mirrors a right-hand portrait, so a face the demo drew turned to its left looks away from the middle there |
 
 **The Preview names them itself.** Its presentation record maps the BREW add-on's pictures and music to these (`optional_art`),
-and the runtime serves them while `shshw` is imported and the **Hollywood Art** switch is on (`EpisodeResources._optional_art`).
+and the runtime serves them while `shshw` is imported and the **Use SHW Art in Preview** switch is on (`EpisodeResources._optional_art`).
 The mapping is the translator's (`shw.PREVIEW_FACES`, `shw.PREVIEW_SCENES`, `shw.PREVIEW_MUSIC`; owner's picks):
 - **Faces:** four of the Preview's speakers (Chelsea, The Jeff, Milan, Donny) take the turned copy, decided one by one with the
   owner; the rest face front or toward the middle as drawn.
@@ -270,8 +270,9 @@ The mapping is the translator's (`shw.PREVIEW_FACES`, `shw.PREVIEW_SCENES`, `shw
 The Preview was version 4 from this change and is 5 now, with badges for one line only (3 had no catch skin or moon; 2 only
 the portraits and backgrounds).
 
-**Switch:** "Hollywood Art", with the '07 tag, on by default: on the Add-Ons page in the Preview, and on Per-Game Settings when
-the library holds `shshw`.
+**Switch:** "Use SHW Art in Preview" (its SHW in the Surviving Hollywood tag's gold, as the Arena Skin's X360; called "Hollywood
+Art" until 2026-11-19), with the '07 tag, on by default: on the Add-Ons page in the Preview, and on Per-Game Settings when the
+library holds `shshw`.
 
 ```sh
 python tools/translate/shw.py --demo-jar SURVIVING_HOLLYWOOD_DEMO_JAR --out OUT_DIR
@@ -443,18 +444,18 @@ tag is New Rules', since it changes New Rules' episodes, and its label names X36
 | Switch | Tag | Shown when |
 | --- | --- | --- |
 | Use Translated Mini-Games | | Translated episodes with minigames |
-| MS3 Characters | X360 | X360 episodes |
+| '08 Backgrounds | '07 | '07 BREW episodes |
+| Java '08 Look | '08 | '08 BREW episodes, with an addon built with the Java demo |
 | Hi-Res Portraits | NR | New Rules episodes |
-| HD Portraits in CoD, Backdrop | CH | CoD with `chslim` imported |
+| MS3 Characters | X360 | X360 episodes |
 | Smartphone Music | SHS11 | SHS '11 episodes |
 | Use Word Grid Skin | SHS11 | SHS '11 episodes, with HD's word game art |
-| Java '08 Look | '08 | '08 BREW episodes, with an addon built with the Java demo |
-| '08 Backgrounds | '07 | '07 BREW episodes |
-| Hollywood Art | '07 | The Surviving Hollywood Preview, with `shshw` imported |
+| HD Portraits in CoD, Backdrop | CH | CoD with `chslim` imported |
+| Use SHW Art in Preview | '07 | The Surviving Hollywood Preview, with `shshw` imported |
 | Use X360 Arena Skin | NR | New Rules episodes with `shsx360` imported; in play, also Use Translated Mini-Games on |
 
-They're listed in the episode list's order of their games ('07, '08, New Rules, X360, '11, then CoD's), the X360 Arena Skin last
-as it needs two add-ons (owner, 2026-11-19; `desktop_pause_hd.ADDON_KEYS`). DSi Backgrounds is an Extras option (above).
+They're listed in the episode list's order of their games ('07, '08, New Rules, X360, '11, then CoD's), and last the two that need
+two add-ons, Use SHW Art in Preview and the X360 Arena Skin (owner, 2026-11-19; `desktop_pause_hd.ADDON_KEYS`). DSi Backgrounds is an Extras option (above).
 
 On the main menus (owner, 2026-11-09), Add-Ons keeps only Use Translated Mini-Games, and the other switches are one page in,
 **Per-Game Settings**; the pause menu lists them all on Add-Ons. Episodes made in the Creator count for a switch through their

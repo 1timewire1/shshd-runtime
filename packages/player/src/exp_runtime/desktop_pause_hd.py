@@ -64,7 +64,8 @@ HIRES_PORTRAITS_LABEL = 'Hi-Res Portraits'      # translated New Rules episodes:
 MS3_CHARACTERS_LABEL = 'MS3 Characters'         # translated X360 episodes: the April build's looks, else the May build's
 JAVA_LOOK_LABEL = "Java '08 Look"               # translated BREW episodes: the Java '08 demo's backdrop, icons and catch game
 BREW_08_BACKGROUNDS_LABEL = "'08 Backgrounds"   # '07-badged BREW episodes: '08's art for the shared locations (decision 7B)
-HOLLYWOOD_ART_LABEL = 'Hollywood Art'           # the BREW Surviving Hollywood Preview: the demo's own art (`shshw`)
+HOLLYWOOD_ART_LABEL = 'Use SHW Art in Preview'  # the BREW Surviving Hollywood Preview: the demo's own art (`shshw`; owner,
+                                                # 2026-11-19: it was "Hollywood Art")
 DSI_BACKGROUNDS_LABEL = 'DSi Backgrounds'       # SHS's own episodes the DSiWare game drew: its two screens (`shsdsi`)
 DSI_PIXELS_NAMES = {'sharp': 'Sharp', 'smooth': 'Smooth'}      # ...enlarged with nearest neighbour (Sharp) or smoothly
 # Extras' DSi Backgrounds (owner, 2026-11-19): one choice, Off or on with its pixels Sharp or Smooth, in place of Add-Ons'
@@ -95,7 +96,7 @@ SWITCH_BADGES = {'hires_portraits': 'SHSNR', 'ms3_characters': 'SHSX360', 'java_
                  'ch_backdrop': 'CHC'}
 # The skin concerns New Rules' episodes, so it wears their tag; the other game it comes from is named in that game's
 # colour (owner, 2026-11-02). key -> the tag whose name in the label is coloured.
-LABEL_TINTS = {'arena_skin': 'SHSX360'}
+LABEL_TINTS = {'arena_skin': 'SHSX360', 'hollywood_art': 'SHW'}
 BADGE_PX, BADGE_PAD, BADGE_HEIGHT, BADGE_GAP = 20, 9, 30, 12
 
 
@@ -124,10 +125,10 @@ OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('controller', 
 GENERAL_KEYS = ('side_panels', 'device_vibration', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop',
                 'check_updates')
 EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames', 'skip_ahead', 'undo', 'grids_as_memory')
-# In the episode lists' order of their games (owner, 2026-11-19): '07, Surviving Hollywood, '08, New Rules, X360, '11, then
-# CoD's, and the X360 Arena Skin last, as it needs two add-ons.
-ADDON_KEYS = ('arena_minigames', 'brew_08_backgrounds', 'hollywood_art', 'java_look', 'hires_portraits', 'ms3_characters',
-              'smartphone_music', 'word_grid_skin', 'ch_portraits', 'ch_backdrop', 'arena_skin')
+# In the episode lists' order of their games (owner, 2026-11-19): '07, '08, New Rules, X360, '11, then CoD's; last the two
+# that need two add-ons, Use SHW Art in Preview ('07's story with `shshw`) and the X360 Arena Skin.
+ADDON_KEYS = ('arena_minigames', 'brew_08_backgrounds', 'java_look', 'hires_portraits', 'ms3_characters', 'smartphone_music',
+              'word_grid_skin', 'ch_portraits', 'ch_backdrop', 'hollywood_art', 'arena_skin')
 # General's Preferred Language (owner, 2026-11-18; it was Episode Titles): the episode titles, and the stories of the
 # add-ons that have a translation (DSi, SHS '11, the Creator's), in it where each has it (languages.language_settings);
 # `settings['preferred_language']` is the current one's name. Data Management's rows are actions, tapped like Help &
@@ -166,12 +167,14 @@ LANGUAGE_NAMES = {'en': 'English', 'fr': 'Français', 'it': 'Italiano', 'de': 'D
 # Add-Ons' Title Screen Music (main menu only; owner, 2026-11-09): the tune the main menu plays, the game's own, a translated
 # game's from its addon, or Auto (the game last played). The host offers those whose addon it has (`title_music_names`).
 TITLE_MUSIC_LABEL = 'Title Screen Music'
-TITLE_MUSIC_NAMES = {'default': 'Default', 'auto': 'Auto', 'brew': "'07 / '08", 'nr': 'New Rules', 'x360': 'X360',
-                     'shs11': "'11", 'shw': 'Surviving Hollywood'}
+# The games are listed in the episode lists' order ('07, Surviving Hollywood, '08, New Rules, X360, '11; owner, 2026-11-19);
+# BREW's one tune stands for '07 and '08 together, before Surviving Hollywood.
+TITLE_MUSIC_NAMES = {'default': 'Default', 'auto': 'Auto', 'brew': "'07 / '08", 'shw': 'Surviving Hollywood', 'nr': 'New Rules',
+                     'x360': 'X360', 'shs11': "'11"}
 # Add-Ons' Title Screen Look (main menu only; owner, 2026-11-16): the main menu's art, the same way; BREW's editions are two.
 TITLE_LOOK_LABEL = 'Title Screen Look'
-TITLE_LOOK_NAMES = {'default': 'Default', 'auto': 'Auto', 'nr': 'New Rules', 'brew07': "'07", 'brew08': "'08",
-                    'shw': 'Surviving Hollywood', 'shs11': "'11", 'x360': 'X360'}
+TITLE_LOOK_NAMES = {'default': 'Default', 'auto': 'Auto', 'brew07': "'07", 'shw': 'Surviving Hollywood', 'brew08': "'08",
+                    'nr': 'New Rules', 'x360': 'X360', 'shs11': "'11"}
 # On the main menu, Add-Ons keeps Use Translated Mini-Games, Title Screen Music and Title Screen Look, and the other add-on switches go one page
 # further in, Per-Game Settings (owner, 2026-11-09); the pause menu lists them all on Add-Ons, as before.
 PER_GAME_LABEL = 'Per-Game Settings'

@@ -437,7 +437,9 @@
 - **Options tidied** (owner, 2026-11-19):
   - **DSi Backgrounds** is one choice on Extras: Off, Sharp or Smooth. It replaces Add-Ons' switch and its DSi Pixels
     ([ADDONS.md](docs/ADDONS.md)).
-  - The add-on switches follow the episode list's order of their games, with the X360 Arena Skin last.
+  - The add-on switches follow the episode list's order of their games. The two that need two add-ons come last:
+    **Use SHW Art in Preview** (was Hollywood Art, its SHW in the Surviving Hollywood gold) and the X360 Arena Skin.
+  - Title Screen Music and Title Screen Look list the games in the episode list's order too.
   - Data Management's **Exports Folder** and **Backups Folder** show the folder under their name, as General's choices
     do, instead of on an orange button.
   - **Surviving Hollywood** is listed between '07 and '08 in the episode lists.
