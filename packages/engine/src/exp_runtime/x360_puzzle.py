@@ -36,6 +36,12 @@ SHOWING_SCORE = 'score'
 TIME_UP_MS = 2500
 CLOSING_MS = 300
 CLEARED_MS = 700                        # how long a clearing's effect is kept for the renderer
+# A flick (owner, 2026-11-18, ROADMAP 3.3; this fork's, on trial): a finger let go while its row or column is still moving
+# (its last step within COAST_LIVE_MS, and at least COAST_MIN steps in the last COAST_WINDOW_MS) carries it on a step for
+# each step past the first, COAST_MAX at most, each step's pause growing (COAST_PAUSES, in MOVE_MS), as far as the cursor
+# can go. Pressing again stops it.
+COAST_WINDOW_MS, COAST_LIVE_MS, COAST_MIN, COAST_MAX = 220, 90, 2, 3
+COAST_PAUSES = (1.6, 2.4, 3.4)
 # The sounds, in the X360 addon (tools/translate/x360_arena_art.py PUZZLE_SOUNDS).
 SOUND_DRAG, SOUND_CLEAR = 26441, 26442
 NORMAL, SELECTED, DESTROYED = 0, 1, 2   # Piece.State
@@ -70,6 +76,9 @@ class JewelPuzzle:
     bars: list = field(default_factory=lambda: [0] * KINDS)     # the progress bars, by index; nothing reads them
     target: list | None = None                      # where a held mouse or finger is, as [i, j]
     lock: str = ''                                  # 'row' or 'col': the way that drag first went
+    drag_steps: list = field(default_factory=list)  # now_ms of a held finger's latest steps (a flick's speed)
+    drag_way: str = ''                              # the direction of its latest step
+    coast: list | None = None                       # a flick carrying on: [direction, steps left, steps taken]
     cleared: list = field(default_factory=list)     # [i, j, index, now_ms] of the latest clearings, for the renderer
     sounds: list = field(default_factory=list)      # waiting for the session to play
 
@@ -307,6 +316,9 @@ class JewelPuzzle:
             self._shift(cells)
             self.sounds.append(SOUND_DRAG)
             self.check_pieces()
+            if self.target is not None:                 # a finger's drag: how fast it goes (let_go)
+                self.drag_steps = [t for t in self.drag_steps if self.now_ms - t <= COAST_WINDOW_MS] + [self.now_ms]
+                self.drag_way = direction
         return True
 
     def point(self, i, j):
@@ -319,6 +331,7 @@ class JewelPuzzle:
         if self.phase == RUNNING and 1 <= i <= SIZE and 1 <= j <= SIZE:
             self.cursor_i, self.cursor_j = i, j
             self.button, self.target, self.lock = True, [i, j], ''
+            self.coast, self.drag_steps = None, []
 
     def drag(self, i, j):
         """It has moved to over this cell (kept on the board): tick steps the cursor after it."""
@@ -326,7 +339,26 @@ class JewelPuzzle:
             self.target = [max(1, min(SIZE, i)), max(1, min(SIZE, j))]
 
     def let_go(self):
-        self.button, self.target, self.lock = False, None, ''
+        """The finger lifts: a flick carries its row or column on a little (COAST_*), the button held until it stops."""
+        recent = [t for t in self.drag_steps if self.now_ms - t <= COAST_WINDOW_MS]
+        flick = (self.phase == RUNNING and self.target is not None and len(recent) >= COAST_MIN
+                 and self.now_ms - recent[-1] <= COAST_LIVE_MS)
+        self.target, self.lock, self.drag_steps = None, '', []
+        if flick:
+            self.coast = [self.drag_way, min(COAST_MAX, len(recent) - 1), 0]
+        else:
+            self.button, self.coast = False, None
+
+    def _coast(self):
+        """A flick's next step, once the last one's pause is over; it stops at the board's edge or when it's done."""
+        if self.coast is None or self.moving_ms > 0 or self.check_falling:
+            return
+        direction, left, taken = self.coast
+        if left <= 0 or self.phase != RUNNING or not self.move(direction):
+            self.button, self.coast = False, None
+            return
+        self.moving_ms = round(MOVE_MS * COAST_PAUSES[min(taken, len(COAST_PAUSES) - 1)])
+        self.coast = [direction, left - 1, taken + 1]
 
     def _follow(self):
         if self.target is None or self.moving_ms > 0 or self.check_falling:
@@ -372,6 +404,7 @@ class JewelPuzzle:
             return False
         self.moving_ms = max(0, self.moving_ms - elapsed_ms)
         self._follow()
+        self._coast()
         if not self._step_board(random):
             return False
         self._step_chain()
@@ -421,5 +454,10 @@ class JewelPuzzle:
                 or not 0 <= self.total_time <= SECONDS or self.score < 0 or len(self.falling) != SIZE
                 or len(self.bars) != KINDS
                 or any(p['index'] != -1 and not 1 <= p['index'] <= KINDS for row in self.board for p in row)
-                or any(not (1 <= c[0] <= SIZE and 1 <= c[1] <= SIZE) for kind in self.pieces for c in kind)):
+                or any(not (1 <= c[0] <= SIZE and 1 <= c[1] <= SIZE) for kind in self.pieces for c in kind)
+                or self.drag_way not in ('', UP, DOWN, LEFT, RIGHT)
+                or not all(isinstance(t, int) for t in self.drag_steps)
+                or (self.coast is not None and (len(self.coast) != 3 or self.coast[0] not in (UP, DOWN, LEFT, RIGHT)
+                                                or not 0 <= self.coast[1] <= COAST_MAX
+                                                or not 0 <= self.coast[2] <= COAST_MAX))):
             raise ValueError('Invalid jewel puzzle state')

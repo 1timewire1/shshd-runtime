@@ -369,6 +369,46 @@ class PointerTests(unittest.TestCase):
         column = [row[2] for row in STRIPES]
         self.assertEqual([row[2] for row in kinds(game)], column[-2:] + column[:-2])
 
+    def test_a_flick_carries_the_row_on_and_slows(self):
+        """Let go while it's still moving: a step for each recent step past the first, each pause longer (owner,
+        2026-11-18, on trial)."""
+        game = laid_out(STRIPES)
+        game.grab(3, 1)
+        game.drag(3, 8)
+        run(game, x.MOVE_MS * 2 + 10)                            # three quick steps: 1 -> 4
+        self.assertEqual(game.cursor_j, 4)
+        game.let_go()
+        self.assertEqual((game.button, game.coast), (True, [x.RIGHT, 2, 0]))
+        run(game, 1000)
+        self.assertEqual((game.cursor_j, game.button, game.coast), (6, False, None))
+        self.assertEqual(kinds(game)[2], STRIPES[2][-5:] + STRIPES[2][:-5])
+
+    def test_a_slow_drag_or_a_pause_before_letting_go_stops_where_it_is(self):
+        game = laid_out(STRIPES)
+        game.grab(3, 1)
+        game.drag(3, 3)
+        run(game, x.MOVE_MS * 2 + 10)
+        run(game, 200)                                           # held still before lifting
+        game.let_go()
+        self.assertEqual((game.button, game.coast, game.cursor_j), (False, None, 3))
+
+    def test_a_flick_stops_at_the_edge_and_a_new_press_stops_it(self):
+        game = laid_out(STRIPES)
+        game.grab(3, 5)
+        game.drag(3, 8)
+        run(game, x.MOVE_MS * 2 + 10)
+        game.let_go()
+        run(game, 1000)
+        self.assertEqual((game.cursor_j, game.coast, game.button), (8, None, False))
+        game = laid_out(STRIPES)
+        game.grab(3, 1)
+        game.drag(3, 8)
+        run(game, x.MOVE_MS * 2 + 10)
+        game.let_go()
+        game.grab(5, 5)
+        self.assertIsNone(game.coast)
+        game.validate()
+
     def test_a_drag_off_the_board_stays_on_it(self):
         game = laid_out(STRIPES)
         game.grab(3, 7)

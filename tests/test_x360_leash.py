@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 from unittest.mock import Mock
 
 from exp_runtime import x360_games as x
@@ -437,11 +438,16 @@ class PlayerTests(unittest.TestCase):
         game.cast_anim, game.cast_ms = x.CAST_GAIN, 900                  # held on its last frame
         renderer.draw(session)
         self.assertEqual(renderer.canvas.get_at(self.CAST_POINT)[:3], tuple(c // 2 for c in self.CAST_COLOURS[x.CAST_GAIN][:3]))
+        from exp_runtime import desktop_x360_leash
         game.cast_from, game.cast_from_ms, game.cast_ms = x.CAST_IDLE, 0, 75   # a quarter in: the new one at half
-        renderer.draw(session)
+        with mock.patch.object(desktop_x360_leash, 'CAST_BLEND_MS', x.BLEND_MS):     # the prototype's blend
+            renderer.draw(session)
         mixed = renderer.canvas.get_at(self.CAST_POINT)
         self.assertEqual(mixed[3], 255)                 # (the pair never shows through)
         self.assertTrue(0 < mixed[2] < 255 and 0 < mixed[0] < 200)
+        with mock.patch.object(desktop_x360_leash, 'CAST_BLEND_MS', 0):             # a cut: the new one alone
+            renderer.draw(session)
+        self.assertEqual(renderer.canvas.get_at(self.CAST_POINT)[:3], self.CAST_COLOURS[x.CAST_GAIN][:3])
 
     def test_the_atlases_load_a_frame_at_a_time_idle_first_and_go_with_the_game(self):
         renderer, game, session = self.cast_renderer()

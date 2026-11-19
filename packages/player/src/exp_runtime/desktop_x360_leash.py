@@ -27,6 +27,10 @@ BAR_CENTRE = (690, 460)
 ICON_CENTRE, ICON, STICK = (384, 790), 250, 188     # control_icon: the arrows at 2.0, the joystick over them at 1.5
 FLIP_MS = 125                           # the joystick's four cells (MultilayerUVFlipTime 0.5)
 FADE_MS = 300                           # the machine's fade in and out
+# How long a new pose of the cast is drawn growing in over the old (the prototype's BlendAnimation is BLEND_MS, 0.3 s). The
+# pair read as "two frames at once" on the owner's g54 (2026-11-18, ROADMAP 2.1): on trial, a straight cut. The engine's
+# own clock (cast_from, the close's hold) keeps BLEND_MS either way.
+CAST_BLEND_MS = 0
 HINT_TEXT, HINT_Y, HINT_HEIGHT = 'Shake the way the arrows point!', 400, 40
 START_TEXT, START_Y, START_HEIGHT = 'Press OK to start', 480, 52
 STICK_PAST = .75                        # the native check: past this much of the stick's travel
@@ -226,7 +230,7 @@ class X360LeashRenderer(X360SlotRenderer):
 
     def _cast(self, surface, game):
         """Zack, the doberman and the collar under the bar; True if drawn. A blend draws what it comes from under it, the
-        new one growing in over BLEND_MS (each at up to twice its share, so the pair never shows through); the held close
+        new one growing in over CAST_BLEND_MS (each at up to twice its share, so the pair never shows through; 0: a cut); the held close
         fades them over its last BLEND_MS."""
         found = self.cast_place()
         if found is None:
@@ -241,7 +245,7 @@ class X360LeashRenderer(X360SlotRenderer):
         alpha = 1.0
         if game.phase == CLOSING and game.cast:
             alpha = min(1.0, max(0, game.phase_ms) / BLEND_MS)
-        share = min(1.0, game.cast_ms / BLEND_MS) if game.cast_from is not None else 1.0
+        share = (min(1.0, game.cast_ms / CAST_BLEND_MS) if game.cast_from is not None and CAST_BLEND_MS > 0 else 1.0)
         if share < 1:
             self._cast_blit(surface, cast, build, place, game.cast_from, game.cast_from_ms + game.cast_ms,
                             alpha * min(1.0, 2 * (1 - share)))

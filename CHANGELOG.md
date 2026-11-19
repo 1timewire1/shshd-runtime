@@ -514,6 +514,10 @@
   the music now wait for that first frame.
 - **Episode title cards keep off a narrow screen's edges** (owner, 2026-11-18): from 9:16 on, the title and subtitle
   sit 24 points further in each side (none at 3:4 or 2:3), where HD's own margin read as touching a phone's edge.
+- **The X360 leash cast cuts between poses** (owner's g54, 2026-11-18): the prototype's 0.3 s blend from one pose to the
+  next showed as two frames at once on a phone; the new pose now shows straight away.
+- **A flick in the X360 jewel puzzle** (owner, 2026-11-18): letting go of a row or column while it's still moving carries
+  it on a step or two (three at most), slowing, as far as the cursor can go; a slow drag stops where it's left.
 - **A saved game's picture lost the choice at 9:16 and taller** (2026-11-18, the switch matrix at 9:20): the picker's
   tile is drawn at 3:4, which from 9:16 lays the story out at another density, and that restarted the choice's fade-in,
   so the picture (and the frame after it) showed the scene with no choice or portrait. A phone at Fit Screen saved every
