@@ -244,14 +244,18 @@ class ModelTests(unittest.TestCase):
         import threading
         first, second, third = (record(i, 5, i, f'T{i}') for i in (1, 2, 3))
         model = PickerModel(library_with(self.root, [first, second, third]))
-        hold, order = threading.Event(), []
+        hold, taken, order = threading.Event(), threading.Event(), []
 
         def decode(entry):
+            taken.set()
             hold.wait(5)
             order.append(entry['id'])
 
         with patch.object(model, '_decode_preview', side_effect=decode):
-            model.want_preview(first)           # in hand, waiting on `hold` (or about to be)
+            model.want_preview(first)
+            # In hand before the others are asked for: a decoder thread that started late took `third` first (Android CI,
+            # 2026-11-19).
+            self.assertTrue(taken.wait(5))
             model.want_preview(second)
             model.want_preview(third)
             model.want_preview(second)
