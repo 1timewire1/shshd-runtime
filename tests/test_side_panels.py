@@ -340,6 +340,25 @@ class SidePanelTests(unittest.TestCase):
         self.draw(session)
         self.assertEqual(len(self.renderer.wall_targets), 2)               # the caption's row and the picture's
 
+    def test_a_plain_png_or_jpeg_photo_shows_no_wider_than_the_text(self):
+        # A Creator episode's own picture or a background it names (owner, 2026-11-19): not an image pack, so loaded as it
+        # is and made no wider than the text, keeping its shape; anything else stays a missing picture.
+        from exp_runtime.ui_assets import UIAssetError
+
+        def no_pack(pack, index):
+            raise UIAssetError('not an image pack')
+        self.art.frame_native = no_pack
+        buffer = BytesIO()
+        Image.new('RGB', (480, 720), (20, 120, 40)).save(buffer, 'PNG')
+        pictures = {1069: buffer.getvalue(), 7: b'not a picture'}
+        self.renderer.resources = SimpleNamespace(read_asset=lambda role: pictures[role])
+        message = SimpleNamespace(kind='continuation_image', image_id=1069)
+        picture = self.renderer._picture(message, 120)
+        self.assertEqual(picture.get_size(), (120, 180))
+        self.assertEqual(self.renderer._picture(message).get_size(), (480, 720))
+        self.assertIsNone(self.renderer._picture(SimpleNamespace(kind='continuation_image', image_id=7), 120))
+        self.assertIsNone(self.renderer._picture(SimpleNamespace(kind='continuation_image', image_id=8), 120))
+
     def test_a_post_without_a_face_keeps_its_continuation_under_it_and_is_not_made_up_to_56(self):
         # `-1 -11 text~url` (IMG_0299's "Looking for another fun game to try?" and its link).
         session = self.wall_session(1)

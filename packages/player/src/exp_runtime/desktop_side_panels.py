@@ -35,6 +35,7 @@ below the title bar (48.5 points).
 from collections import OrderedDict
 from dataclasses import dataclass, replace
 from functools import lru_cache
+from io import BytesIO
 import logging
 from math import ceil, floor
 from time import perf_counter
@@ -47,7 +48,7 @@ from .content import ContentError
 from .dt_layout import DEFAULT_SZ as DT_DEFAULT_SZ, FONT_UNIT, SZ_RANGE, Layout, Metrics
 from .fonts import TextStyle
 from .menu import MenuStrings
-from .ui_assets import ImagePack, UIAssetError
+from .ui_assets import ImagePack, UIAssetError, read_ui
 from .vector_text import cap_height, descent, load_font_sized
 
 PANEL = (224, 768)
@@ -860,7 +861,8 @@ class SidePanels:
                                     self._row_text(font_key, styles, caption, width, NAME_COLOR if link else (0, 0, 0)),
                                     font_key, None, 0.0))
                 if continuation.kind == 'continuation_image':
-                    rows.append(WallRow(key, face, False, False, link, None, None, font_key, self._picture(continuation), 0.0))
+                    rows.append(WallRow(key, face, False, False, link, None, None, font_key,
+                                        self._picture(continuation, width - 4), 0.0))
         for index, row in enumerate(rows):
             row.last = index + 1 == len(rows) or rows[index + 1].first
             row.height = self._row_height(row, styles)
@@ -883,14 +885,26 @@ class SidePanels:
             height = row.layout.height + (styles[row.font_key][1] if row.layout.lines else 0)
         return height + (TEXT_TOP if row.first else 0) + (LAST_PAD if row.last else 0)
 
-    def _picture(self, message):
-        """The image of a continuation that carries one (`GameModel::loadImage`, frame 0), or None."""
+    def _picture(self, message, width=None):
+        """The image of a continuation that carries one (`GameModel::loadImage`, frame 0), or None. shshd-runtime: a plain
+        PNG or JPEG (a Creator episode's own picture, or a background it names; no original story posts a photo) loads as
+        it is, made no wider than the text (`width` points) so it fits the wall (owner, 2026-11-19)."""
         if message.kind != 'continuation_image' or message.image_id < 0:
             return None
         try:
             return self.art.frame_native(message.image_id, 0)
         except (ContentError, UIAssetError, CgBIError, AttributeError, IndexError, ValueError, pygame.error):
+            pass
+        try:
+            data = read_ui(self.resources, message.image_id)
+            if not data.startswith((b'\x89PNG', b'\xff\xd8')):
+                return None
+            image = pygame.image.load(BytesIO(data)).convert_alpha()
+        except (ContentError, UIAssetError, AttributeError, KeyError, OSError, ValueError, pygame.error):
             return None
+        if width and image.get_width() > width:
+            image = pygame.transform.smoothscale(image, (round(width), max(1, round(image.get_height() * width / image.get_width()))))
+        return image
 
     def _wall(self, panel, engine, wall, s, origin):
         _, inline = self.alert.emoticon_font()

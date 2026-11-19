@@ -539,6 +539,9 @@
 
 ### Fixed
 
+- **A Creator episode's photo post showed an empty frame on the Faceplace wall** (owner's Creator tests, 2026-11-19): the
+  wall read a photo only as an image pack, since no original story posts one, so a project's own picture or a background
+  it named (PNG or JPEG) showed nothing. Those now load as they are, no wider than the post's text.
 - **Train That Brain! stopped after about 33 rounds of "Keep up the brain training?"** (owner, 2026-11-18): the menu
   called itself again each round and ran out of New Rules' 256-word script stack. The call now keeps its caller's
   return, so the menu loops (revision 2; [NEW_RULES.md](docs/NEW_RULES.md#how-a-script-is-translated)).
