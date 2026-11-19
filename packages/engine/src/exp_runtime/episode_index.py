@@ -356,7 +356,7 @@ def format_airdate(iso_date):
 
 def build_chronological_rows(records, release_dates, *, redundant_bundles=(), vote_packages=(),
                              bundles_label='Season Bundles', vote_label='Vote Packages', unknown_label='Date Unknown',
-                             legacy_label='Legacy Game Episodes'):
+                             legacy_label='Legacy Game Episodes', created_label=USER_CREATED_LABEL):
     """Rows for a "Now Airing" list grouped by release year (earliest first) instead of by category.
 
     `release_dates` maps an episode's own title (`record['titles'][0]`) to an ISO date string, external
@@ -365,13 +365,17 @@ def build_chronological_rows(records, release_dates, *, redundant_bundles=(), vo
     a season sold again as one bundle after already airing week by week, or a bonus purchase that isn't a
     narrative episode in its own right. A title in neither set, whatever it is, sorts into its own real year.
     shshd-runtime: an episode translated from another SHS game (tagged on import, content.legacy_fields) is listed
-    under `legacy_label`, after the bundles: it shares its smartphone twin's title, not its airdate.
+    under `legacy_label`, after the bundles: it shares its smartphone twin's title, not its airdate. An episode made in
+    the Creator (filed under USER_CREATED_LABEL on import, content.authored_fields) has no airdate either: it is listed
+    under `created_label`, last, as On Demand lists it (owner, 2026-11-19).
     """
-    years, vote, bundles, legacy, unknown = {}, [], [], [], []
+    years, vote, bundles, legacy, unknown, created = {}, [], [], [], [], []
     for record in records:
         title = record['titles'][0]
         if record.get('legacy'):
             legacy.append(record)
+        elif record.get('category') == USER_CREATED_LABEL:
+            created.append(record)
         elif title in vote_packages:
             vote.append(record)
         elif title in redundant_bundles:
@@ -395,6 +399,8 @@ def build_chronological_rows(records, release_dates, *, redundant_bundles=(), vo
         result.append(PickerRow('extra:legacy', legacy_label, tuple(sorted(legacy, key=sort_key))))
     if unknown:
         result.append(PickerRow('extra:unknown', unknown_label, tuple(sorted(unknown, key=sort_key))))
+    if created:
+        result.append(PickerRow('extra:created', created_label, tuple(sorted(created, key=sort_key))))
     return result
 
 

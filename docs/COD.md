@@ -1150,6 +1150,8 @@ its Chapter One's date, as SHS's season bundles do. Nothing is set apart:
 - CoD has no vote packs and no redundant bundles.
 - Its one overlap, Perfect Getaway's Now Airing file, repeats an interlude inside the Volume 13 set, which is the only
   copy of that volume's other chapters. Both stay, each at its own date (both 2013).
+- Episodes made in the Creator have no airdate: in both games they're listed last, under User-Created Episodes, as On
+  Demand lists them (owner, 2026-11-19; `episode_index.build_chronological_rows`).
 
 **Previews** are generated title cards, as for SHS's non-bundled episodes: about 29 seconds for all 74, cached in the
 library's `thumbs/`. Volume One's "Prologue" card is black with the title, as on the device (IMG_0474). A Volume set

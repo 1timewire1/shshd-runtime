@@ -264,6 +264,19 @@ class ChronologicalRowTests(unittest.TestCase):
                           ('Legacy Game Episodes', ['King of Diss', 'Dancing Queen', 'Making Some Dough']),
                           ('Date Unknown', ['Day of Diss'])])
 
+    def test_now_airing_lists_the_creators_episodes_last_under_their_own_row(self):
+        # Owner, 2026-11-19: User-Created Episodes gets its own Now Airing row, as Legacy Game Episodes has.
+        made = [dict(record(n, 9, n, title), category=ei.USER_CREATED_LABEL)
+                for n, title in ((2, 'Sample Journal'), (1, 'Creator Test Drive'))]
+        translated = dict(record(3, 31300, 1, 'King of Diss'), legacy='SHSNR', category='New Rules')
+        rows = ei.build_chronological_rows([*made, translated, record(4, 31400, 1, 'Day of Diss'),
+                                            record(5, 101, 1, 'Dated', variant='hd')], {'Dated': '2010-01-01'})
+        self.assertEqual([(r.key, r.title, [e['titles'][0] for e in r.episodes]) for r in rows],
+                         [('year:2010', '2010', ['Dated']),
+                          ('extra:legacy', 'Legacy Game Episodes', ['King of Diss']),
+                          ('extra:unknown', 'Date Unknown', ['Day of Diss']),
+                          ('extra:created', ei.USER_CREATED_LABEL, ['Creator Test Drive', 'Sample Journal'])])
+
     def test_a_year_sorts_its_own_episodes_by_date_not_by_pack_id(self):
         records = [record(1, 201, 1, 'Second', variant='hd'), record(2, 101, 1, 'First', variant='hd')]
         dates = {'Second': '2010-02-01', 'First': '2010-01-01'}

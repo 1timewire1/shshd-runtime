@@ -4,6 +4,8 @@
 
 ### Added
 
+- **User-Created Episodes in Now Airing** (owner, 2026-11-19): the Creator's episodes, which have no airdate, are listed
+  last under their own row in both games, as On Demand lists them, instead of under Date Unknown.
 - **Zack and the doberman in the X360 leash game** (B1, owner, 2026-11-17/18; X360 add-on revision 21,
   [X360.md](docs/X360.md#the-leash-game-dating-beth)): Dating Beth's leash game now shows Zack wrestling the doberman on
   its collar and lead behind the power bar, as the prototype stages it in the pound: its idle tug, the gain and loss
