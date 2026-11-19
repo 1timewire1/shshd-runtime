@@ -286,6 +286,18 @@ NOTE_CAMERA = [-.0175, 3.0619, -11.7855, .6349, 18.7875, .9874, 20.875]
 
 
 @unittest.skipUnless(importlib.util.find_spec('pygame'), 'desktop extra is not installed')
+class EffectSizeTests(unittest.TestCase):
+    def test_every_size_falls_on_a_short_ladder(self):
+        # iPad, 2026-11-19: each particle at a new size every frame made a new tinted (and PNG-encoded) sprite every
+        # frame, and the Diss Battle's effects held it near 30 fps. Every particle of every hit now shares the ladder's
+        # sizes, each within 4% of the exact one.
+        from exp_runtime.desktop_x360_deck import fx_side
+        exact = [n / 10 for n in range(5, 4000)]
+        self.assertLessEqual(len({fx_side(pixels) for pixels in exact}), 110)
+        for pixels in exact:
+            self.assertLessEqual(abs(fx_side(pixels) - pixels), max(1, pixels * 0.04))
+
+
 class DrawingTests(unittest.TestCase):
     def setUp(self):
         os.environ['SDL_VIDEODRIVER'] = os.environ['SDL_AUDIODRIVER'] = 'dummy'

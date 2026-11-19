@@ -549,6 +549,11 @@
 
 ### Fixed
 
+- **The Diss Battle stuttered on the iPad after a catch** (iPad, 2026-11-19): every particle of a hit's flares and
+  puffs was made again each frame at its new size (the deck's shared store also emptied itself every 400 pictures),
+  and on iOS each new sprite was tinted in Python and sent as a PNG. Sizes now go in 6% steps, the sprites keep
+  their own store, and on iOS the puffs turn in 6 degree steps and fade as they are drawn: the battle went from 31
+  to 42 fps on the iPad (p90 67 to 34 ms). The flares' additive glow is still costly there.
 - **The iPad's episode picker stuttered while its tiles filled in** (iPad, 2026-11-19): each tile's picture was
   decoded on the drawing thread, as on a computer, and the picker held 17-28 fps. The iPad now loads them behind the
   scene with the placeholder meanwhile, as Android does.

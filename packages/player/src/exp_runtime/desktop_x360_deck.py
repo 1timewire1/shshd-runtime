@@ -35,6 +35,17 @@ SWING = ((47, 1300), (35, 2100), (62, 1700), (41, 2700), (55, 1100), (30, 2300),
 # A remix arrow's burst (minigame/bps/eat_swap), as a good note's in its colours.
 FX['swap'] = dict(FX['good'], colours=((90, 170, 255), (255, 150, 30)))
 ADDED = ('good', 'swap')                # the flares that glow over what's under them
+FX_SIDE_STEP = 1.06                     # an effect sprite's sizes go up in 6% steps, so each is made once and kept
+FX_TURN_STEP = 6                        # a native host's puffs turn in 6 degree steps (`_draw_effect`)
+FX_CACHE = 3000                         # effect sprites kept (`_fx_cache`)
+
+
+def fx_side(pixels):
+    """An effect sprite's side in whole pixels, on FX_SIDE_STEP's ladder above 8: the particles shrink or grow every
+    frame, and at a new size each frame every frame tinted (and on iOS encoded) a new picture."""
+    if pixels <= 8:
+        return max(1, round(pixels))
+    return round(FX_SIDE_STEP ** round(math.log(pixels, FX_SIDE_STEP)))
 
 
 class X360Deck:
@@ -294,29 +305,62 @@ class X360Deck:
         (r0, g0, b0), (r1, g1, b1) = spec['colours']
         colour = (round(r0 + (r1 - r0) * t), round(g0 + (g1 - g0) * t), round(b0 + (b1 - b0) * t))
         k = self.k
+        native = getattr(surface, 'native', False)
         for vx, vy, size, name, spin, turn in particles:
             x = x0 + vx * seconds
             y = y0 + vy * seconds + 0.5 * spec['gravity'] * FX_SPEED * seconds * seconds
             scale = (1 - t) if not spec['grow'] else 1 + (spec['grow'] - 1) * t
-            side = max(1, round(size * FX_SIZE * scale * k))
+            side = fx_side(size * FX_SIZE * scale * k)
             image = self._tinted(name, colour, side, additive=kind in ADDED)
             if kind in ADDED:                  # the flares glow over what's under them, as the X360 adds them
                 surface.blit(image, image.get_rect(center=(round(x * k), round(y * k))),
                              special_flags=pygame.BLEND_RGB_ADD)
                 continue
+            alpha = round(255 * (1 - t)) if kind == 'bad' else None
+            if native:
+                # A native host (iOS) takes each new picture across as a PNG: the puffs' turn in steps, each turned
+                # sprite kept, and their fade as the blit's own alpha, not a copy (iPad, 2026-11-19: the Diss Battle's
+                # effects made a picture a particle each frame and held it near 30 fps).
+                if spec['spin']:
+                    image = self._turned(image, round((turn + spin * seconds) / FX_TURN_STEP) * FX_TURN_STEP)
+                if alpha is not None:
+                    image.set_alpha(alpha // 16 * 16)
+                surface.blit(image, image.get_rect(center=(round(x * k), round(y * k))))
+                if alpha is not None:
+                    image.set_alpha(None)
+                continue
             if spec['spin']:
                 image = pygame.transform.rotate(image, turn + spin * seconds)
-            if kind == 'bad':
+            if alpha is not None:
                 image = image.copy()
-                image.set_alpha(round(255 * (1 - t)))
+                image.set_alpha(alpha)
             surface.blit(image, image.get_rect(center=(round(x * k), round(y * k))))
+
+    def _turned(self, image, angle):
+        """`image` turned by `angle` degrees (a multiple of FX_TURN_STEP), kept while that image is."""
+        key = ('fx-turn', id(image), angle % 360)
+        cache = self._fx_cache()
+        found = cache.get(key)
+        if found is None or found[0] is not image:
+            found = (image, pygame.transform.rotate(image, angle))
+            cache[key] = found
+        return found[1]
+
+    def _fx_cache(self):
+        """The effect sprites' own store: in `_scaled`, the record's pictures emptied it every 400 and the sprites were
+        made again over and over (iPad, 2026-11-19). Capped well above what one battle's effects use."""
+        cache = self.__dict__.get('_fx')
+        if cache is None or len(cache) > FX_CACHE:
+            cache = self._fx = {}
+        return cache
 
     def _tinted(self, name, colour, side, additive=False):
         """An effect sprite (white, its brightness as alpha) in `colour`, `side` pixels square; kept, by colour step.
         `additive`: premultiplied on black, for adding (BLEND_RGB_ADD), so only its light is added."""
         step = tuple(c // 16 * 16 for c in colour)
         key = ('fx', name, step, side, additive)
-        found = self._scaled.get(key)
+        cache = self._fx_cache()
+        found = cache.get(key)
         if found is None:
             found = pygame.transform.smoothscale(self.picture(name), (side, side))
             found.fill((*step, 255), special_flags=pygame.BLEND_RGBA_MULT)
@@ -325,5 +369,5 @@ class X360Deck:
                 light.fill((0, 0, 0))
                 light.blit(found, (0, 0))
                 found = light
-            self._scaled[key] = found
+            cache[key] = found
         return found
