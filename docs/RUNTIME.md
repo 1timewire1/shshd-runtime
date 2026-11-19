@@ -420,7 +420,7 @@ transition before and after, as a player would; `answer` refuses a row a player 
 the game.
 
 For the phone passes (roadmap 3.22, 2026-11-18) it also has `menu` (the pause menu's Main Menu: the story saved and
-kept for Resume), `episodes [TEXT]` (id, title, pack, episode, revision, category, whether it is built in and whether a
+kept for Resume), `main play|airing|demand|options|help|more` (a main menu button; `back` returns), `episodes [TEXT]` (id, title, pack, episode, revision, category, whether it is built in and whether a
 saved game holds it), `addons` (name, title, revision, id), `delete ID|TITLE` and `delete-addon NAME|ID` (Data
 Management's own Delete for one episode, with its saves, screenshots, previews and Decision Tree, or one add-on; an id
 prefix of 6 or more, an exact title, or the one title that contains the text; a story on screen is refused, one kept for

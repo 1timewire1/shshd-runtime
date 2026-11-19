@@ -135,7 +135,10 @@ class ChoiceRenderer:
                                         text_history=getattr(session, 'bitmap_history', None),
                                         timer_panel=not self.hd_timer())
             self.cached_page = page
-            if game is None or self.cached_key is None or self.cached_key[0] != key[0] or self.cached_key[3] is None:
+            # The key before a density change (set_story_scale): the same choice laid out again, not a new one, keeps
+            # its age (2026-11-18: a saved game's 3:4 screenshot at 9:20 drew the choice faded out, and so did the frame after).
+            previous = self.cached_key if self.cached_key is not None else self.__dict__.pop('rescaled_key', None)
+            if key != previous and (game is None or previous is None or previous[0] != key[0] or previous[3] is None):
                 self.age_ms = 0          # a new choice (or the quiz's first deal): it fades in, its labels fly on again
             self.cached_key = key
         return self.cached_page

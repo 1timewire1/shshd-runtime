@@ -26,6 +26,7 @@ it's done, so real clocks (fades, timers) run as in play.
     skip / undo                 Skip Ahead / Undo
     pause / resume              the pause menu
     menu                        the pause menu's Main Menu: the story saved and kept for Resume, the main menu shown
+    main BUTTON                 a main menu button: play (the tiles), airing, demand, options, help, more; `back` returns
     set KEY on|off              a switch, as Options does (undo, skip_ahead, java_look, arena_minigames, ...);
                                 `set dsi_pixels sharp|smooth`, `set preferred_language en|fr|it|de|es` (the titles,
                                 and the DSi's, '11's and the Creator's stories where they have it)
@@ -605,6 +606,20 @@ class Commands:
         """The pause menu's Main Menu row: the story saved and kept for Resume, the main menu showing."""
         self._need_game().command(('main_menu',))
         return self._settled(1.0)
+
+    MAIN_BUTTONS = ('play', 'airing', 'demand', 'more', 'options', 'help')
+
+    def do_main(self, rest):
+        """`main play|airing|demand|options|help|more`: a button of the HD main menu, as a tap on it (the picker's tiles,
+        Now Airing, Episodes On Demand, Options...); `back` returns."""
+        button = rest.strip().lower()
+        shell = self.app.shell
+        if button not in self.MAIN_BUTTONS:
+            return dict(ok=False, error=f'main is one of {", ".join(self.MAIN_BUTTONS)}')
+        if shell is None or self.app.screen != 'main' or getattr(shell, 'stage', None) != 'main':
+            return dict(ok=False, error='the main menu is not showing')
+        shell.activate((button,))
+        return self._settled(1.2)
 
     def do_set(self, rest):
         key, _, value = rest.partition(' ')

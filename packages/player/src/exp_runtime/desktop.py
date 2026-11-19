@@ -179,6 +179,8 @@ def set_story_scale(renderer, scale):
         renderer.canvas = pygame.Surface(size, pygame.SRCALPHA).convert_alpha()
     if hasattr(renderer, 'name_layer'):
         renderer.name_layer = pygame.Surface(size, pygame.SRCALPHA).convert_alpha()
+    if getattr(renderer, 'cached_key', None) is not None:
+        renderer.rescaled_key = renderer.cached_key     # (ChoiceRenderer.page: the same choice keeps its fade's age)
     for name in ('cached_key', 'cached_page', 'hint_key'):
         if hasattr(renderer, name):
             setattr(renderer, name, None)
@@ -5379,8 +5381,14 @@ class Desktop:
         only its width."""
         opened, self.menu_open = self.menu_open, False
         shape = self.aspect_ratio
+        # What the last presented frame left (the drawing reads the frame's size from it, as `present` sets it after
+        # the story is drawn), kept for the live frame that follows.
+        presented = {key: self.__dict__[key] for key in self.PRESENTED if key in self.__dict__}
         if not shaped:
             self.aspect_ratio = '3:4'
+            # This render's own shape from its first draw: else the story is laid out for the live frame and presented
+            # in a 3:4 one, which from 9:16 (a narrower frame) lost the choice and the portrait (2026-11-18, 9:20 save).
+            self._frame_width, self._frame_tall = self.frame_units()
         # A live (non-capture) Desktop's own render() ends with pygame.display.flip(), presenting straight to the
         # real screen -- fine for its normal per-frame use, but this method also runs mid-transition (the
         # end-of-episode card's sepia source, a resume tile's screenshot) purely to read pixels back off `window`,
@@ -5398,7 +5406,12 @@ class Desktop:
         frame = self.bg_viewport.clip(self.window.get_rect())
         if shaped:
             size = (size[0], max(1, round(frame.height * size[0] / max(1, frame.width))))
-        return pygame.transform.smoothscale(self.window.subsurface(frame).copy(), size)
+        picture = pygame.transform.smoothscale(self.window.subsurface(frame).copy(), size)
+        self.__dict__.update(presented)
+        return picture
+
+    # What `present` sets for the frame it drew and the next frame's drawing reads (snapshot puts them back).
+    PRESENTED = ('_frame_width', '_frame_tall', '_present_scale', '_frames', 'viewport', 'bg_viewport')
 
     def _coast_panels(self):
         """Each frame: the story tree and the wall gliding on after a drag (momentum); the panels' own clamps end a

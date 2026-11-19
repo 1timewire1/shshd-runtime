@@ -267,6 +267,33 @@ class FrameWideLayerTests(unittest.TestCase):
                 self.assertFalse(frame_wide((round(320 * scale), round(480 * scale))))      # the column alone
 
 
+class ChoiceRescaleTests(unittest.TestCase):
+    def test_a_choice_drawn_at_another_density_keeps_its_fade(self):
+        """A saved game's screenshot is drawn at 3:4: from 9:16 that is another density (set_story_scale), and the same
+        choice laid out again must not fade in from nothing (2026-11-18: a 9:20 save's thumbnail had no choice)."""
+        import os
+        os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+        import pygame
+        pygame.display.init()
+        self.addCleanup(pygame.display.quit)
+        pygame.display.set_mode((8, 8))
+        from exp_runtime.desktop import set_story_scale
+        from exp_runtime.desktop_choice import ChoiceRenderer
+        renderer = ChoiceRenderer(None, None, None, scale=2)
+        renderer.layout = SimpleNamespace(page=lambda *args, **kwargs: SimpleNamespace())
+        engine = SimpleNamespace(word_game=None, numbers={}, number_key=lambda *key: key, character_art_variants={})
+        session = SimpleNamespace(pending=SimpleNamespace(details=dict(character_id=-1)), engine=engine, scene=1,
+                                  vm=SimpleNamespace(steps_executed=5))
+        renderer.page(session)
+        renderer.age_ms = 2200
+        set_story_scale(renderer, 2.4)
+        renderer.page(session)
+        self.assertEqual(renderer.age_ms, 2200)                 # the same choice: still faded in
+        session.vm.steps_executed = 9
+        renderer.page(session)
+        self.assertEqual(renderer.age_ms, 0)                    # the next choice fades in
+
+
 class TitleCardShapeTests(unittest.TestCase):
     def test_a_card_is_the_frames_shape_with_its_subtitle_kept_from_the_bottom(self):
         from exp_runtime.desktop_title import CodTitleRenderer, HdTitleRenderer

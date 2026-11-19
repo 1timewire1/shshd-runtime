@@ -186,7 +186,7 @@
   first about one with a game in progress. The translators write version 1; the Creator has a Version box.
 - **Test channel** (`SHSHD_TEST_CHANNEL`, 127.0.0.1 only; debuggable Android builds): drive the app by its state.
   For the phone passes (2026-11-18, [RUNTIME.md](docs/RUNTIME.md#test-channel-this-fork)) it gained `resize W H`,
-  `menu`, `episodes`, `addons`, `delete` and `delete-addon` (Data Management's own Delete), `memory` and
+  `menu`, `main`, `episodes`, `addons`, `delete` and `delete-addon` (Data Management's own Delete), `memory` and
   `timing off groups`, and `open` from inside a story now waits for the one it asked for.
 - **Options' choice pages:** Episode Titles, Start In, Confirm Button and Word Grid Controls open a page of their
   values, and show the current one under their names.
@@ -507,6 +507,11 @@
 
 ### Fixed
 
+- **A saved game's picture lost the choice at 9:16 and taller** (2026-11-18, the switch matrix at 9:20): the picker's
+  tile is drawn at 3:4, which from 9:16 lays the story out at another density, and that restarted the choice's fade-in,
+  so the picture (and the frame after it) showed the scene with no choice or portrait. A phone at Fit Screen saved every
+  choice that way. The same choice laid out again now keeps its fade, and the picture is drawn in its own 3:4 frame
+  from the start.
 - **New Rules' tutorial bubbles under a phone's status bar** (owner's g54, 2026-11-18): the bubbles at New Rules'
   screen top ("In this game and others...") were drawn where Android puts its status bar. The arena now takes the
   status bar's share of the frame's top, as the HD games' HUDs do, and a bubble keeps below it (one that points at
