@@ -59,6 +59,22 @@ class TestChannelTests(unittest.TestCase):
         self.assertIn('no story is open', replies[3]['error'])
         self.assertTrue(replies[4]['ok'])
 
+    def test_a_window_button_is_found_by_its_label_before_its_position(self):
+        # iPad, 2026-11-19: the sound prompt labels its buttons by string id ('25' No, '24' Yes); `window 24` was taken
+        # as a position and found nothing.
+        no, yes = SimpleNamespace(label='25'), SimpleNamespace(label='24')
+        pressed = []
+        shell = SimpleNamespace(stack=SimpleNamespace(stack=[1], current='prompt', press=pressed.append),
+                                data=SimpleNamespace(menu=lambda key: SimpleNamespace(title='5', message='65535'),
+                                                     items=lambda key: [no, yes]))
+        channel = self.module.Commands(None, SimpleNamespace(shell=shell))
+        with mock.patch.object(channel, '_idle', return_value=dict(ok=True)):
+            for wanted in ('24', '0', 'yes', '25', '1'):
+                self.assertTrue(channel.do_window(wanted)['ok'], wanted)
+            self.assertFalse(channel.do_window('7')['ok'])
+            self.assertFalse(channel.do_window('maybe')['ok'])
+        self.assertEqual(pressed, [yes, no, yes, no, yes])
+
     def test_timing_and_profile_report_on_the_frames_between(self):
         port = free_port()
         channel = self.module.TestChannel(port, Path(self.temporary.name))

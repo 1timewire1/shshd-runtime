@@ -734,10 +734,15 @@ class Commands:
         if window is None:
             return dict(ok=False, error='no window is open')
         buttons, wanted = window[1], rest.strip().lower()
-        if wanted.isdigit():
+        # A label first: a game's own window labels its buttons by string id ('25', '24'), which a position never
+        # reached (iPad, 2026-11-19: `window 24` found no button '24' in ['25', '24']).
+        found = next((b for b in buttons if str(b.label).lower() == wanted), None)
+        if found is not None:
+            pass
+        elif wanted.isdigit():
             found = buttons[int(wanted)] if int(wanted) < len(buttons) else None
-        else:
-            found = buttons[-1] if wanted == 'yes' else next((b for b in buttons if str(b.label).lower() == wanted), None)
+        elif wanted == 'yes':
+            found = buttons[-1]
         if found is None:
             return dict(ok=False, error=f'no button {rest!r}: {[str(b.label) for b in buttons]}')
         self.app.shell.stack.press(found)
