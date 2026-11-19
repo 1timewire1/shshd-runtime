@@ -543,6 +543,8 @@
 
 ### Fixed
 
+- **Fall '06's first day line had no background** (owner, 2026-11-19): `Monday, September 13.`, right after week 1's card,
+  came before any event set a scene. The bedroom, where the day begins, is behind it now (version 5).
 - **A Creator episode's photo post showed an empty frame on the Faceplace wall** (owner's Creator tests, 2026-11-19): the
   wall read a photo only as an image pack, since no original story posts one, so a project's own picture or a background
   it named (PNG or JPEG) showed nothing. Those now load as they are, no wider than the post's text.

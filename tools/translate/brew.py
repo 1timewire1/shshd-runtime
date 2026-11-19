@@ -3634,6 +3634,8 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
         # The player's name kept apart by the lead's gender (presentation name_keys; owner, 2026-11-18)
         resources[PRESENTATION_RECORD] = presentation_bytes(dict(name_keys={'$USR': player_key}))
         resources[VERSION_RECORD] = version_bytes(NAME_KEYS_VERSION)
+    if calendar == 'season':
+        resources[VERSION_RECORD] = version_bytes(SEASON_VERSION)
     resources[1] = Metadata(pack, episode, (title + suffix,) * 5).to_bytes()
     return encode_exp(resources)
 
@@ -3645,6 +3647,11 @@ PLAYER_NAME_KEYS = {**{(31100, e): '$USR_M' for e in (14, 16, 20, 23, 25, 26, 27
                     **{(31100, e): '$USR_F' for e in (6, 8, 9, 15, 19, 21, 28, 74)},
                     (31200, 1): '$USR_M'}
 NAME_KEYS_VERSION = 4                   # 4: the player's name under $USR_M / $USR_F (owner, 2026-11-18)
+# Fall '06 opens on week 1's card and then its first day's line, `Monday, September 13.`, before any event has set a scene, so the
+# line showed only the frame's backdrop (owner, 2026-11-19). Behind it now: the bedroom by day (location 40), where its first event
+# (`See tutorial?`) begins. Later days' lines keep the scene the day before ended on, as BREW's do.
+SEASON_OPENING_SCENE = BACKGROUND_BASE + SKY_MODES * 40
+SEASON_VERSION = 5                      # 5: SEASON_OPENING_SCENE
 
 
 EMPTY_SCRIPT = b'kiwi\x01\x00' + bytes(6) + b'\x00\x01' + bytes((0x33,))   # KiWi v1: no data, one instruction, HALT
@@ -3669,12 +3676,17 @@ def season_driver(name, spec, table, title, card, own_missing):
     def step(s):
         new_day = lambda: (week_card(s, context, card), day_line(s, context))
         season_step(
-            s, context, lambda: (write_date(s, context, lambda: get_global(s, DAY_KEY)), new_day()),
+            s, context, lambda: (write_date(s, context, lambda: get_global(s, DAY_KEY)), opening_scene(s), new_day()),
             lambda: (badge_off(s), s.text(END_TITLE), s.text(END_TEXT), s.push(END_ARGUMENT), s.call(33, 3), s.call(7, 0),
                      s.emit(0x33)),
             new_day)
     rewriter.prologue(step)
     return rewriter.finish().to_bytes()
+
+
+def opening_scene(s):
+    """The season's first scene behind its first day's line (SEASON_OPENING_SCENE), which would otherwise show no background."""
+    s.push(0); s.push(SEASON_OPENING_SCENE); s.call(11, 2)
 
 
 def season_script(spec, table, own_missing, body):

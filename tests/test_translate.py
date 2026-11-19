@@ -1129,6 +1129,17 @@ class BrewShimTests(unittest.TestCase):
         import brew
         self.brew = brew
 
+    def test_fall_06s_first_day_line_has_the_bedroom_behind_it(self):
+        # Owner, 2026-11-19: the season's first line, `Monday, September 13.`, came before any event set a scene. The driver sets
+        # the bedroom by day (location 40, BACKGROUND_BASE + 3 x 40 = 26120, where `See tutorial?` begins) before it.
+        from test_vm import program as vm_program
+        brew = self.brew
+        self.assertEqual(brew.SEASON_OPENING_SCENE, 26120)
+        self.assertGreater(brew.SEASON_VERSION, brew.NAME_KEYS_VERSION)
+        rewriter = Rewriter(vm_program(0x33), zero_gap=True)
+        rewriter.prologue(brew.opening_scene)
+        self.assertEqual(yields(rewriter.finish()), [(11, (0, 26120))])
+
     def test_07s_player_name_is_kept_by_the_leads_gender(self):
         # TRANSLATION_AUDITS.md §2 (owner, 2026-11-18): eight male and eight female '07 stories and Fall '06 (male); '08's
         # Campaign and the M.A.S.H. packs (76-81) keep `$USR`. Each key is a valid presentation record.
