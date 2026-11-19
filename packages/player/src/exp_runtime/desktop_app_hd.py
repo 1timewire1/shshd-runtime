@@ -657,9 +657,17 @@ class AppOptions:
 
         when = app.backup_when(manifest)
         skipped = f' {" and ".join(missing)} has no library here and is skipped.' if missing else ''
-        self.confirm('Restore Progress?', f'The saved games, Decision Trees and names of {titles} will be replaced by '
-                     f'the backup\'s from {when}. The current progress is backed up first.{skipped}', 'Restore',
-                     lambda: app.start_data_job('Restoring progress', job, done))
+        from .progress_bundle import partial
+        if partial(manifest):
+            # A sync's backup (one game's) holds only what the sync replaced: those episodes go back, the others stay.
+            count = sum(manifest.get('saved', {}).values())
+            text = (f'The {count} episode{"s" if count != 1 else ""} in the backup from {when} get their saved games and '
+                    f'Decision Trees back, and {titles}\'s names go back to the backup\'s. Every other episode keeps its '
+                    f'progress. The current progress is backed up first.{skipped}')
+        else:
+            text = (f'The saved games, Decision Trees and names of {titles} will be replaced by the backup\'s from '
+                    f'{when}. The current progress is backed up first.{skipped}')
+        self.confirm('Restore Progress?', text, 'Restore', lambda: app.start_data_job('Restoring progress', job, done))
 
     def reset_names(self):
         def done(results):

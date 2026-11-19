@@ -974,17 +974,25 @@ class Application:
 
     def restore_progress(self, key):
         """A backup's row: asks, backs up the current progress, then restores the backup's."""
-        from .progress_bundle import read_manifest
+        from .progress_bundle import partial, read_manifest
         path = self.backup_choices[key]
-        when = self.backup_when(read_manifest(path))
+        manifest = read_manifest(path)
+        when = self.backup_when(manifest)
 
         def run():
             player, options = self.player_data(), self.option_values()
             self.start_data_job('Restoring progress', lambda library: self._restore(library, path, player, options),
                                 self.progress_restored)
-        self.shell.confirm('Restore Progress?', f'The saved games, Decision Trees and names of {self.game_title} will '
-                           f'be replaced by the backup\'s from {when}. Your current progress is backed up first.',
-                           'Restore', run)
+        if partial(manifest):
+            # A sync's backup holds only what the sync replaced: those episodes go back, the others stay (owner).
+            count = len(manifest.get('saved', ()))
+            text = (f'The {count} episode{"s" if count != 1 else ""} in the backup from {when} get their saved games and '
+                    f'Decision Trees back, and {self.game_title}\'s names go back to the backup\'s. Every other '
+                    f'episode keeps its progress. Your current progress is backed up first.')
+        else:
+            text = (f'The saved games, Decision Trees and names of {self.game_title} will be replaced by the backup\'s '
+                    f'from {when}. Your current progress is backed up first.')
+        self.shell.confirm('Restore Progress?', text, 'Restore', run)
 
     def _restore(self, library, path, player, options=None):
         """Restore's work: the current progress backed up (with the options, when the backup brings options back: a

@@ -83,6 +83,8 @@ def write_bundle(directory, game, player, titles, target, *, note='', keep=None,
                     note=note, saved=[dict(id=key, title=titles.get(key, '')) for key in saved],
                     trees=sum(1 for name in names if name.endswith('.json.gz')),
                     names=len(player.get('names', {})) + sum(len(table) for table in player.get('name_sets', {}).values()))
+    if keep is not None:
+        manifest['partial'] = True      # some of the library's progress only (a sync's backup): restored by merging
     target = Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(dir=target.parent, prefix='.progress-', suffix='.zip', delete=False) as stream:
@@ -195,12 +197,23 @@ def merge_bundle(directory, path, game):
     return manifest, player
 
 
+def partial(manifest):
+    """Whether a bundle holds only some of a library's progress: a sync's "before sync" backup of what it replaced
+    (marked since 2026-11-19; older ones are known by their note)."""
+    return bool(manifest.get('partial')) or manifest.get('note') == 'before sync'
+
+
 def restore_bundle(directory, path, game):
     """Replace the library's progress files with the bundle's; returns (manifest, its player.json data). The bundle is
-    checked whole before anything changes, then unpacked beside the library and swapped in."""
+    checked whole before anything changes, then unpacked beside the library and swapped in. A partial bundle (a sync's
+    backup) is merged instead (owner, 2026-11-19): the episodes it holds get their progress back, every other episode's
+    stays."""
     directory = Path(directory)
     with ZipFile(path) as bundle:
         manifest, members, player = _checked(bundle, game)
+    if partial(manifest):
+        return merge_bundle(directory, path, game)
+    with ZipFile(path) as bundle:
         stage = Path(tempfile.mkdtemp(prefix='.restore-', dir=directory))
         try:
             for info in members:

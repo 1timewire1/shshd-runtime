@@ -944,6 +944,8 @@ CoD's colours (`cod/hd_art.positional_frames`).
         device (`DEVICE_OPTIONS`: the vibration switches and the controller settings).
       - **Back Up Receiver First:** what would be replaced goes first into the receiver's backups folder, as a
         "before sync" backup that holds the options too. Restore Progress puts options back when a backup has them.
+        Such a backup holds only the episodes the sync replaced (its manifest says `partial`), so restoring it merges
+        (owner, 2026-11-19): those episodes get their saves and trees back, and every other episode's progress stays.
       - **A missing game:** a sent game the receiver has no library of is named after the sync, with the size of the
         sender's library of it, and both people are asked again. Yes sends that whole library (its
         `LIBRARY_PARTS`), installed where the game's library belongs; no keeps what was already synced.

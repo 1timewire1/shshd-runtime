@@ -55,6 +55,32 @@ class BundleTests(unittest.TestCase):
         self.assertTrue((other / 'content' / 'a.exp').exists())
         self.assertEqual([p.name for p in other.iterdir() if p.name.startswith('.')], [])   # no stage left behind
 
+    def test_a_syncs_backup_restores_by_merging_and_leaves_the_other_episodes(self):
+        # Owner, 2026-11-19 (roadmap 9.13): a "before sync" backup holds only what the sync replaced, so restoring it
+        # gives those episodes their progress back and leaves every other episode's alone.
+        from exp_runtime.progress_bundle import merge_bundle, overwritten, partial
+        receiver = library_folder(self.root / 'receiver', {'a.shs-auto.json': 'A before', 'b.shs-auto.json': 'B'})
+        incoming = library_folder(self.root / 'sender', {'a.shs-auto.json': 'A sent'}, tree=False)
+        sent = self.root / 'sent.zip'
+        write_bundle(incoming, 'shs', {}, {}, sent)
+        backup = self.root / 'before sync.zip'
+        manifest = write_bundle(receiver, 'shs', {'names': {'$USR': 'Zoe'}}, {}, backup, note='before sync',
+                                keep=overwritten(sent))
+        self.assertTrue(manifest['partial'] and partial(manifest))
+        self.assertEqual([entry['id'] for entry in manifest['saved']], ['a'])
+        merge_bundle(receiver, sent, 'shs')                                   # the sync
+        (receiver / 'saves' / 'c.shs-auto.json').write_text('C played after')
+        restored, names = restore_bundle(receiver, backup, 'shs')
+        saves = receiver / 'saves'
+        self.assertEqual({p.name: p.read_text() for p in saves.iterdir()},
+                         {'a.shs-auto.json': 'A before', 'b.shs-auto.json': 'B', 'c.shs-auto.json': 'C played after'})
+        self.assertEqual((receiver / 'dtview_tree.json').read_text(), '{"tree": 1}')      # untouched by either
+        self.assertEqual(names, {'names': {'$USR': 'Zoe'}})
+        # A sync backup from before the flag is known by its note; an ordinary backup still replaces whole.
+        self.assertTrue(partial({'note': 'before sync'}))
+        self.assertFalse(partial({'note': 'before restore'}) or partial({}))
+        self.assertNotIn('partial', write_bundle(receiver, 'shs', {}, {}, self.root / 'whole.zip'))
+
     def test_a_bundle_of_the_other_game_or_with_a_stray_file_changes_nothing(self):
         source = library_folder(self.root / 'one', {'a.shs-auto.json': 'A'})
         target = self.root / 'one.zip'

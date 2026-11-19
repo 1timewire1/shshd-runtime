@@ -546,6 +546,10 @@
 - **Options received by Sync Devices on the game chooser were lost** (g54 to a computer, 2026-11-19): the names were
   saved after the options, and saving them also wrote back the shared options the library had when it was opened. The
   same happened to a second game's bundle with a game open. The names are saved first now.
+- **Restoring a "before sync" backup cleared the episodes it doesn't hold** (owner, 2026-11-19): a sync's backup keeps
+  only what the sync replaced, but Restore Progress put a backup's progress in place of all of a game's. Such a backup
+  is now marked partial and merged: its episodes get their saves and trees back, the others keep theirs. Older sync
+  backups are known by their note, and Restore's question says which way it goes.
 - **Sync Devices' pages stayed after a sync ended** (g54 and a computer, 2026-11-19): Choose Receiver kept listing a
   receiver that did nothing when picked, and Receive still said it was waiting while nothing listened. A finished sync
   now goes back to the page before (Send, or Sync Devices).
