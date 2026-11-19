@@ -545,6 +545,10 @@ class HdShell:
             main.top_pad = self.app.menu_top_pad(height)    # a Title Screen Look's logo keeps below a phone's status bar
         if hasattr(self, 'pause'):
             self.pause.frame_height = height if getattr(getattr(self, 'main', None), 'grows', False) else FRAME[1]
+            if hasattr(self.app, 'menu_top_pad'):
+                # (its text pages keep clear of a phone's status and navigation bars)
+                self.pause.top_pad = self.app.menu_top_pad(self.pause.frame_height)
+                self.pause.bottom_pad = self.app.menu_bottom_pad(self.pause.frame_height)
 
     @staticmethod
     def frame_wide(picture):

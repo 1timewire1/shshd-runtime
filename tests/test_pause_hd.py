@@ -338,6 +338,26 @@ class HdPauseTests(unittest.TestCase):
         self.assertIn(f'Version: {self.module.VERSION}\nUpstream EXP Runtime: {self.module.UPSTREAM_VERSION}\n', about)
         self.assertIn('zazatree', about)
 
+    def test_a_text_page_keeps_clear_of_a_phones_status_and_navigation_bars(self):
+        # Owner, g54, 2026-11-19: a tall frame's About and Help pages came close to both bars.
+        state, menu = self.menu.state, self.menu
+        state.screen = 'controls'
+
+        def page(**pads):
+            for key, value in pads.items():
+                setattr(menu, key, value)
+            buttons = dict((command, rect) for rect, command in self.commands())
+            return buttons[('pause_scroll',)], buttons[('pause_back',)]
+        menu.frame_height = 1707
+        area, back = page()
+        self.assertEqual(area.top, self.module.TALL[0] + self.module.HEADER)          # no bars: as before
+        bars_area, bars_back = page(top_pad=45, bottom_pad=34)
+        self.assertEqual(bars_area.top, 45 + menu.BAR_GAP + self.module.HEADER)
+        self.assertEqual(bars_back.bottom - back.bottom, (1707 - 34 - menu.BAR_GAP) - (self.module.TALL[1] + 1707 - 1024))
+        self.assertLessEqual(bars_back.bottom, 1707 - 34)
+        small, _ = page(top_pad=10, bottom_pad=0)                                     # a bar above the page's top
+        self.assertEqual(small.top, area.top)
+
     def test_long_titles_take_two_lines(self):
         self.assertEqual(self.menu.title_lines('Pause'), ['Pause'])
         self.assertEqual(self.menu.title_lines('Episodes On Demand'), ['Episodes On', 'Demand'])

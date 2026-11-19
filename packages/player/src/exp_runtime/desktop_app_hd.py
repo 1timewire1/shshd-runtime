@@ -964,6 +964,10 @@ class AppScreens:
         self.dy = (self.height - FRAME[1]) / 2
         if self.options is not None:
             self.options.menu.frame_height = self.height
+            if hasattr(app, 'menu_top_pad'):
+                # (its text pages keep clear of a phone's status and navigation bars: HdPauseMenu.text_page)
+                self.options.menu.top_pad = app.menu_top_pad(self.height)
+                self.options.menu.bottom_pad = app.menu_bottom_pad(self.height)
         if screen == 'options' and (self.last is None or self.last[0] != 'options'):
             self.options.enter()                        # Options opens on its list (or the page asked for)
         # The pages are drawn on a clear layer over a backdrop that stays put (owner, 2026-10-30): the gradient with the
@@ -1184,6 +1188,14 @@ class AppScreens:
                   'exports': 'Exports Folder'}
         folder_kind = app.browser_kind in ('backups', 'exports')
         top, bottom = TALL[0], TALL[1] + self.height - FRAME[1]
+        if hasattr(app, 'menu_top_pad'):
+            # Clear of a phone's status and navigation bars, as the text pages keep (HdPauseMenu.text_page).
+            from .desktop_pause_hd import HdPauseMenu
+            above, below = app.menu_top_pad(self.height), app.menu_bottom_pad(self.height)
+            if above:
+                top = max(top, above + HdPauseMenu.BAR_GAP)
+            if below:
+                bottom = min(bottom, self.height - below - HdPauseMenu.BAR_GAP)
         body = card.panel(layer, top, bottom, titles.get(app.browser_kind, 'Files'))
         inner = PANEL_X + BORDER, PANEL_W - 2 * BORDER
         pressed = app.pressed

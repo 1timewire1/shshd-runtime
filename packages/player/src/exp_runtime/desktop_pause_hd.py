@@ -1003,10 +1003,20 @@ class HdPauseMenu:
         text = self.font(CYCLE_POINTS).render(label, True, (255, 255, 255))
         layer.blit(text, text.get_rect(center=(round((x + width / 2) * S), round((y + height / 2 - 2) * S))))
 
+    # Points of the frame's top and bottom that a phone's status bar and navigation or gesture bar cover (the host's
+    # menu_top_pad / menu_bottom_pad): a text page, which otherwise runs the frame's height, keeps BAR_GAP clear of them
+    # (owner, g54, 2026-11-19: About and Help's pages came close to both).
+    top_pad = bottom_pad = 0
+    BAR_GAP = 12
+
     def text_page(self, layer, buttons):
         state = self.state
         title, body = self.text_lines(state.screen)
         top, bottom = TALL[0], TALL[1] + self.frame_height - FRAME[1]
+        if self.top_pad:
+            top = max(top, self.top_pad + self.BAR_GAP)
+        if self.bottom_pad:
+            bottom = min(bottom, self.frame_height - self.bottom_pad - self.BAR_GAP)
         # Two-line titles get a taller header, as photographed (152 points).
         header = HEADER + 40 if len(self.title_lines(title)) > 1 else HEADER
         self.panel(layer, top, bottom, title, header=header)

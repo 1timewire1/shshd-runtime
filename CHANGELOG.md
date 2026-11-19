@@ -543,6 +543,7 @@
 
 ### Fixed
 
+- **Tall menu pages ran under a phone's status and navigation bars** (owner, g54, 2026-11-19): Help's and About's text pages, the chooser's (Receive, Library Info) and the file browser filled the frame's height. They now keep 12 points clear of both bars where a phone has them (`menu_top_pad` / `menu_bottom_pad`); a computer is unchanged.
 - **The panels' whoosh came a second late** (owner, g54, 2026-11-19): opening or closing the panels over the screen played HD's tree zoom whoosh from its start, which swells for 0.6 s, so its peak came after the 300 ms slide. It now starts 300 ms in (a copy cut once, `ui_sound.trimmed_wave`); the tree zoom tab keeps the whole sound.
 - **Options received by Sync Devices on the game chooser were lost** (g54 to a computer, 2026-11-19): the names were
   saved after the options, and saving them also wrote back the shared options the library had when it was opened. The
