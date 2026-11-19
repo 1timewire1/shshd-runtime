@@ -230,6 +230,17 @@ class HdPauseTests(unittest.TestCase):
         self.assertFalse(self.menu.back())
         self.assertEqual(state.screen, 'options:data')                      # back to Data Management
 
+    def test_a_folder_row_shows_its_folder_under_its_name_and_the_whole_row_chooses_another(self):
+        # Exports Folder and Backups Folder, as General's choices show theirs (owner, 2026-11-19; it was a value button).
+        from exp_runtime.desktop_pause_hd import PANEL_W, PANEL_X
+        self.settings.update(add_episodes=True, export_folder='Surviving High School')
+        self.assertEqual(self.menu.option_rows('data:episodes', self.settings, self.menu.strings()),
+                         [('action', 'Add Episodes', 'add_episodes'), ('folder', 'Exports Folder', 'export_folder')])
+        self.menu.state.screen = 'data:episodes'
+        rect, command = self.commands()[1]
+        self.assertEqual(command, ('pause_cycle', 'export_folder'))
+        self.assertEqual((rect.x, rect.width), (PANEL_X, PANEL_W))
+
     def test_aspect_ratio_is_generals_first_choice_and_opens_a_page_of_the_shapes(self):
         from exp_runtime.desktop_pause_hd import ASPECT_LABEL, ASPECT_NAMES
         self.settings.update(aspect_ratio=ASPECT_NAMES['fit'], preferred_language='English')
@@ -455,7 +466,10 @@ class CodPauseTests(unittest.TestCase):
 
     def test_the_add_ons_page_holds_the_translated_games_switches(self):
         from exp_runtime.desktop_pause_hd import ADDON_KEYS, EXTRAS_KEYS, GENERAL_KEYS
-        self.assertEqual(ADDON_KEYS, ('arena_minigames', 'ms3_characters', 'java_look', 'brew_08_backgrounds', 'hollywood_art', 'dsi_backgrounds', 'hires_portraits', 'smartphone_music', 'ch_portraits', 'ch_backdrop', 'word_grid_skin',
+        # The episode lists' order of their games, '07 to '11, then CoD's; the X360 Arena Skin, which needs two add-ons,
+        # last (owner, 2026-11-19).
+        self.assertEqual(ADDON_KEYS, ('arena_minigames', 'brew_08_backgrounds', 'hollywood_art', 'java_look', 'hires_portraits',
+                                      'ms3_characters', 'smartphone_music', 'word_grid_skin', 'ch_portraits', 'ch_backdrop',
                                       'arena_skin'))
         self.assertFalse(set(ADDON_KEYS) & (set(GENERAL_KEYS) | set(EXTRAS_KEYS)))
         self.assertEqual(self.menu.option_rows('addons', self.settings, self.menu.strings()), [])   # CoD: no such rows

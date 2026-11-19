@@ -236,19 +236,28 @@ class EligibilityTests(unittest.TestCase):
 
 
 class SwitchTests(unittest.TestCase):
-    def test_the_settings_are_kept_and_offered_on_add_ons(self):
+    def test_the_settings_are_kept_and_offered_as_one_choice_on_extras(self):
+        # Owner, 2026-11-19: one "DSi Backgrounds" choice on Extras, Off / Sharp / Smooth, in place of Add-Ons' switch and
+        # DSi Pixels; the two settings stay as they were saved.
         from exp_runtime.menu import SHARED_PREFERENCES
-        from exp_runtime.desktop_pause_hd import (ADDON_KEYS, CHOICE_NAMES, HdPauseMenu, PER_GAME_CHOICES, SWITCH_BADGES,
-                                                  switch_badge)
+        from exp_runtime.desktop_pause_hd import (ADDON_KEYS, CHOICE_NAMES, CHOICE_PARENTS, HdPauseMenu, PER_GAME_CHOICES,
+                                                  SWITCH_BADGES, dsi_backgrounds_value, switch_badge)
         self.assertIs(SHARED_PREFERENCES['dsi_backgrounds'], bool)
         self.assertEqual(SHARED_PREFERENCES['dsi_pixels'], ('sharp', 'smooth'))
-        self.assertIn('dsi_backgrounds', ADDON_KEYS)
-        self.assertEqual(CHOICE_NAMES['dsi_pixels'], {'sharp': 'Sharp', 'smooth': 'Smooth'})
+        self.assertNotIn('dsi_backgrounds', ADDON_KEYS)
+        self.assertEqual(CHOICE_NAMES['dsi_backgrounds'], {'off': 'Off', 'sharp': 'Sharp', 'smooth': 'Smooth'})
+        self.assertEqual(CHOICE_PARENTS['dsi_backgrounds'], 'options:extras')
+        self.assertNotIn('dsi_pixels', CHOICE_NAMES)
+        self.assertEqual([dsi_backgrounds_value(*pair) for pair in ((False, 'smooth'), (True, 'sharp'), (True, 'smooth'))],
+                         ['off', 'sharp', 'smooth'])
         self.assertEqual(switch_badge('dsi_backgrounds')[0], 'DSi')
         self.assertEqual(SWITCH_BADGES['dsi_backgrounds'], 'SHSDSI')
-        self.assertEqual(HdPauseMenu.addon_choices(dict(dsi_pixels='Sharp')), [('choice', 'DSi Pixels', 'dsi_pixels')])
-        self.assertEqual(HdPauseMenu.addon_choices({}), [])
-        self.assertIn('dsi_pixels', PER_GAME_CHOICES)
+        self.assertEqual(HdPauseMenu.addon_choices(dict(dsi_backgrounds='Off')), [])
+        self.assertEqual(PER_GAME_CHOICES, ())
+        menu = HdPauseMenu.__new__(HdPauseMenu)
+        menu.SWITCH_LABELS = HdPauseMenu.SWITCH_LABELS
+        rows = HdPauseMenu.option_rows(menu, 'extras', dict(undo=True, dsi_backgrounds='Smooth'), [''] * 273)
+        self.assertEqual(rows[-1], ('choice', 'DSi Backgrounds', 'dsi_backgrounds'))
 
 
 class DesktopTests(unittest.TestCase):

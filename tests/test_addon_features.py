@@ -206,7 +206,13 @@ class SurvivingHollywoodPackTests(unittest.TestCase):
         self.assertEqual(catch_spec(preview)[0]['board'], 1)
 
     def test_it_is_badged_and_filed_as_its_own_game(self):
-        self.assertEqual(GAMES['shs'].LEGACY_GAMES['SHW'], dict(badge='SHW', color=(180, 140, 57), category='Surviving Hollywood'))
+        self.assertEqual(GAMES['shs'].LEGACY_GAMES['SHW'], dict(badge='SHW', color=(180, 140, 57), category='Surviving Hollywood',
+                                                                 section=30999.5))
+        # Listed between '07 and '08 (owner, 2026-11-19).
+        from exp_runtime.episode_index import section_place
+        places = [section_place(dict(legacy=tag, pack_id=pack)) for tag, pack in
+                  (('SHS07', 31100), ('SHW', 31700), ('SHS08', 31000), ('SHSNR', 31300), ('SHSX360', 31400), ('SHS11', 31600))]
+        self.assertEqual(places, sorted(places))
 
 
 if __name__ == '__main__':

@@ -380,9 +380,10 @@ holding a name the DSi translates shows that name (German renames many character
 shows the stories' DSi titles: SHS's own copies only, as for the lines (a translated game's story of the same name, New Rules'
 Making Some Dough, keeps its title; owner, 2026-11-18). A save keeps the line as shown, and loads in any language (`Engine.shown_forms`).
 
-**Switches:** "DSi Backgrounds" (DSi tag, off by default) and "DSi Pixels" (Sharp, nearest neighbour, the default; or Smooth),
-on the pause menu's Add-Ons and the main menu's Per-Game Settings, when the library holds `shsdsi` (in play: when the episode
-qualifies). Its language is General's Preferred Language (owner, 2026-11-18; until then a "DSi Language" of its own), with the
+**Option:** "DSi Backgrounds" (DSi tag) on Extras, the main menu's and the pause menu's: Off (the default), Sharp (nearest
+neighbour) or Smooth, when the library holds `shsdsi` (in play: when the episode qualifies). Until 2026-11-19 it was a switch and a
+"DSi Pixels" choice on Add-Ons; they stay two settings underneath (`dsi_backgrounds`, `dsi_pixels`), so Sharp or Smooth is kept
+while it's Off (owner, 2026-11-19). Its language is General's Preferred Language (owner, 2026-11-18; until then a "DSi Language" of its own), with the
 HD bundle: English is the stories' own.
 
 ```sh
@@ -445,13 +446,15 @@ tag is New Rules', since it changes New Rules' episodes, and its label names X36
 | MS3 Characters | X360 | X360 episodes |
 | Hi-Res Portraits | NR | New Rules episodes |
 | HD Portraits in CoD, Backdrop | CH | CoD with `chslim` imported |
-| Use X360 Arena Skin | NR | New Rules episodes with `shsx360` imported; in play, also Use Translated Mini-Games on |
 | Smartphone Music | SHS11 | SHS '11 episodes |
 | Use Word Grid Skin | SHS11 | SHS '11 episodes, with HD's word game art |
 | Java '08 Look | '08 | '08 BREW episodes, with an addon built with the Java demo |
 | '08 Backgrounds | '07 | '07 BREW episodes |
 | Hollywood Art | '07 | The Surviving Hollywood Preview, with `shshw` imported |
-| DSi Backgrounds, DSi Pixels | DSi | With `shsdsi` imported; in play, an episode whose backgrounds the DSi drew |
+| Use X360 Arena Skin | NR | New Rules episodes with `shsx360` imported; in play, also Use Translated Mini-Games on |
+
+They're listed in the episode list's order of their games ('07, '08, New Rules, X360, '11, then CoD's), the X360 Arena Skin last
+as it needs two add-ons (owner, 2026-11-19; `desktop_pause_hd.ADDON_KEYS`). DSi Backgrounds is an Extras option (above).
 
 On the main menus (owner, 2026-11-09), Add-Ons keeps only Use Translated Mini-Games, and the other switches are one page in,
 **Per-Game Settings**; the pause menu lists them all on Add-Ons. Episodes made in the Creator count for a switch through their

@@ -28,7 +28,8 @@ it's done, so real clocks (fades, timers) run as in play.
     menu                        the pause menu's Main Menu: the story saved and kept for Resume, the main menu shown
     main BUTTON                 a main menu button: play (the tiles), airing, demand, options, help, more; `back` returns
     set KEY on|off              a switch, as Options does (undo, skip_ahead, java_look, arena_minigames, ...);
-                                `set dsi_pixels sharp|smooth`, `set preferred_language en|fr|it|de|es` (the titles,
+                                `set dsi_pixels sharp|smooth` (Extras' DSi Backgrounds is these two: `set dsi_backgrounds
+                                on` with the pixels), `set preferred_language en|fr|it|de|es` (the titles,
                                 and the DSi's, '11's and the Creator's stories where they have it)
     aspect 3:4|2:3|9:16|fit|default   General's Aspect Ratio (default: the device's own)
     resize W H                  a computer's window resized to W x H pixels, as a drag would (with `aspect fit`, any

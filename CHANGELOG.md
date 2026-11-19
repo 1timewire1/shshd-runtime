@@ -434,6 +434,13 @@
 
 ### Changed
 
+- **Options tidied** (owner, 2026-11-19):
+  - **DSi Backgrounds** is one choice on Extras: Off, Sharp or Smooth. It replaces Add-Ons' switch and its DSi Pixels
+    ([ADDONS.md](docs/ADDONS.md)).
+  - The add-on switches follow the episode list's order of their games, with the X360 Arena Skin last.
+  - Data Management's **Exports Folder** and **Backups Folder** show the folder under their name, as General's choices
+    do, instead of on an orange button.
+  - **Surviving Hollywood** is listed between '07 and '08 in the episode lists.
 - **Named lines without a portrait in the translated episodes** (owner, 2026-11-18; reference/TRANSLATION_AUDITS.md):
   - **New Rules** (25 stories, revision 2; [NEW_RULES.md](docs/NEW_RULES.md#how-a-script-is-translated)):
     - A cast member speaking off stage now has their own portrait (Skazz, Howard, Taylor, Kel, Dexter, Kim, Mallika,

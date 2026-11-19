@@ -502,7 +502,9 @@ menu's entrance and exit transitions. SHS HD's `SHSEngine::notifyNewMenu`
   the Controller page's Confirm Button and Word Grid Controls) shows its current value under its name, in smaller
   letters as the episode lists' airdates, with a `>`. Its row slides in a page of the values, the current one ticked;
   picking one sets it and slides back (`desktop_pause_hd.CHOICE_NAMES`, screen `choice:<key>`). They were buttons that
-  stepped through the values.
+  stepped through the values. Extras' DSi Backgrounds (Off, Sharp, Smooth) is one too (owner, 2026-11-19). Data
+  Management's Exports Folder and Backups Folder show their folder the same way, under the name with a `>`; the row opens
+  the folder browser (it was an orange button with the folder's name; owner, 2026-11-19).
 - **Add-Ons on the main menu** (owner, 2026-11-09): Use Translated Mini-Games, a **Per-Game Settings** page holding the other
   add-on switches (back from it returns to Add-Ons), and **Title Screen Music**, a choice page of the tunes the menu can play
   ([ADDONS.md](ADDONS.md#settings)). Choosing one plays it at once, from its start. The pause menu keeps them all on Add-Ons.

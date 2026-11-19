@@ -66,8 +66,15 @@ JAVA_LOOK_LABEL = "Java '08 Look"               # translated BREW episodes: the 
 BREW_08_BACKGROUNDS_LABEL = "'08 Backgrounds"   # '07-badged BREW episodes: '08's art for the shared locations (decision 7B)
 HOLLYWOOD_ART_LABEL = 'Hollywood Art'           # the BREW Surviving Hollywood Preview: the demo's own art (`shshw`)
 DSI_BACKGROUNDS_LABEL = 'DSi Backgrounds'       # SHS's own episodes the DSiWare game drew: its two screens (`shsdsi`)
-DSI_PIXELS_LABEL = 'DSi Pixels'                 # ...enlarged with nearest neighbour (Sharp) or smoothly
-DSI_PIXELS_NAMES = {'sharp': 'Sharp', 'smooth': 'Smooth'}
+DSI_PIXELS_NAMES = {'sharp': 'Sharp', 'smooth': 'Smooth'}      # ...enlarged with nearest neighbour (Sharp) or smoothly
+# Extras' DSi Backgrounds (owner, 2026-11-19): one choice, Off or on with its pixels Sharp or Smooth, in place of Add-Ons'
+# switch and its DSi Pixels. The two stay separate settings underneath (menu.MenuState dsi_backgrounds, dsi_pixels).
+DSI_BACKGROUNDS_NAMES = {'off': 'Off', **DSI_PIXELS_NAMES}
+
+
+def dsi_backgrounds_value(enabled, pixels):
+    """DSi Backgrounds' choice (DSI_BACKGROUNDS_NAMES) for the two settings."""
+    return pixels if enabled and pixels in DSI_PIXELS_NAMES else 'sharp' if enabled else 'off'
 # The values Preferred Language gives the stories' translations (languages.language_settings; HD presentation only): the
 # DSi's eight stories in its translations, SHS '11's in their own Italian and Creator episodes in their project's other
 # languages (resource 6). Each was a choice of its own until 2026-11-18 (DSi Language, '11 Language, Story Language).
@@ -117,7 +124,10 @@ OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('controller', 
 GENERAL_KEYS = ('side_panels', 'device_vibration', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop',
                 'check_updates')
 EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames', 'skip_ahead', 'undo', 'grids_as_memory')
-ADDON_KEYS = ('arena_minigames', 'ms3_characters', 'java_look', 'brew_08_backgrounds', 'hollywood_art', 'dsi_backgrounds', 'hires_portraits', 'smartphone_music', 'ch_portraits', 'ch_backdrop', 'word_grid_skin', 'arena_skin')
+# In the episode lists' order of their games (owner, 2026-11-19): '07, Surviving Hollywood, '08, New Rules, X360, '11, then
+# CoD's, and the X360 Arena Skin last, as it needs two add-ons.
+ADDON_KEYS = ('arena_minigames', 'brew_08_backgrounds', 'hollywood_art', 'java_look', 'hires_portraits', 'ms3_characters',
+              'smartphone_music', 'word_grid_skin', 'ch_portraits', 'ch_backdrop', 'arena_skin')
 # General's Preferred Language (owner, 2026-11-18; it was Episode Titles): the episode titles, and the stories of the
 # add-ons that have a translation (DSi, SHS '11, the Creator's), in it where each has it (languages.language_settings);
 # `settings['preferred_language']` is the current one's name. Data Management's rows are actions, tapped like Help &
@@ -170,15 +180,15 @@ PAGE_PARENTS = {'options:per_game': 'options:addons'}
 CHOICE_NAMES = {'aspect_ratio': ASPECT_NAMES, 'preferred_language': LANGUAGE_NAMES, 'start_in': START_IN_NAMES,
                 'controller_confirm': CONFIRM_NAMES,
                 'grid_controls': GRID_CONTROLS_NAMES, 'title_music': TITLE_MUSIC_NAMES, 'title_look': TITLE_LOOK_NAMES,
-                'dsi_pixels': DSI_PIXELS_NAMES}
+                'dsi_backgrounds': DSI_BACKGROUNDS_NAMES}
 CHOICE_LABELS = {'aspect_ratio': ASPECT_LABEL, 'preferred_language': PREFERRED_LANGUAGE_LABEL, 'start_in': START_IN_LABEL,
                  'controller_confirm': CONFIRM_BUTTON_LABEL, 'grid_controls': GRID_CONTROLS_LABEL,
-                 'title_music': TITLE_MUSIC_LABEL, 'title_look': TITLE_LOOK_LABEL, 'dsi_pixels': DSI_PIXELS_LABEL}
+                 'title_music': TITLE_MUSIC_LABEL, 'title_look': TITLE_LOOK_LABEL, 'dsi_backgrounds': DSI_BACKGROUNDS_LABEL}
 CHOICE_PARENTS = {'aspect_ratio': 'options:general', 'preferred_language': 'options:general', 'start_in': 'options:general',
                   'controller_confirm': 'options:controller', 'grid_controls': 'options:controller',
-                  'title_music': 'options:addons', 'title_look': 'options:addons', 'dsi_pixels': 'options:addons'}
+                  'title_music': 'options:addons', 'title_look': 'options:addons', 'dsi_backgrounds': 'options:extras'}
 # Add-on choices the main menu keeps on Per-Game Settings rather than Add-Ons: their page's way back goes there.
-PER_GAME_CHOICES = ('dsi_pixels',)
+PER_GAME_CHOICES = ()
 VALUE_PX, VALUE_GAP, VALUE_ALPHA = 19, 3, 150
 # Data Management (owner, 2026-10-29) lists its pages, then Reset Settings; each page's rows are the actions the main
 # menu offers (`settings` has the key). A row is (key, label); a page is (screen, title, rows).
@@ -803,6 +813,15 @@ class HdPauseMenu:
                     buttons.append((pygame.Rect(PANEL_X, y, PANEL_W, ROW), command))
                     y += ROW
                     continue
+                if kind == 'folder':
+                    # Data Management's Backups / Exports Folder: the folder in use under the label; the row opens the
+                    # host's folder browser (the command its value button sent).
+                    command = ('pause_cycle', key)
+                    self.row(layer, y, label, background=self.row_color(index), lit=focus == command, value=settings[key])
+                    self.chevron(layer, PANEL_X + PANEL_W - CONTROL_RIGHT - 8, y + ROW / 2)
+                    buttons.append((pygame.Rect(PANEL_X, y, PANEL_W, ROW), command))
+                    y += ROW
+                    continue
                 if kind == 'choice':
                     command = ('pause_open', 'choice:' + key)
                     self.row(layer, y, label, background=self.row_color(index), lit=focus == command,
@@ -912,6 +931,8 @@ class HdPauseMenu:
             return rows
         if category == 'extras':
             rows = [('switch', self.SWITCH_LABELS[key], key) for key in EXTRAS_KEYS if key in settings]
+            if 'dsi_backgrounds' in settings:
+                rows.append(('choice', DSI_BACKGROUNDS_LABEL, 'dsi_backgrounds'))
             if 'unlock_warp' in settings:
                 rows.append(('action', UNLOCK_WARP_LABEL, 'unlock_warp'))
             return rows
@@ -934,9 +955,10 @@ class HdPauseMenu:
                      if any(key in settings for key, _ in rows)]
             return pages + [('action', label, key) for key, label in DATA_LAST if key in settings]
         if category in DATA_TITLES:
-            # A row whose setting is a name (Backups / Exports Folder: the folder's) shows it on a value button.
+            # A row whose setting is a name (Backups / Exports Folder: the folder's) shows it under its label, as General's
+            # choices show theirs (owner, 2026-11-19; it was on a value button).
             rows = next(rows for screen, _, rows in DATA_PAGES if screen == category)
-            return [('cycle' if isinstance(settings[key], str) else 'action',
+            return [('folder' if isinstance(settings[key], str) else 'action',
                      label, key) for key, label in rows if key in settings]
         if category in self.row_pages:
             return [(kind[0] if kind else 'action', label, key) for key, label, *kind in self.row_pages[category][1]]
@@ -948,7 +970,7 @@ class HdPauseMenu:
 
     @staticmethod
     def addon_choices(settings):
-        """The add-on options that are one of a few values, after the switches: DSi Pixels."""
+        """The add-on options that are one of a few values, after the switches (none since DSi Backgrounds moved to Extras)."""
         return [('choice', CHOICE_LABELS[key], key) for key in PER_GAME_CHOICES if key in settings]
 
     def check(self, layer, right, middle):

@@ -52,7 +52,7 @@ from .x360_diss import (ROUND_BACKGROUNDS as X360_ROUND_BACKGROUNDS, ROUND_EPISO
                         SOUND_GOOD as X360_SOUND_GOOD, SOUND_REMIX as X360_SOUND_REMIX)
 from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, GRID_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
-from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_PIXELS_NAMES, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE, LANGUAGE_NAMES,
+from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE, LANGUAGE_NAMES,
                                focus_step, place_controls)
 from . import backdrop_fit, frame_shape
 from .desktop_hd_menu import HdMenuWindows
@@ -3762,7 +3762,7 @@ class Desktop:
                     **({'java_look': self.java_look} if self.java_look_switch() else {}),
                     **({'brew_08_backgrounds': self.brew_08_backgrounds} if self.brew_08_switch() else {}),
                     **({'hollywood_art': self.hollywood_art} if self.hollywood_switch() else {}),
-                    **(dict(dsi_backgrounds=self.dsi_backgrounds, dsi_pixels=DSI_PIXELS_NAMES[self.dsi_pixels])
+                    **({'dsi_backgrounds': DSI_BACKGROUNDS_NAMES[dsi_backgrounds_value(self.dsi_backgrounds, self.dsi_pixels)]}
                        if self.dsi_switch() else {}),
                     **({'preferred_language': LANGUAGE_NAMES[self.preferred_language]}
                        if self.preferred_language_switch() else {}),
@@ -3955,9 +3955,15 @@ class Desktop:
             self.pause_hd.back()
             self._menu_sound()
             return
-        if kind == 'pause_cycle' and command[1] == 'dsi_pixels':
-            # Add-Ons' DSi Pixels, picked on its choice page (or stepped to the other); the app keeps it (on_settings).
-            self.set_dsi_pixels(command[2] if len(command) > 2 else DSI_PIXELS[1 - DSI_PIXELS.index(self.dsi_pixels)])
+        if kind == 'pause_cycle' and command[1] == 'dsi_backgrounds':
+            # Extras' DSi Backgrounds, picked on its choice page (or stepped to the next): Off, or on with its pixels Sharp
+            # or Smooth (owner, 2026-11-19); the app keeps it (on_settings).
+            choices = list(DSI_BACKGROUNDS_NAMES)
+            value = (command[2] if len(command) > 2 else
+                     choices[(choices.index(dsi_backgrounds_value(self.dsi_backgrounds, self.dsi_pixels)) + 1) % len(choices)])
+            if value != 'off':
+                self.set_dsi_pixels(value)
+            self.set_dsi_backgrounds(value != 'off')
             if self.on_settings:
                 self.on_settings()
             if len(command) > 2:

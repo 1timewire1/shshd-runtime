@@ -286,7 +286,8 @@ LEGACY_GAMES = {'SHSNR': dict(badge='NR', color=(41, 104, 221), category='New Ru
                               order={9001: 302.5, 9002: 303.5, 9003: 401.5, 9101: 707.5}),
                 # Surviving Hollywood's chapters (tools/translate shw_lite.py), in its logo's gold ring (owner, 2026-11-14: a colour
                 # from the logo; its cream lettering is too pale for a menu's rows).
-                'SHW': dict(badge='SHW', color=(180, 140, 57), category='Surviving Hollywood'),
+                # Between '07 and '08 in the episode list (owner, 2026-11-19): after '07's section (30999), before '08's pack.
+                'SHW': dict(badge='SHW', color=(180, 140, 57), category='Surviving Hollywood', section=30999.5),
                 # The DSiWare game (2010; tools/translate dsi.py): no episodes of its own, only its add-on's switches' tag.
                 'SHSDSI': dict(badge='DSi', color=(0, 120, 150), category='SHS DSiWare')}
 # Service 71's quiz: Android's own pacing unless the HD bundle is present (engine.py); right/wrong answer sounds.

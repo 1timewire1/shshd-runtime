@@ -24,7 +24,7 @@ from .desktop_hd_menu import HdMenuWindows
 from .desktop_main_hd import HdMainMenu
 from .animation_curves import ease_in_out
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
-from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, DSI_PIXELS_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES,
+from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES,
                                focus_step, place_controls)
 from .menu_engine import BACK, CUSTOM_MENUS, ENGINE
 from .settings import START_IN
@@ -350,8 +350,7 @@ class HdShell:
         if self.app.hollywood_art_offered():
             settings['hollywood_art'] = state.hollywood_art
         if self.app.dsi_offered():
-            settings['dsi_backgrounds'] = state.dsi_backgrounds
-            settings['dsi_pixels'] = DSI_PIXELS_NAMES[state.dsi_pixels]
+            settings['dsi_backgrounds'] = DSI_BACKGROUNDS_NAMES[dsi_backgrounds_value(state.dsi_backgrounds, state.dsi_pixels)]
         if self.app.smartphone_music_offered():
             settings['smartphone_music'] = state.smartphone_music
         if self.app.portrait_addon_offered():
@@ -473,8 +472,11 @@ class HdShell:
         elif key == 'title_look':
             state.title_look = value                    # (the menu's art follows it at once: HdUi.look_source)
             self.app._attempt(state.persist)
-        elif key == 'dsi_pixels':
-            setattr(state, key, value)
+        elif key == 'dsi_backgrounds' and value in DSI_BACKGROUNDS_NAMES:
+            # Extras' DSi Backgrounds: Off, or on with its pixels Sharp or Smooth (desktop_pause_hd.DSI_BACKGROUNDS_NAMES).
+            state.dsi_backgrounds = value != 'off'
+            if value != 'off':
+                state.dsi_pixels = value
             self.app._attempt(state.persist)
             self.app.apply_dsi()
 
