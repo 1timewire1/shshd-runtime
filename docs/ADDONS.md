@@ -420,7 +420,7 @@ python tools/translate/dsi.py --nds DSI_IMAGE --library SHS_LIBRARY --out OUT_DI
 
 ### `chslim`: Claire Hart (Slim)
 
-Optional, for Cause of Death. Revision 1, about 21 MB.
+Optional, for Cause of Death. Revision 2, about 17 MB (revision 1, about 21 MB, also held Claire Hart's own extras: see `chc`).
 
 CoD's portraits are 110 × 120, downscaled about 4.17 times from Claire Hart Classic's 458 × 500 originals, so this pack carries the
 sharper art. CoD's episodes can't name an addon and a portrait's ID differs between episodes, so the player finds it by a hash of the
@@ -431,26 +431,39 @@ size in play doesn't change, as `standard_portrait` keeps it at the size CoD's p
 | --- | --- |
 | 28000 | The map and contents, JSON |
 | 28001 | The backdrop beside the frame |
-| 28002, 28003 | Speech bubbles, held for Claire Hart's own episodes |
-| 28004, 28005 | The Romic fonts, likewise |
-| 28010 on | Portraits, each at 28010 + its place in the sorted list of all 835 |
+| 28010 on | Portraits, each at 28010 + its place in the sorted list of all 835 (CoD's matched ones only) |
 | 29000, 29001 | Pictures made for CoD: Natara's shocked portrait with her tie, Kai's shocked portrait from SHS HD |
 
 - **Map keys:** a hash for any resource with that picture, or `hash:resource` for one expression where CoD uses one picture for
   two. Kai's sad and shocked share a picture, so his shocked has its own entry.
 - **Left out of the map:** Sophie. Claire Hart's version has pink hair, and her red hair is plot-relevant.
-- **For Claire Hart's own episodes:** the pack also holds the rest of Troy Harris, Paul Clayton and Claire. With those, it covers
-  every portrait in 57 of Claire Hart Classic's 266 episodes. It holds no Claire Hart backgrounds, so it isn't enough to translate
-  those episodes by itself.
-- **Stable IDs:** so that a complete Claire Hart addon can supersede it. Both hold each portrait under the same ID.
+- **Revision 2 (owner, 2026-11-19):** only what CoD shows. Revision 1 also held the rest of Troy Harris, Paul Clayton and Claire,
+  the speech bubbles (28002, 28003) and the Romic fonts (28004, 28005), for playing Claire Hart's own episodes from it; checked
+  against every Classic episode, that covers 4 of 107 cases, story only (Other Games/docs/CLAIRE_HART_PLAN.md, "chslim for
+  translation"), so those moved to `chc`.
+- **Stable IDs:** so that `chc` supersedes it. Both hold each portrait under the same ID.
 
 **Switches:** "HD Portraits in CoD" and "Backdrop" on the Add-Ons page, with the CH tag, shown when the addon is imported and on by default.
 The backdrop takes the place of the SHS HD Backdrop in play and on CoD's menus.
 
 ```sh
 python tools/translate/chslim.py --mirror CLAIRE_HART_DIR --pairs PAIRS.txt --catalog COD_CATALOG_PORTRAITS \
-    --cod-library COD_LIBRARY --extras EXTRAS_DIR --out OUT_DIR
+    --cod-library COD_LIBRARY --extras EXTRAS_DIR --out OUT_DIR [--chc]
 ```
+
+### `chc`: Claire Hart Classic (in progress on the `claire-hart` branch)
+
+The add-on of the translated Claire Hart Classic cases (Other Games/docs/CLAIRE_HART_PLAN.md), pack 31500. Revision 1 began
+(2026-11-19) as chslim revision 1 exactly, under the same IDs and the same map at 28000, so CoD's portrait swap works the same
+from either: `chslim.py --chc` writes it, with its own record (`chc`, superseding chslim at revision 2) and title. It grows through
+the plan's stages without a new revision until it goes to testers: the rest of the portraits, the backdrops, the story objects,
+the title look and the music.
+
+| Resources | What |
+| --- | --- |
+| 28000–28005, 28010 on, 29000–29001 | chslim revision 1's, kept (the map, the backdrop, the speech bubbles, the Romic fonts, the portraits, CoD's two edits) |
+
+Importing it removes chslim, and an episode or switch asking for chslim gets `chc` (it stands in for chslim's revision 2).
 
 The tool reads the real hashes from the CoD library, since a catalogue's copies are re-encoded, and stops with an error if a mapped
 picture isn't found.

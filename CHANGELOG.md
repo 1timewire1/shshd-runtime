@@ -461,6 +461,10 @@
   Content. It takes what it took (episodes, add-ons, ZIP/RAR collections, a catalog) and now fonts (`.ttf`, `.otf`), copied
   into the library's fonts as Bulk Import copies them; the notice counts them and offers **Reopen**, which closes the
   game's library and opens it again (as Switch Game does, on every platform) so the new fonts are used.
+- **chslim revision 2, and `chc` begun** (owner, 2026-11-19; `claire-hart` branch): chslim keeps only what CoD shows (17 MB,
+  was 21); Claire Hart's own extras (the rest of Troy, Paul and Claire, the speech bubbles, the Romic fonts) move to `chc`,
+  Claire Hart Classic's add-on, which starts as chslim revision 1 exactly and supersedes chslim
+  (`tools/translate/chslim.py --chc`).
 - **Add-ons are read a record at a time** (Claire Hart plan Stage 0): an add-on was read whole into memory and hashed
   each time a library opened (and by Sync, Options and the Creator asking about it). Now only its index is read, each
   record as it's needed, and its file is hashed the first time and then known by its size and time
