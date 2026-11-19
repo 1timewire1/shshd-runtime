@@ -91,6 +91,7 @@ SHS_HD_YIELDS = NATIVE_DEFAULT_YIELDS | frozenset((
 NR_ARENA_SERVICES = frozenset(range(200, 214))
 NR_ARENA_QUERY = 200
 RELATIONSHIP_SKULL = 3011
+OBJECT_CHARACTERS = 180     # shshd-runtime: the characters a named thing with a picture speaks as (object_portraits)
 NR_BUILD = {1: 2, 3: 8, 4: 3, 5: 4, 7: 0, 8: 1, 9: 2}  # New Rules' 32 as the Java (arena) build answers it
 
 
@@ -330,6 +331,15 @@ class EngineState:
                 presentation, visible, theme = 3, -1, -1
             if presentation in (1, 2):
                 self.panel.speaker = self.substitute(self.character_names.get(character, ''))
+        elif speaker in self.object_portraits:
+            # shshd-runtime: a named thing the pack shows with a picture elsewhere (BREW's Phone and TV, owner 2026-11-18):
+            # spoken by a character of its own with that picture, on the right, as the stories that give it one show it.
+            character = OBJECT_CHARACTERS + sorted(self.object_portraits).index(speaker)
+            bank = self.object_portraits[speaker]
+            self.character_names[character] = speaker
+            self.character_art_variants[character] = [bank] * 5
+            presentation, visible, theme = 2, character, self.numbers.get(self.number_key(character, 651), 0)
+            self.panel.speaker = self.substitute(speaker)
         else:
             # Service 76: ab344(3) -> ab048(-1,0), then aa028(name).
             # This is named dialogue without an NPC or portrait, not narration.
@@ -461,6 +471,23 @@ class EngineState:
             forms |= {self.substitute(text, language=language, remember=False) for language in (LANGUAGE_OFF, *languages)}
         return forms
 
+    # shshd-runtime: {key a story uses: key the shared names table keeps it under} (presentation `name_keys`; the BREW '07
+    # stories' `$USR` as `$USR_M` / `$USR_F`, owner 2026-11-18). Set by the session for its episode; not part of a save.
+    name_keys = {}
+    # shshd-runtime: {name: picture bank} for a pack's named things that have a picture where a story gives them one (the
+    # profile's TRANSLATED_OBJECT_PORTRAITS; Session sets it); a named line under that name shows it.
+    object_portraits = {}
+
+    def name_key(self, key: str) -> str:
+        """The names table's key for a name the story calls `key` (name_keys), and that key's first value: the name the
+        table held under `key`, so a name typed before the split carries on under both (owner, 2026-11-18)."""
+        other = self.name_keys.get(key)
+        if other is None:
+            return key
+        if other not in self.strings and self.strings.get(key):
+            self.strings[other] = self.strings[key]
+        return other
+
     def substitute(self, text: str, *, display=True, language=None, remember=True) -> str:
         """FUN_00096c9c; retain cycle checks for unsupported replacement loops. Everything shown on screen passes
         through here (scripts compare and store raw text through `read_text`), so a game's DISPLAY_CHARACTERS apply
@@ -470,6 +497,10 @@ class EngineState:
         translation = self.translation(language) if display else None
         if translation is not None:
             text = translation.line(text, remember=remember)
+        aliases = self.name_keys
+        for key, other in aliases.items():          # a name kept under another key (name_key): shown from that one
+            if key in text:
+                text = re.sub(re.escape(key) + r'(?![A-Za-z0-9_])', lambda _m, other=other: other, text)
         seen = set()
         for _ in range(100):
             if text in seen:
@@ -477,7 +508,7 @@ class EngineState:
             seen.add(text)
             changed = False
             for key, value in self.strings.items():
-                if key and key in text:
+                if key and key in text and key not in aliases:
                     if translation is not None:
                         value = translation.token(key, value)
                     if key in value:
@@ -718,6 +749,7 @@ class EngineState:
         if y == 46:
             need(2)
             key, value = (self.read_text(vm, ref) for ref in args)
+            key = self.name_key(key)
             self.strings[key] = value
             return complete('set_string', key=key, value=value)
         if y == 47:
@@ -725,7 +757,7 @@ class EngineState:
             slot = ~args[2]
             if not 0 <= slot < len(self.dynamic_strings):
                 raise VMError(f'yield 47: invalid string slot selector {args[2]}')
-            key = self.read_text(vm, args[0])
+            key = self.name_key(self.read_text(vm, args[0]))
             value = self.strings.get(key, '')
             if not value:
                 value = self.read_text(vm, args[1])
@@ -965,8 +997,9 @@ class EngineState:
         if y == 43:
             # setNameReplacement("$USR", text).
             need(1)
-            self.strings['$USR'] = self.read_text(vm, args[0])
-            return complete('set_string', key='$USR', value=self.strings['$USR'])
+            key = self.name_key('$USR')
+            self.strings[key] = self.read_text(vm, args[0])
+            return complete('set_string', key=key, value=self.strings[key])
         if y in (56, 57, 58, 59):
             need({56: 3, 57: 3, 58: 2, 59: 3}[y])
             key = self.number_key(args[0], args[1])
@@ -1346,8 +1379,8 @@ class EngineState:
             # shared one (Session.share_names).
             need(2)
             key, value = (self.read_text(vm, ref) for ref in args)
-            if not self.strings.get('$USR', ''):
-                self.strings[key] = value
+            if not self.strings.get(self.name_key('$USR'), ''):
+                self.strings[self.name_key(key)] = value
             return complete('faceplace_needs_display', key=key, value=value)
         if y == 108:
             # SHSScript::syscall case 0x6c: `SHSDTView clearGlobalAccumulator:(id)`. The id joins `DTNode::accumulators_set` (its

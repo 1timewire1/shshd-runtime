@@ -75,6 +75,14 @@ class PresentationRecordTests(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(ContentError):
                 presentation_record(ExpArchive(encode_exp({1: b'meta', RESOURCE: MAGIC + bad})))
 
+    def test_name_keys_map_one_dollar_key_to_another(self):
+        data = presentation_bytes(dict(name_keys={'$USR': '$USR_M'}))
+        self.assertEqual(presentation_record(ExpArchive(encode_exp({1: b'meta', RESOURCE: data}))),
+                         dict(name_keys={'$USR': '$USR_M'}))
+        for bad in ({'$USR': '$USR'}, {'USR': '$USR_M'}, {'$USR': 'USR_M'}, {'$': '$USR_M'}, {'$USR': 7}, ['$USR']):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                presentation_bytes(dict(name_keys=bad))
+
     def test_a_malformed_record_is_set_aside_and_the_episode_plays(self):
         data = with_resource_3(compile_project(line(cast(), Node('a', text='Hi'))), MAGIC + b'{')
         resources = EpisodeResources(SimpleNamespace(game_id='shs'), dict(pack_id=30000, name='a.exp'),
@@ -179,6 +187,38 @@ class CreatorPresentationTests(unittest.TestCase):
         self.assertEqual(s.narration_theme(), 3)
         answer_screen(s)
         self.assertIsNone(s.narration_theme())
+
+    def test_a_translated_pack_colours_its_named_lines_by_speaker(self):
+        # Owner, 2026-11-18 (TRANSLATION_AUDITS.md §4): the profile's TRANSLATED_NAMED_LINE_THEMES, a speaker's own colour
+        # first, then the pack's ('*'): BREW's things gray and its Tutorial the yellow box; Hollywood's Instructions yellow.
+        project = line(cast(), Node('a', speaker='Book', text='A page.'), Node('b', speaker='Tutorial', text='Tap.'),
+                       Node('c', speaker='Instructions', text='Go.'))
+        data = compile_project(project)
+        for pack, themes in ((31100, [3, None, 3]), (31000, [3, None, 3]), (31700, [None, None, None]),
+                             (31600, [3, 3, 3]), (30000, [None, None, None])):
+            s = session(data, pack_id=pack)
+            seen = []
+            for _ in themes:
+                self.assertEqual(s.advance().details['presentation_mode'], 3)
+                seen.append(s.narration_theme())
+                answer_screen(s)
+            self.assertEqual(seen, themes, pack)
+
+    def test_brews_phone_and_tv_speak_with_the_picture_other_stories_give_them(self):
+        # The profile's TRANSLATED_OBJECT_PORTRAITS (owner, 2026-11-18): a named line under the name shows that bank on a
+        # character of its own; elsewhere the name stays a named line without a portrait.
+        from exp_runtime.engine import OBJECT_CHARACTERS
+        project = line(cast(), Node('a', speaker='Phone', text='Ring!'), Node('b', speaker='TV', text='News.'))
+        data = compile_project(project)
+        s = session(data, pack_id=31100)
+        details = s.advance().details
+        self.assertEqual((details['presentation_mode'], details['speaker']), (2, 'Phone'))
+        self.assertEqual(s.engine.character_art_variants[OBJECT_CHARACTERS], [27075] * 5)
+        answer_screen(s)
+        s.advance()
+        self.assertEqual(s.engine.character_art_variants[OBJECT_CHARACTERS + 1], [27275] * 5)
+        other = session(data, pack_id=31300)
+        self.assertEqual(other.advance().details['presentation_mode'], 3)
 
     def test_an_emoticon_shows_its_project_image_over_the_speaker(self):
         project = cast()

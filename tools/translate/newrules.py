@@ -26,6 +26,8 @@ import nr_art
 # The stories' version (episode_version.py): a newer one replaces an older copy on import, and a rebuild at the same
 # version replaces it too. Raise it when a build must never be replaced by an earlier one.
 STORY_VERSION = 1
+NAMED_VERSION = 2                       # 2: named lines without a portrait as the owner set them (2026-11-18): off-stage
+                                        # portraits, things gray, crowds yellow, voices by speaker, no all-capital names
 PACK_ID = 31300                         # the owner's block for New Rules (TRANSLATOR_PLAN.md decision 5)
 NARRATOR = 199                          # New Rules narrates without a speaker (box mode -4); SHS needs a character
 PLAYER = 1                              # the primary speaker (74) when a story has no dialogue to judge by
@@ -170,6 +172,7 @@ class Report:
     calls: dict = field(default_factory=dict)       # (New Rules service, argc) -> count
     unmapped: dict = field(default_factory=dict)
     looks: int = 0
+    owner_named: int = 0                            # named lines the owner's 2026-11-18 rules changed (NAMED_VERSION)
     unknown_look_sites: int = 0
     unknown: Counter = field(default_factory=Counter)      # words casing left lowercase (the review list)
     notices: int = 0
@@ -247,6 +250,28 @@ def title_card_titles(program):
             title = pushed_values(program, i.pc, i.operand & 255)[0]
             titles.add(title if title is not None else formatted_title(program, i.pc, i.operand & 255))
     return titles - {None}
+
+
+# A menu that calls itself again as its last act (a tail call: save the return, jump, then only leave and return) leaves a frame
+# each time, and New Rules' stack is 256 words: Train That Brain!'s "Keep up the brain training?" > Yes overflowed it after
+# about 33 rounds (TRANSLATION_AUDITS.md §3; owner, 2026-11-18). There the call keeps the caller's return instead (LEAVE in
+# place of SAVE_RETURN, one byte each), so the menu runs as a loop. (download id, script, pc of the SAVE_RETURN, the routine).
+TAIL_CALL_LOOPS = ((23, 25001, 2358, 1984),)
+
+
+def tail_call_loops(program, download_id, rid):
+    """`program` with its TAIL_CALL_LOOPS made loops; a story whose code there isn't the tail call it should be is refused."""
+    for number, script, pc, routine in TAIL_CALL_LOOPS:
+        if (number, script) != (download_id, rid):
+            continue
+        ins = program.instructions
+        after = ins[pc + 2]
+        tail = after.pc + after.operand if after.opcode == 0x28 else after.pc
+        if not (ins[pc].opcode == 0x42 and ins[pc + 1].opcode == 0x29 and ins[pc + 1].operand == routine
+                and ins[routine].opcode == 0x48 and ins[tail].opcode == 0x22 and ins[tail + 1].opcode == 0x43):
+            raise TranslateError(f'story {download_id}: no tail call to {routine} at {rid}:{pc}')
+        program = replace(program, instructions=ins[:pc] + (replace(ins[pc], opcode=0x22),) + ins[pc + 1:])
+    return program
 
 
 def plain_options(program):
@@ -405,6 +430,8 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
         episode = replace(episode, scripts={rid: replace(program, main_words=keys[rid])
                                             for rid, program in episode.scripts.items()})
     episode = replace(episode, scripts={rid: plain_options(program) for rid, program in episode.scripts.items()})
+    episode = replace(episode, scripts={rid: tail_call_loops(program, episode.download_id, rid)
+                                        for rid, program in episode.scripts.items()})
     banks, bank_of = {}, {}
     for (rid, address), record in sorted(looks.items()):
         slots = record[1:]
@@ -419,6 +446,23 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
                     resources[base + HIRES_PORTRAIT_OFFSET + i] = nr_art.png(picture)
         bank_of[rid, address] = banks[slots]
     report.looks = len(banks)
+    extra_speakers = {}
+
+    def extra_speaker(name):
+        """(character, portrait bank, bubble theme) for EXTRA_LOOKS's speaker `name`, its bank rendered the first time."""
+        if name not in extra_speakers:
+            sex, slots = EXTRA_LOOKS[name]
+            if slots not in banks:
+                base = PORTRAIT_BASE + 5 * len(banks)
+                banks[slots] = base
+                for i, picture in enumerate(art.portrait_bank(list(slots), BANK_EXPRESSIONS)):
+                    resources[base + i] = nr_art.png(picture)
+                if hires_art is not None:
+                    for i, picture in enumerate(hires_art.portrait_bank(list(slots), BANK_EXPRESSIONS,
+                                                                        nr_art.HIRES_PORTRAIT_SCALE)):
+                        resources[base + HIRES_PORTRAIT_OFFSET + i] = nr_art.png(picture)
+            extra_speakers[name] = (EXTRA_SPEAKER + len(extra_speakers), banks[slots], 1 if sex == 1 else 2)
+        return extra_speakers[name]
     shown_elsewhere = {(rid, pc) for (number, rid, pc) in TITLE_CARD_BACKGROUNDS if number == episode.download_id}
     held = set(addon or ())                     # resources the addon provides: not rendered here
     for location, mode in sorted(used_scenes(episode, shown_elsewhere)):
@@ -473,7 +517,7 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
                                                  scene_players=players, announcements=handovers,
                                                  player=player, episode_id=episode.download_id, sexes=sexes,
                                                  quiet_transitions=quiet, borrowed=borrowed,
-                                                 borrowed_themes=borrowed_themes))
+                                                 borrowed_themes=borrowed_themes, extra_speaker=extra_speaker))
             else:
                 report.unmapped[key] = report.unmapped.get(key, 0) + 1
                 rewriter.redirect(pc, ('unmapped', service), lambda s: s.result(0))
@@ -500,7 +544,8 @@ def translate(episode: Episode, art: nr_art.Art, report=None, music=None, casing
         report.music = len(tracks)
     if addon is not None:
         resources[ADDON_RECORD] = requires_bytes([(ADDON_ID, STORIES_NEED)])
-    resources[VERSION_RECORD] = version_bytes(STORY_VERSION)
+    looped = any(number == episode.download_id for number, *_ in TAIL_CALL_LOOPS)
+    resources[VERSION_RECORD] = version_bytes(NAMED_VERSION if report.owner_named or looped else STORY_VERSION)
     # The tag tells the importer this is a New Rules story, which the picker never hides as its smartphone version.
     resources[1] = Metadata(PACK_ID, episode.download_id, (episode.title + TITLE_SUFFIX,) * 5).to_bytes()
     return encode_exp(resources), report
@@ -618,6 +663,55 @@ UNSEEN_SPEAKERS = frozenset((
     'all the guys in the crowd', 'centerscore high students', 'race groupies'))
 
 
+# The owner's colours for named lines without a portrait (2026-11-18, TRANSLATION_AUDITS.md §4), over New Rules' own (its
+# bubble takes whoever is listed on stage: the radio Spike's blue): things gray, crowds and mixed groups yellow (0), a group
+# of one sex its colour (from who's listed, as before), voices by who speaks them (VOICE_LINES, else gray).
+GRAY, BLUE_THEME, PINK_THEME, YELLOW = 3, 1, 2, 0
+OBJECT_SPEAKERS = frozenset((
+    'arcade game', 'arcade machine', 'bike', 'boom box', 'doorbell', 'engine', 'horn', 'inexplicable noise!', 'music',
+    'mysterious noise', 'pants', 'phone', 'radio', 'snow machine', 'speaker', 'stereo', 'telephone', 'tv', 'voicemail',
+    'wind', 'wipers'))
+CROWD_SPEAKERS = frozenset(('crowd', 'audience', 'centerscore high students', 'race groupies', 'cheerleaders'))
+VOICE_SPEAKERS = frozenset(('voice', 'mysterious voice', 'muffled voice'))
+VOICE_LINES = {                             # a voice's line -> its speaker's colour, read from the lines around it
+    'Ooooooooooooooohhh!!': BLUE_THEME,                                       # 28: Skazz, dressed as a ghost
+    "The question isn't 'where you are'... The question is 'when'...": BLUE_THEME,
+    'Yes. That would be Kim...': BLUE_THEME,                                  # 41: Tom Prince
+    'Out of the way, losers! Who\'s in charge here?': BLUE_THEME,              # 15: Alexei
+    'So this is `your` house, huh?': BLUE_THEME,                              # 15: Officer Monte
+    "Hey! What's going on around here?": BLUE_THEME,                          # 23: Moondog
+}
+# Speakers given a portrait their episode's cast doesn't have (owner, 2026-11-18; the portrait catalogue's looks): name ->
+# (sex as property 636 has it, the look's 33 slots). They speak as a character of their own (EXTRA_SPEAKER).
+EXTRA_LOOKS = {
+    'loudspeaker': (1, (9, 0, -1, 6, 5, -1, -1, -1, -1, -1, -1703, -1, -3301, -1606, -3804, -3706, -3910, -1214, -1217, -1113,
+                        -1115, -1114, -1113, -1115, -3602, -3605, -3606, -3601, -3603, -1, -1, -1, -1)),       # sports announcer
+    'newswoman': (0, (13, 1, 0, 1, -1, 2, -1, -1, -1, -1, -1709, -1, -3302, -1, -3802, -3703, -3904, -1202, -1302, -1113,
+                      -1115, -1114, -1115, -1115, -3502, -3505, -3501, -3501, -3503, -1, -1, -1, -1)),           # the clerk
+    "ryan's mom": (0, (13, -1, 1, 0, -1, 0, -1, -1, -1, -1, -2901, -1, -3302, -1601, -3806, -3702, -3907, -1204, -1, -1113,
+                       -1113, -1114, -1113, -1115, -3502, -3504, -3501, -3503, -3506, -1401, -1, -1, -1)),      # King of Diss's
+}
+EXTRA_SPEAKER = 90                      # the characters EXTRA_LOOKS's speakers speak as (90, 91...: past any cast)
+
+
+def named_theme(name, text, listed, sexes):
+    """The owner's colour for a named line without a portrait (OBJECT_, CROWD_, VOICE_SPEAKERS), or None to keep New Rules'."""
+    lowered = (name or '').lower()
+    if lowered in OBJECT_SPEAKERS:
+        return GRAY
+    if lowered in CROWD_SPEAKERS:
+        return YELLOW
+    if lowered in VOICE_SPEAKERS:
+        return VOICE_LINES.get(text or '', GRAY)
+    return None
+
+
+def shown_name(name):
+    """A name as the plate shows it: never all capitals ("CROWD" -> "Crowd"; owner, 2026-11-18), but a short one is an
+    abbreviation and stays (TV)."""
+    return name[:1] + name[1:].lower() if name and name.isupper() and len(name) > 2 else name
+
+
 def named_dialogue(rewriter, pc, argc, context):
     """41: ([mode], name, text, char[, expression]) and 42: ([mode], name, text, char, expression, ...): a line under
     a given name with the listed characters' portraits (f.java a(boolean, byte, int, boolean)). An empty name, or one
@@ -650,15 +744,49 @@ def named_dialogue(rewriter, pc, argc, context):
              else bubble_theme(listed, sexes) if unseen else 0)
     if unseen and (context.get('rid'), pc) in context.get('borrowed_themes', {}):
         theme = context['borrowed_themes'][context['rid'], pc]      # King of Diss Lite: the full story's colour
+    text = constant_text(program, rewriter, pc, first + 1, argc)
+    owner_theme = named_theme(name, text, listed, sexes) if unseen else None
+    changed = owner_theme is not None and owner_theme != theme
+    if owner_theme is not None:
+        theme = owner_theme
+    # Off stage, a character of the cast speaks with their own portrait (owner, 2026-11-18: New Rules showed none); a name the
+    # cast lacks but EXTRA_LOOKS has speaks as a character of its own with that look.
+    speaker_as = min(names[name.lower()]) if off_stage else None
+    extra = None
+    if name is not None and name.lower() in EXTRA_LOOKS and (unseen or not own) and name.lower() not in names:
+        extra = context['extra_speaker'](name.lower())
     borrowed = borrowed_expression(context, pc) if words in (1, 2) else None
     partner_left = words in (4, 5) and name_order(name, args[first + 1], args[first + 3], names)
+    plate = shown_name(name) if name and shown_name(name) != name else None
+    if changed or speaker_as is not None or extra is not None or plate is not None:
+        context['report'].owner_named += 1
 
     def build(s):
         remember_line(s, first + 1, context)
+        if extra is not None:                               # (character, bank, theme): a speaker the cast lacks
+            character, bank, colour = extra
+            s.push(character); s.push(THEME); s.push(colour); s.call(52, 3)
+            s.push(character); s.push(NO_BADGE); s.push(1); s.call(52, 3)
+            s.push(character); s.push(bank); s.call(72, 2)
+            s.push(character); s.arg(first); s.call(64, 2)
+            s.arg(first + 1); s.push(character); s.call(13, 2)
+            return
+        if speaker_as is not None:
+            s.arg(first + 1); s.push(speaker_as)
+            if borrowed is not None:
+                s.push(borrowed)
+            elif words >= 2:
+                s.select(first + 3, EXPRESSION, -1)
+            s.call(13, 2 + (borrowed is not None or words >= 2))
+            return
         if unseen or off_stage:
             if theme:
                 s.push(NARRATION_KEY); s.push(theme); s.call(54, 2)
-            s.arg(first); s.arg(first + 1); s.call(15, 2)
+            if plate is not None:
+                s.text(plate)
+            else:
+                s.arg(first)
+            s.arg(first + 1); s.call(15, 2)
             if theme:
                 s.push(NARRATION_KEY); s.push(0); s.call(54, 2)
             return
@@ -685,7 +813,7 @@ def named_dialogue(rewriter, pc, argc, context):
         if not own:
             s.arg(first + 2); s.push(kept); s.call(64, 2)
     rewriter.redirect(pc, ('named', own, unseen or off_stage, theme, partner_left, prefix, first,
-                           min(words, 2) if own else words, borrowed), build)
+                           min(words, 2) if own else words, borrowed, speaker_as, extra, plate), build)
 
 
 def bubble_theme(characters, sexes, every=True):

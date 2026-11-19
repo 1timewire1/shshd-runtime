@@ -209,6 +209,8 @@ class Session:
         self.engine = EngineState()
         self._set_build()
         self.engine.game_key = game_id(resources)
+        self.engine.name_keys = self.name_keys()
+        self.engine.object_portraits = self.object_portraits()
         self.engine.app_version = getattr(resources.library, 'app_info', {}).get('CFBundleVersion')
         transition = transition_class(resources)
         if transition is not None:
@@ -354,6 +356,24 @@ class Session:
             return
         self.tree_serials().add(node.serial)
 
+    def name_keys(self) -> dict:
+        """shshd-runtime: the names this episode keeps under other keys (presentation `name_keys`), {} for none."""
+        cached = self.__dict__.get('_name_keys')
+        if cached is None:
+            from .content import declared
+            try:
+                cached = dict(declared(self.resources, 'name_keys') or {})
+            except Exception:           # (an episode without a record, or resources that can't say)
+                cached = {}
+            self._name_keys = cached
+        return cached
+
+    def object_portraits(self) -> dict:
+        """shshd-runtime: {name: picture bank} for this pack's named things with a picture (the profile's
+        TRANSLATED_OBJECT_PORTRAITS), {} for none."""
+        record = getattr(self.resources, 'record', None) or {}
+        return dict(getattr(GAMES.get(game_id(self.resources)), 'TRANSLATED_OBJECT_PORTRAITS', {}).get(record.get('pack_id'), {}))
+
     def share_names(self, table: dict) -> None:
         """Make the engine's name-replacement table (`$USR`, `$ZOE`, `$DATE`... -- services 46, 47 and 113 and every
         `$KEY` in shown text) the library's own `table` (player.json `names`), as the app's `SHSEntityTable` renames
@@ -383,7 +403,8 @@ class Session:
             if node.active:
                 install_state(engine, node.snapshot)       # `installStateData`: the 67 tracked variables, then what is kept below
         engine.character_names = dict(live.character_names)
-        engine.strings['$USR'] = live.strings.get('$USR', '')
+        engine.name_keys, engine.object_portraits = live.name_keys, live.object_portraits
+        engine.strings[engine.name_key('$USR')] = live.strings.get(live.name_key('$USR'), '')
         for property_id in self.WARP_KEPT_PROPERTIES:
             key = live.number_key(0, property_id)
             if key in live.numbers:
@@ -571,10 +592,18 @@ class Session:
         action = self.pending
         if not action or action.name != 'dialogue' or action.details.get('presentation_mode') != 3:
             return None
+        # The profile's TRANSLATED_NAMED_LINE_THEMES (owner, 2026-11-18): a speaker's own colour by name first, then the number
+        # the translator set, then the pack's default ('*'); 0 is the yellow named-line box.
+        table = getattr(GAMES.get(game_id(self.resources)), 'TRANSLATED_NAMED_LINE_THEMES', {}).get(
+            (getattr(self.resources, 'record', None) or {}).get('pack_id'), {})
+        speaker = action.details.get('speaker') or ''
+        if speaker in table:
+            return table[speaker] if table[speaker] in (1, 2, 3) else None
         key = presentation_feature(self.resources, 'narration_theme')
-        if key is None:
-            return None
-        theme = self.engine.numbers.get(self.engine.number_key(0, key), 0)
+        theme = self.engine.numbers.get(self.engine.number_key(0, key), 0) if key is not None else 0
+        if theme in (1, 2, 3):
+            return theme
+        theme = table.get('*', 0)
         return theme if theme in (1, 2, 3) else None
 
     def portrait_effect(self):
@@ -746,6 +775,8 @@ class Session:
                 self.engine.brew_menus = (getattr(self.resources, 'record', None) or {}).get('pack_id') in getattr(
                     GAMES[game_id(self.resources)], 'TRANSLATED_BREW_MENU_PACKS', ())
                 self.engine.cutscenes_enabled = self.cutscenes
+                self.engine.name_keys = self.name_keys()
+                self.engine.object_portraits = self.object_portraits()
                 action = self.engine.dispatch(self.vm, resource_exists=self.resources.exists)
                 if action.name == 'cutscene':
                     try:
@@ -1817,6 +1848,8 @@ class Session:
             session._set_build()
             engine = session.engine
             engine.game_key = game_id(resources)
+            engine.name_keys = session.name_keys()
+            engine.object_portraits = session.object_portraits()
             engine.app_version = getattr(resources.library, 'app_info', {}).get('CFBundleVersion')
             if engine.music_serial < 0 or not 0 <= engine.music_stop_ms <= 32767:
                 raise SaveError('Invalid music request state')

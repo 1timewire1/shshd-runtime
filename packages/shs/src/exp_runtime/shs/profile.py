@@ -206,6 +206,17 @@ TRANSLATED_PORTRAIT_EFFECTS = {31400: (31410, 26990)}
 TRANSLATED_NARRATION_THEMES = {31300: 31312,
                                31700: 31731}     # Surviving Hollywood: its walk-ons with no portrait (Mom, Dad...) by their own
                                                  # colours, its system voices (Instructions, Phone) gray (tools/translate shw_full.py)
+# shshd-runtime: a translated pack's colours for named lines without a portrait (Session.narration_theme), over the number the
+# translator sets: pack -> {speaker: theme, '*': the pack's default}; 1 blue, 2 pink, 3 gray, 0 the yellow named-line box
+# (owner, 2026-11-18; TRANSLATION_AUDITS.md §4): BREW's named things gray but its Tutorial, '11's cats gray, Surviving
+# Hollywood's Instructions yellow.
+_BREW_NAMED = {'*': 3, 'Tutorial': 0}
+TRANSLATED_NAMED_LINE_THEMES = {31000: _BREW_NAMED, 31100: _BREW_NAMED, 31200: _BREW_NAMED, 31600: {'*': 3},
+                                31700: {'Instructions': 0}}
+# shshd-runtime: a pack's named things that have a picture where a story gives them one, so that a line under that name shows it
+# everywhere (owner, 2026-11-18): BREW's Phone (27075) and TV (27275), as Trick or Treat and Artistic Differences show them.
+_BREW_OBJECTS = {'Phone': 27075, 'TV': 27275}
+TRANSLATED_OBJECT_PORTRAITS = {31000: _BREW_OBJECTS, 31100: _BREW_OBJECTS, 31200: _BREW_OBJECTS}
 # shshd-runtime: a translated pack's quest journal, shown by the pause menu's Quest Journal row while it holds a quest (owner,
 # 2026-11-14: Surviving Hollywood's key 1 and pause menu; tools/translate shw_full.py): pack -> (the global number holding how
 # many quests, the stored-text key of quest n's title as a %d form, its lines' key, and the stats the journal shows first, each

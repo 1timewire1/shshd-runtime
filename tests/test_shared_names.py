@@ -19,6 +19,16 @@ def episode(*calls, strings):
     return Session(Resources(program(*body, 0x33, words=words)))
 
 
+def split_episode(*calls, strings, keys):
+    """An episode declaring presentation `name_keys` (the BREW '07 stories' player name kept by the lead's gender)."""
+    words, refs = text_words(*strings)
+    body = [item for call in calls for item in host_call(call[0], *(refs[i] if isinstance(i, int) and i >= 0 else i
+                                                                     for i in call[1:]))]
+    resources = Resources(program(*body, 0x33, words=words))
+    resources.presentation = dict(name_keys=keys)
+    return Session(resources)
+
+
 class SharedNamesTests(unittest.TestCase):
     def test_a_name_stored_in_one_episode_is_the_one_the_next_episode_reads(self):
         table = {}
@@ -50,6 +60,40 @@ class SharedNamesTests(unittest.TestCase):
         session.share_names(table)
         session.advance()
         self.assertEqual(table, {'$USR': 'Johnny'})
+
+    def test_a_split_player_name_starts_from_the_old_one_and_then_stays_apart(self):
+        # Owner, 2026-11-18: the '07 stories keep `$USR` as `$USR_M` (a male lead) or `$USR_F`; a name typed before the
+        # split carries on under both, and the stories that keep `$USR` ('08, the smartphone) never see the new ones.
+        table = {'$USR': 'Pat'}
+        male = split_episode((47, 0, 1, -1), strings=('$USR', 'You'), keys={'$USR': '$USR_M'})
+        male.share_names(table)
+        male.advance()
+        self.assertEqual(male.engine.dynamic_strings[0], 'Pat')
+        self.assertEqual(table, {'$USR': 'Pat', '$USR_M': 'Pat'})
+        renamed = split_episode((43, 0), strings=('Sam',), keys={'$USR': '$USR_M'})
+        renamed.share_names(table)
+        renamed.advance()
+        self.assertEqual(table, {'$USR': 'Pat', '$USR_M': 'Sam'})
+        self.assertEqual(renamed.engine.substitute('Hi, $USR! ($USR_M)'), 'Hi, Sam! (Sam)')
+        female = split_episode((46, 0, 1), strings=('$USR', 'Kim'), keys={'$USR': '$USR_F'})
+        female.share_names(table)
+        female.advance()
+        self.assertEqual(table, {'$USR': 'Pat', '$USR_M': 'Sam', '$USR_F': 'Kim'})
+        plain = episode((47, 0, 1, -1), strings=('$USR', 'You'))
+        plain.share_names(table)
+        plain.advance()
+        self.assertEqual(plain.engine.dynamic_strings[0], 'Pat')
+        self.assertEqual(plain.engine.substitute('$USR'), 'Pat')
+
+    def test_a_split_name_is_restored_with_its_episode(self):
+        table = {}
+        session = split_episode((46, 0, 1), strings=('$USR', 'Kim'), keys={'$USR': '$USR_F'})
+        session.share_names(table)
+        session.advance()
+        restored = Session.from_snapshot(session.resources, session.snapshot())
+        restored.share_names(table)
+        self.assertEqual(restored.engine.name_keys, {'$USR': '$USR_F'})
+        self.assertEqual(restored.engine.substitute('$USR'), 'Kim')
 
     def test_saves_record_the_table_but_loading_one_keeps_the_shared_values(self):
         table = {'$USR': 'Johnny'}

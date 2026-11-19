@@ -32,6 +32,11 @@ For a translated episode (owner, 2026-11-13; SURVIVING_HOLLYWOOD_ADDON_PLAN.md):
   require) draws instead of the episode's own while that add-on's switch is on (the profile's OPTIONAL_ART): the BREW
   Surviving Hollywood Preview's portraits and backgrounds from `shshw`.
 
+- `name_keys`: {`$KEY`: `$OTHER`}: a name the story reads, writes and shows under one key and the shared names table keeps
+  under another (Engine.name_key): the BREW '07 stories' player name `$USR` as `$USR_M` or `$USR_F` by their lead's gender,
+  so a male lead's name and a female lead's stay apart (owner, 2026-11-18; TRANSLATION_AUDITS.md §2). The other key starts
+  from the first one's value the first time a story needs it.
+
 For an episode made in the Creator (owner, 2026-11-17; CREATOR_CATCHUP_PLAN.md Stage 2):
 
 - `journal`: {count, title, lines, stats}: a quest journal the pause menu shows (quest_journal.py), as Surviving Hollywood's
@@ -48,7 +53,7 @@ FORMAT = 'shshd-presentation'
 VERSION = 1
 EFFECTS = 6
 MEMBERS = ('duet', 'narration_theme', 'portrait_effects', 'music_loops', 'creator', 'addons', 'word_forms', 'date_first',
-           'three_word_games', 'big_pickers', 'minigames', 'aliases', 'optional_art', 'journal')
+           'three_word_games', 'big_pickers', 'minigames', 'aliases', 'optional_art', 'journal', 'name_keys')
 # The packs the translators use (tools/translate: BREW 31000-31200, New Rules 31300, the X360 prototype 31400, Claire Hart
 # 31500, SHS '11 31600, Surviving Hollywood 31700): their episodes take their game's settings from the profile's tables and declare none of the members
 # above for an episode made in the Creator.
@@ -130,6 +135,13 @@ def normalize(record):
             raise ValueError("a journal's stats are [label, global number, prefix]")
         result['journal'] = (_number(journal['count'], "a journal's count"), journal['title'], journal['lines'],
                              tuple((label, _number(key, 'a stat'), prefix) for label, key, prefix in stats))
+    if 'name_keys' in record:
+        keys = record['name_keys']
+        if (not isinstance(keys, dict) or not all(isinstance(k, str) and isinstance(v, str) and k.startswith('$')
+                                                  and v.startswith('$') and len(k) > 1 and len(v) > 1 and k != v
+                                                  for k, v in keys.items())):
+            raise ValueError('name_keys must be {"$KEY": "$OTHER"}')
+        result['name_keys'] = dict(keys)
     if 'addons' in record:
         addons = record['addons']
         if (not isinstance(addons, dict) or set(addons) != {'primary', 'edition'} or not isinstance(addons['primary'], str)

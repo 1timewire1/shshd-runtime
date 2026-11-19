@@ -148,6 +148,9 @@ PRESENTATION_STATUS = {
     'aliases': equivalent("an extra add-on's pictures and sounds"),
     'optional_art': equivalent("an optional add-on's pictures (Optional art…)"),
     'journal': emits('quest'),
+    # The BREW '07 translations' split `$USR` (owner, 2026-11-18): a Creator story names its own keys (any `$KEY`), in
+    # its own names table.
+    'name_keys': equivalent('a name under a key of its own (any $KEY in a name node)'),
 }
 
 def calls(service):

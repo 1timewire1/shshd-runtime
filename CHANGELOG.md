@@ -434,6 +434,25 @@
 
 ### Changed
 
+- **Named lines without a portrait in the translated episodes** (owner, 2026-11-18; reference/TRANSLATION_AUDITS.md):
+  - **New Rules** (25 stories, revision 2; [NEW_RULES.md](docs/NEW_RULES.md#how-a-script-is-translated)):
+    - A cast member speaking off stage now has their own portrait (Skazz, Howard, Taylor, Kel, Dexter, Kim, Mallika,
+      Paula, Megan, the Construction Foreman). King of Diss's Ryan narrates with the present-day look.
+    - The loudspeaker, the newswoman and Ryan's mom have looks of their own: the sports announcer's, the clerk's, and
+      King of Diss's.
+    - Things are gray (the radio, boom box, pants, phones, speaker, music), and crowds are yellow.
+    - A voice takes the colour of whoever speaks it, and gray when no one is named (the dogs' "Grr!", Party Fowl's
+      "Doooom!").
+    - Names in capitals show only their first capital (`Crowd`, `Wipers`).
+  - **BREW:** named things are gray, and the Tutorial is yellow. The Phone and the TV speak with the pictures other
+    stories give them (the profile's `TRANSLATED_NAMED_LINE_THEMES` and `TRANSLATED_OBJECT_PORTRAITS`).
+  - **Elsewhere:** Surviving Hollywood's Instructions are yellow, and '11's Secret Ingredient cats are gray.
+- **'07's player name is kept by the lead's gender** (owner, 2026-11-18; [BREW.md](docs/BREW.md)):
+  - The 16 '07 stories with a lead of known gender (version 4) keep it as `$USR_M` or `$USR_F`, so a boy's name and a
+    girl's no longer overwrite each other. This uses a new presentation member, `name_keys`
+    ([SCHEMA.md](docs/SCHEMA.md#presentation-extension-shshd-runtime)).
+  - A name typed before the split carries on under both.
+  - '08 and the M.A.S.H. packs are unchanged.
 - **Preferred Language** (owner, 2026-11-18; [MAIN_MENU.md](docs/MAIN_MENU.md)): one choice in Options › General in place
   of Episode Titles and the add-ons' DSi Language, '11 Language and Story Language. English, Français, Italiano, Deutsch or
   Español: the episode titles in it where an episode has them and, in the HD presentation, the DSi's stories, SHS '11's
@@ -508,6 +527,9 @@
 
 ### Fixed
 
+- **Train That Brain! stopped after about 33 rounds of "Keep up the brain training?"** (owner, 2026-11-18): the menu
+  called itself again each round and ran out of New Rules' 256-word script stack. The call now keeps its caller's
+  return, so the menu loops (revision 2; [NEW_RULES.md](docs/NEW_RULES.md#how-a-script-is-translated)).
 - **The X360 cutscenes started under the loading screen on a phone** (owner's g54, 2026-11-18): a storyboard's first
   frame loads all its pictures, which took the phone seconds while the episode's loading screen stayed up, and its
   music, which the cutscene's clock follows, played on, so most of Day of Diss's first sweep was missed. The clock and

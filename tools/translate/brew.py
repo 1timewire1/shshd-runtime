@@ -3629,8 +3629,22 @@ def _translate(archive_resources, name, spec, pack, episode, suffix, card, calen
         import shw
         resources[PRESENTATION_RECORD] = presentation_bytes(shw.preview_art(spec))
         resources[VERSION_RECORD] = version_bytes(shw.PREVIEW_VERSION)
+    player_key = PLAYER_NAME_KEYS.get((pack, episode))
+    if player_key is not None:
+        # The player's name kept apart by the lead's gender (presentation name_keys; owner, 2026-11-18)
+        resources[PRESENTATION_RECORD] = presentation_bytes(dict(name_keys={'$USR': player_key}))
+        resources[VERSION_RECORD] = version_bytes(NAME_KEYS_VERSION)
     resources[1] = Metadata(pack, episode, (title + suffix,) * 5).to_bytes()
     return encode_exp(resources)
+
+
+# The '07 stories (and Fall '06) whose lead is named You, by the lead's gender (TRANSLATION_AUDITS.md §2; owner, 2026-11-18):
+# '07 and Fall '06 share one names table (brew07), so a male lead's `$USR` and a female lead's are kept under their own keys.
+# '08's Campaign keeps `$USR` (its own table, one lead named once); the M.A.S.H. packs name only their dates.
+PLAYER_NAME_KEYS = {**{(31100, e): '$USR_M' for e in (14, 16, 20, 23, 25, 26, 27, 75)},
+                    **{(31100, e): '$USR_F' for e in (6, 8, 9, 15, 19, 21, 28, 74)},
+                    (31200, 1): '$USR_M'}
+NAME_KEYS_VERSION = 4                   # 4: the player's name under $USR_M / $USR_F (owner, 2026-11-18)
 
 
 EMPTY_SCRIPT = b'kiwi\x01\x00' + bytes(6) + b'\x00\x01' + bytes((0x33,))   # KiWi v1: no data, one instruction, HALT

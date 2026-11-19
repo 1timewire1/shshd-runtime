@@ -125,7 +125,7 @@ class NewRulesShimTests(unittest.TestCase):
         self.nr = newrules
 
     def translate_calls(self, source, names=None, music=True, primary=1, sexes=None, episode_id=0, quiet=(),
-                        borrowed=None, borrowed_themes=None):
+                        borrowed=None, borrowed_themes=None, extra_speaker=None):
         nr = self.nr
         rewriter = Rewriter(source, zero_gap=True)
         last_line = rewriter.words([-1])
@@ -140,7 +140,8 @@ class NewRulesShimTests(unittest.TestCase):
                 keyboard_guards=nr.keyboard_guards(source), scores=Counter(),
                 scene_players=nr.scene_players(source, names or {}, Counter()), sexes=sexes or {},
                 episode_id=episode_id, quiet_transitions=set(quiet), borrowed=borrowed or {},
-                borrowed_themes=borrowed_themes or {}))
+                borrowed_themes=borrowed_themes or {},
+                extra_speaker=extra_speaker or (lambda name: (nr.EXTRA_SPEAKER, 27000, 2))))
         return rewriter.finish(), report
 
     def test_the_minigame_library_keeps_its_place_and_calls_the_arena_services(self):
@@ -332,7 +333,8 @@ class NewRulesShimTests(unittest.TestCase):
         self.assertEqual(yields(result)[:2], [(13, (welcome, 19, nr.EXPRESSION[2])), (13, (own, 19))])
         self.assertNotIn(54, [service for service, _ in yields(result)])        # no gray narration key for the crowd
         result, _ = self.translate_calls(lite, sexes={19: 1, 20: -1})
-        self.assertIn((54, (nr.NARRATION_KEY, 3)), yields(result))              # without them: gray, as before
+        self.assertNotIn(54, [service for service, _ in yields(result)])        # without them: a crowd is yellow too
+                                                                                # (owner, 2026-11-18)
 
     def test_mode_lines_keep_the_thought_prefix_and_drop_other_box_modes(self):
         words = text_words('hm.')
@@ -367,23 +369,81 @@ class NewRulesShimTests(unittest.TestCase):
 
     def test_named_lines_without_a_portrait_take_new_rules_bubble_colour(self):
         # h.java d: one listed character's colour, the colour several share, else New Rules' default yellow banner
-        # (SHS's own box: no key). A known character speaking over someone else (King of Diss's Ryan over Chris) is a
-        # named line in the speaker's own colour.
+        # (SHS's own box: no key). A known character speaking over someone else (King of Diss's Ryan over Chris) speaks
+        # with their own portrait (owner, 2026-11-18; New Rules showed none).
         nr = self.nr
-        words = text_words('crowd') + text_words('ryan') + text_words('hey!')
-        crowd, ryan, line = 0, len(text_words('crowd')), len(text_words('crowd') + text_words('ryan'))
-        source = program((0x1A, crowd), (0x1A, line), (0x1A, 5), (0x1A, 0), (0x1A, 9), (0x1A, 0), call(42, 6),
-                         (0x1A, crowd), (0x1A, line), (0x1A, 6), (0x1A, 0), (0x1A, 9), (0x1A, 0), call(42, 6),
+        group = 'all the guys in the crowd'                  # an unseen group the owner left to New Rules' rule
+        words = text_words(group) + text_words('ryan') + text_words('hey!')
+        kids, ryan, line = 0, len(text_words(group)), len(text_words(group) + text_words('ryan'))
+        source = program((0x1A, kids), (0x1A, line), (0x1A, 5), (0x1A, 0), (0x1A, 9), (0x1A, 0), call(42, 6),
+                         (0x1A, kids), (0x1A, line), (0x1A, 6), (0x1A, 0), (0x1A, 9), (0x1A, 0), call(42, 6),
                          (0x1A, ryan), (0x1A, line), (0x1A, 6), call(41, 3),
                          (0x1A, ryan), (0x1A, line), (0x1A, 17), call(41, 3), 0x33, words=words)
         sexes = {5: 0, 6: 1, 9: 1, 17: 1}
-        result, _ = self.translate_calls(source, names={'ryan': {17}}, sexes=sexes)
+        result, report = self.translate_calls(source, names={'ryan': {17}}, sexes=sexes)
         themes = [args[1] for service, args in yields(result) if service == 54 and args[0] == nr.NARRATION_KEY]
-        self.assertEqual(themes, [1, 0, 1, 0])              # mixed crowd: yellow (no key); two boys: blue; Ryan: blue
-        self.assertEqual([args for service, args in yields(result) if service in (13, 15)][-1], (line, 17))
+        self.assertEqual(themes, [1, 0])                    # mixed group: yellow (no key); two boys: blue
+        self.assertEqual([args for service, args in yields(result) if service in (13, 15)][-2:], [(line, 17)] * 2)
+        self.assertEqual(report.owner_named, 1)             # Ryan off stage
         self.assertEqual(nr.bubble_theme([37], {37: -1}), 3)          # the offscreen group (King of Diss's TV): gray
         self.assertEqual(nr.bubble_theme([], {}), 0)                  # no one listed: yellow
         self.assertEqual(nr.bubble_theme([12], {}), 0)                # unknown: yellow
+
+    def test_the_owners_colours_for_things_crowds_and_voices(self):
+        # Owner, 2026-11-18 (TRANSLATION_AUDITS.md §4): things gray, crowds yellow whoever is listed, a voice by who
+        # speaks it (else gray); names shown without all capitals.
+        nr = self.nr
+        self.assertEqual(nr.named_theme('Phone', 'Ring!', [6], {6: 1}), nr.GRAY)
+        self.assertEqual(nr.named_theme('WIPERS', 'Squeak.', [], {}), nr.GRAY)
+        self.assertEqual(nr.named_theme('Crowd', 'Yay!', [6, 9], {6: 1, 9: 1}), nr.YELLOW)
+        self.assertEqual(nr.named_theme('Voice', 'Yes. That would be Kim...', [], {}), nr.BLUE_THEME)
+        self.assertEqual(nr.named_theme('Voice', 'Hello?', [], {}), nr.GRAY)
+        self.assertIsNone(nr.named_theme('The guys', 'Hey!', [6], {6: 1}))       # New Rules' own rule
+        self.assertEqual([nr.shown_name(n) for n in ('CROWD', 'HORN', 'Kel', 'TV', 'A', None)],
+                         ['Crowd', 'Horn', 'Kel', 'TV', 'A', None])
+        words = text_words('CROWD') + text_words('Go!')
+        line = len(text_words('CROWD'))
+        result, report = self.translate_calls(program((0x1A, 0), (0x1A, line), (0x1A, 6), (0x1A, 0), (0x1A, 9), (0x1A, 0),
+                                                      call(42, 6), 0x33, words=words), sexes={6: 1, 9: 0})
+        (_, (plate, said)), = yields(result)
+        self.assertEqual(said, line)
+        data = KiwiVM(result).data
+        self.assertEqual(struct.pack('>3H', *(data[plate + i] for i in range(3))), b'Crowd\0')
+        self.assertEqual(report.owner_named, 1)
+
+    def test_a_speaker_the_cast_lacks_takes_the_owners_look(self):
+        # The loudspeaker (the sports announcer's look), the newswoman (the clerk's) and Ryan's mom speak as a
+        # character of their own (EXTRA_LOOKS), in their colour and without a badge.
+        nr = self.nr
+        words = text_words('Loudspeaker') + text_words('Attention!')
+        line = len(text_words('Loudspeaker'))
+        asked = []
+
+        def extra_speaker(name):
+            asked.append(name)
+            return nr.EXTRA_SPEAKER, 27000, 1
+        result, report = self.translate_calls(program((0x1A, 0), (0x1A, line), (0x1A, 6), (0x1A, 0), call(42, 4),
+                                                      0x33, words=words), sexes={6: 1}, extra_speaker=extra_speaker)
+        c = nr.EXTRA_SPEAKER
+        self.assertEqual(asked, ['loudspeaker'])
+        self.assertEqual(yields(result), [(52, (c, nr.THEME, 1)), (52, (c, nr.NO_BADGE, 1)), (72, (c, 27000)),
+                                          (64, (c, 0)), (13, (line, c))])
+        self.assertEqual(report.owner_named, 1)
+
+    def test_train_that_brains_menu_loops_instead_of_growing_the_stack(self):
+        # Its "Keep up the brain training?" > Yes calls the menu again as its last act; that call keeps the caller's
+        # return (LEAVE for SAVE_RETURN), so the menu loops (owner, 2026-11-18). Other code there is refused.
+        nr = self.nr
+        source = program(0x42, (0x29, 4), 0x22, 0x43, 0x48, 0x22, 0x43)
+        pc = 0
+        looped = nr.tail_call_loops(source, 0, 25001)
+        self.assertIs(looped, source)                         # not Train That Brain!
+        from unittest.mock import patch
+        with patch.object(nr, 'TAIL_CALL_LOOPS', ((23, 25001, pc, 4),)):
+            looped = nr.tail_call_loops(source, 23, 25001)
+            self.assertEqual([i.opcode for i in looped.instructions], [0x22, 0x29, 0x22, 0x43, 0x48, 0x22, 0x43])
+            with self.assertRaises(nr.TranslateError):
+                nr.tail_call_loops(program(0x42, (0x29, 4), 0x33, 0x43, 0x48, 0x22, 0x43), 23, 25001)
 
     def test_a_title_card_shows_its_chosen_shs_picture(self):
         # TITLE_CARD_BACKGROUNDS: (download id, script, PC) -> a shared-bank picture, or one per time of day (MODE_KEY).
@@ -528,12 +588,14 @@ class NewRulesShimTests(unittest.TestCase):
         self.assertEqual(yields(result), [(15, (0, line))])
 
     def test_a_line_spoken_by_no_one_on_stage_has_no_portrait(self):
-        # Dancing Queen's radio plays while Spike (17) stands by it: 42 lists him, but the radio speaks.
+        # Dancing Queen's radio plays while Spike (17) stands by it: 42 lists him, but the radio speaks, in a thing's gray
+        # (owner, 2026-11-18).
         words = text_words('Radio') + text_words('{')
         line = len(text_words('Radio'))
         source = program((0x1A, 0), (0x1A, line), (0x1A, 17), (0x1A, 0), call(42, 4), 0x33, words=words)
         result, _ = self.translate_calls(source)
-        self.assertEqual(yields(result), [(15, (0, line))])
+        key = self.nr.NARRATION_KEY
+        self.assertEqual(yields(result), [(54, (key, 3)), (15, (0, line)), (54, (key, 0))])
 
     def test_named_line_with_the_characters_own_name_keeps_its_portrait(self):
         words = text_words('kel') + text_words('yo.')
@@ -1066,6 +1128,20 @@ class BrewShimTests(unittest.TestCase):
     def setUp(self):
         import brew
         self.brew = brew
+
+    def test_07s_player_name_is_kept_by_the_leads_gender(self):
+        # TRANSLATION_AUDITS.md §2 (owner, 2026-11-18): eight male and eight female '07 stories and Fall '06 (male); '08's
+        # Campaign and the M.A.S.H. packs (76-81) keep `$USR`. Each key is a valid presentation record.
+        from exp_runtime.presentation import presentation_bytes
+        keys = self.brew.PLAYER_NAME_KEYS
+        self.assertEqual(sorted(e for (p, e), k in keys.items() if k == '$USR_M' and p == 31100),
+                         [14, 16, 20, 23, 25, 26, 27, 75])
+        self.assertEqual(sorted(e for (p, e), k in keys.items() if k == '$USR_F'), [6, 8, 9, 15, 19, 21, 28, 74])
+        self.assertEqual(keys[31200, 1], '$USR_M')
+        self.assertFalse({pack for pack, _ in keys} - {31100, 31200})
+        self.assertFalse({e for _, e in keys} & set(range(76, 82)))
+        for key in set(keys.values()):
+            presentation_bytes(dict(name_keys={'$USR': key}))
 
     def test_a_title_card_shows_the_owners_pick_for_its_location_or_story(self):
         # CARD_BANK by the strip it opens on (location index, sky), else CARD_BY_TITLE; an add-on picture only once it has one
