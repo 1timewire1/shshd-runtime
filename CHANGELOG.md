@@ -549,6 +549,10 @@
 
 ### Fixed
 
+- **Backups and exports on iPhone and iPad** (iPad, 2026-11-19): Back Up Progress, a sync's Back Up Receiver First
+  and Export Episodes wrote beside the app's data, where iOS lets no app write (Sync Devices failed with "Operation
+  not permitted"). They now go in the app's Documents (SHSHD Runtime Backups, SHSHD Runtime Episodes), which the
+  Files app shows.
 - **The iPad could freeze on its last frame** (iPad, 2026-11-19): when iOS paused the app (an audio interruption, or
   the app leaving the front) without telling it later that it was back, the host kept the runtime paused while
   the app was on screen: the picture stayed, taps did nothing, and after some minutes iOS closed it. The host now

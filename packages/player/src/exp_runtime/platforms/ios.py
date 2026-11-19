@@ -106,6 +106,10 @@ class Host:
         graphics.native_controls = []               # the options' switches and sliders are UIKit's (controls)
         graphics.device_name = device_name          # Sync Devices' name for this device (not the socket's "localhost")
         self.directory = Path(directory)
+        # Backups (Back Up Progress, a sync's "before sync" one) and exported episodes in the app's Documents, which
+        # the Files app shows: the default (home's Downloads, else home) is the app's container on iOS, where the app
+        # may not write (iPad, 2026-11-19: Sync Devices with Back Up Receiver First failed, "Operation not permitted").
+        Application.USER_FOLDER_ROOT = str(self.directory)
         install_log(self.directory)
         self.update_future = None
         self.update_request = None

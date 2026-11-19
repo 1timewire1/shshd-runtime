@@ -28,6 +28,8 @@ class IosWindowTests(unittest.TestCase):
         self.addCleanup(graphics.install, previous)
         icon_surface.cache_clear()
         self.addCleanup(icon_surface.cache_clear)
+        from exp_runtime.application import Application
+        self.addCleanup(setattr, Application, 'USER_FOLDER_ROOT', Application.USER_FOLDER_ROOT)   # (Host sets it)
         host = Host(self.root, backend=backend, library_root=self.root / 'libraries', check_updates=False,
                     view_size=view_size)
         self.addCleanup(host.app.close)
@@ -39,6 +41,13 @@ class IosWindowTests(unittest.TestCase):
                     logger.removeHandler(handler)
         self.addCleanup(drop_log)
         return host
+
+    def test_backups_and_exports_go_in_the_apps_documents(self):
+        # iPad, 2026-11-19: a sync's "before sync" backup went to the app's container (home: no Downloads there),
+        # where iOS refused it ("Operation not permitted"); Documents is the app's own, shown by the Files app.
+        host = self.host()
+        self.assertEqual(host.app.backup_folder(), self.root / 'SHSHD Runtime Backups')
+        self.assertEqual(host.app.user_folder('Episodes').parent, self.root)
 
     def test_the_window_follows_the_views_pixel_size(self):
         host = self.host()
