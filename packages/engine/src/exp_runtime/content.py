@@ -484,8 +484,14 @@ def _episode_inputs(paths, *, game):
                 continue                    # read by _store_listing
             elif path.is_file() and (path.suffix.lower() in ('.exp', '.zip', '.rar') or path.name.lower() == catalog_name):
                 candidates = [path]
+            elif path.is_file() and game == 'shs' and path.suffix.lower() == '.ipa' and is_hd_ipa(path):
+                # shshd-runtime: the HD app joins a library only as it is made (import_game), so say how (the g54 pass,
+                # 2026-11-19: Add Episodes showed only the list of what it takes).
+                raise ContentError('The SHS HD (iPad) IPA is added with the APK when the library is made. To add it now, '
+                                   'back up your progress, delete the library and choose the APK and the HD IPA together '
+                                   '(or use Bulk Import), then restore your progress.')
             else:
-                raise ContentError(f'Choose an EXP file, episode ZIP/RAR, folder, or {catalog_name}: {path}')
+                raise ContentError(f'Choose an EXP file, episode ZIP/RAR, folder, or {catalog_name}: {path.name}')
             for item in candidates:
                 if item.suffix.lower() in ('.zip', '.rar'):
                     key = item.resolve()

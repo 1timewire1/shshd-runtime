@@ -265,6 +265,22 @@ class ImportTests(unittest.TestCase):
                 with self.assertRaisesRegex(ContentError, 'Cannot read APK member'):
                     resources.read_asset(42)
 
+    def test_adding_the_hd_ipa_to_a_library_says_how_to_add_it(self):
+        # The g54 pass (2026-11-19): Add Episodes with the HD app showed only what it takes. It joins a library as it is made.
+        import plistlib
+        target = self.root / 'library'
+        import_game(self.apk, [], target)
+        hd_ipa = self.root / 'hd.ipa'
+        with ZipFile(hd_ipa, 'w') as ipa:
+            ipa.writestr('Payload/SHSHD.app/Info.plist', plistlib.dumps({'CFBundleIdentifier': 'com.ea.shs.ipad.inc'}))
+        with ContentLibrary(target) as library:
+            with self.assertRaisesRegex(ContentError, 'added with the APK when the library is made'):
+                library.add_episodes([hd_ipa])
+            other = self.root / 'notes.txt'
+            other.write_text('x')
+            with self.assertRaisesRegex(ContentError, r'folder, or shs_options\.sav: notes\.txt$'):
+                library.add_episodes([other])
+
     def test_hd_ipa_is_optional_and_unlocks_mapped_assets_only(self):
         target = self.root / 'library'
         manifest = import_game(self.apk, [], target)
