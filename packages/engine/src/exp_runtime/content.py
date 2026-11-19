@@ -669,11 +669,16 @@ def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, hd
                         episode_record(_zip_read(apk, name), rest, {kind + '_member': name})
         except BadZipFile as error:
             raise ContentError(f'The supplied {kind.upper()} is not a valid ZIP archive') from error
+        held_addons = []                # shshd-runtime: add-ons among the files, added once the library exists (below)
         with _episode_inputs(episode_paths, game=source_game) as (external, catalog):
             external = list(external)
             for index, path in enumerate(external):
                 report(f'episode {index + 1} of {len(external)}')
                 data = path.read_bytes()
+                declared = addon_record(ExpArchive(data))
+                if declared is not None and declared[0] == 'provides':
+                    held_addons.append((data, path.name, {}))
+                    continue
                 sha = digest(data)
                 episode_record(data, path.name, dict(file=f'content/{sha}.exp'))
                 if 'file' in records[sha]:
@@ -697,6 +702,12 @@ def import_game(apk_path: Path, episode_paths: list[Path], destination: Path, hd
         if music_apk is not None:
             with ContentLibrary(staged) as library:
                 library.add_music_apk(music_apk)
+                manifest = library.manifest
+        if held_addons:
+            # An add-on among the first files (Bulk Import's cod_episodes holding CoD's `chslim`, the g54 pass 2026-11-19:
+            # the whole CoD import failed on it) goes in as Add Episodes adds one.
+            with ContentLibrary(staged) as library:
+                library._install_episodes(iter(held_addons))
                 manifest = library.manifest
         staged.rename(destination)
     return manifest

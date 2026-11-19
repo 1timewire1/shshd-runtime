@@ -82,6 +82,20 @@ class AddonLibraryTests(unittest.TestCase):
         with ContentLibrary(self.target) as reopened:                               # the manifest keeps it
             self.assertEqual(reopened.open_episode('story.exp').read_asset(26001), b'addon art')
 
+    def test_the_first_import_takes_an_addon_among_its_files(self):
+        # Bulk Import's episode folders (cod_episodes holding CoD's chslim): the whole import failed on the add-on, which
+        # has no scripts (the g54 pass, 2026-11-19). It goes in as Add Episodes adds one.
+        folder = self.root / 'episodes'
+        folder.mkdir()
+        (folder / 'pack.exp').write_bytes(addon())
+        (folder / 'story.exp').write_bytes(episode())
+        target = self.root / 'first'
+        import_game(self.apk, [folder], target)
+        with ContentLibrary(target) as library:
+            self.assertEqual([a['addon'] for a in library.addons], ['shsnr'])
+            self.assertNotIn('pack.exp', [e['name'] for e in library.episodes])
+            self.assertEqual(library.open_episode('story.exp').read_asset(26001), b'addon art')
+
     def test_an_episode_without_its_addon_says_so_before_playing(self):
         with ContentLibrary(self.target) as library:
             library.add_episodes([self.write('story.exp', episode(requires=(('shsnr', 2),)))])
