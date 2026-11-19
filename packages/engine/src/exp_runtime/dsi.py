@@ -4,8 +4,9 @@ player's own DSiWare image).
 The DSi draws each location as two 192 x 256 screens, a left and a right one, where the smartphone's picture pans. With the
 add-on imported and DSi Backgrounds on, an episode shows them when every background it can show has a DSi counterpart
 (owner, 2026-11-15, reference/Other Games/docs/DSI_ADDON_SCOPE.md):
-- in the eight stories the DSi ported (`stories`), whatever the DSi showed for that picture, its stand-in times included;
-- in any other episode, only a picture of the same location at the same time of day (`exact`).
+- whatever the DSi showed for that picture, its stand-in times included: at first only in the eight stories the DSi ported
+  (`stories`), any other episode needing the same location at the same time of day (`exact`); since 2026-11-18 every
+  episode takes the stand-ins (owner: 29 more episodes qualify, DSI_ADDON_SCOPE.md section 5).
 An episode's own picture that is plain black (a fade or flashback screen) needs no counterpart: it shows as it is.
 An episode made in the Creator may name the DSi location each of its own pictures is (presentation `optional_art`, `shsdsi`:
 its picture -> the location's left screen; owner, 2026-11-17), which counts as that picture's counterpart.
@@ -116,9 +117,7 @@ def picture_for(resources, background):
         return pictures[background]
     value = spec(resources.library) or {}
     entry = value.get('bank', {}).get(str(background))
-    if entry is None or not (entry[1] or is_story(resources.record, value)):
-        return None
-    return entry[0]
+    return None if entry is None else entry[0]
 
 
 def own_locations(resources, value):
@@ -139,7 +138,6 @@ def episode_pictures(resources):
     if not own and not smartphone_episode(resources):
         return None
     bank = value.get('bank', {})
-    story = is_story(resources.record, value)
     shown = shown_backgrounds(resources.programs.values(), resources.exists)
     pictures = {}
     for background in shown:
@@ -149,7 +147,7 @@ def episode_pictures(resources):
         entry = bank.get(str(background))
         if entry is None and background >= OWN_ART and plain_black(resources, background):
             continue                # its own black screen shows as it is, as it would beside the DSi's art
-        if entry is None or not (story or entry[1]):
+        if entry is None:
             return None
         pictures[background] = entry[0]
     return pictures or None
@@ -311,7 +309,8 @@ def episode_title(library, record, language):
 
 # ---------- which episodes qualify, kept for the episode list (its DSi tag) ----------
 
-COVERAGE_FILE = 'dsi_backgrounds.json'     # in the library's folder: {"addon": its file, "episodes": {id: true/false}}
+COVERAGE_FILE = 'dsi_backgrounds.json'     # in the library's folder: {"addon": its file, "rule": RULE, "episodes": {id: bool}}
+RULE = 2            # which episodes qualify: 1 the eight stories' stand-ins only, 2 every episode's (2026-11-18)
 _coverage_lock = threading.Lock()
 
 
@@ -325,7 +324,7 @@ def _coverage(library):
         path = Path(library.directory) / COVERAGE_FILE
         try:
             saved = json.loads(path.read_text(encoding='utf-8'))
-            if saved.get('addon') == key and isinstance(saved.get('episodes'), dict):
+            if saved.get('addon') == key and saved.get('rule', 1) == RULE and isinstance(saved.get('episodes'), dict):
                 episodes = {k: bool(v) for k, v in saved['episodes'].items()}
         except (OSError, ValueError, AttributeError):
             pass
@@ -356,7 +355,7 @@ def measure(library, record):
         try:
             path = Path(library.directory) / COVERAGE_FILE
             staged = path.with_suffix('.tmp')
-            staged.write_text(json.dumps(dict(addon=key, episodes=episodes), separators=(',', ':')), encoding='utf-8')
+            staged.write_text(json.dumps(dict(addon=key, rule=RULE, episodes=episodes), separators=(',', ':')), encoding='utf-8')
             staged.replace(path)
         except OSError as error:
             logging.warning('DSi: the record of qualifying episodes is not saved: %s', error)

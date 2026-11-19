@@ -326,9 +326,10 @@ the DSi drew the auto shop from outside where the bank's three pictures are insi
 **Which episodes** (`exp_runtime/dsi.py`): SHS's own (not a translation from another game, nor an episode on an add-on)
 whose every background, read from its scripts' constant arguments (services 11, 34, 35, 86 and title cards), has a DSi
 picture:
-- the eight stories the DSi ported (Football Star and Classics 1, 2, 5, 7, 8, 10 and 12, by title) take whatever the DSi
-  showed, its stand-in times included (a night den is its day den);
-- any other episode only a picture of the same location at the same time.
+every episode takes whatever the DSi showed for a picture, its stand-in times included (a night den is its day den).
+At first only the eight stories the DSi ported (Football Star and Classics 1, 2, 5, 7, 8, 10 and 12) did, and any other
+episode needed the same location at the same time; since 2026-11-18 every episode does (owner), which took test-library
+from 28 qualifying copies to 87.
 
 A picture of the episode's own that is plain black (a fade or flashback screen) needs no counterpart and shows as it is
 (owner, 2026-11-15): seven episodes were held back by nothing else.
@@ -336,7 +337,8 @@ A picture of the episode's own that is plain black (a fade or flashback screen) 
 **In the episode list** (list view only, owner 2026-11-15): while DSi Backgrounds is on, an episode that shows them has a
 DSi tag beside its play button, left of an SD or translated game's tag. Finding that out means opening the episode
 (about 0.1 s on a PC), so a background thread does it the first time a row is drawn and the library keeps the answers in
-`dsi_backgrounds.json`, for the add-on file it holds (`dsi.known`, `dsi.measure`); the tag appears when it's known.
+`dsi_backgrounds.json`, for the add-on file it holds and the rule (`dsi.RULE`) it was measured under (`dsi.known`,
+`dsi.measure`); the tag appears when it's known.
 
 A background a script picks at run time is looked up the same way when it appears; one with no DSi picture shows as before.
 

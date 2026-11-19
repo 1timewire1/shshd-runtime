@@ -162,9 +162,10 @@ class EligibilityTests(unittest.TestCase):
         self.assertIsNone(dsi.episode_pictures(resources(*host_call(11, 0, 1015), *host_call(11, 0, 1003))))
         self.assertIsNone(dsi.episode_pictures(resources(*host_call(11, 0, 1015), held=False)))
 
-    def test_only_the_dsi_stories_take_its_stand_in_times(self):
+    def test_every_episode_takes_its_stand_in_times(self):
+        # (owner, 2026-11-18: at first only the DSi's own stories did; 29 more episodes qualify this way)
         other = resources(*host_call(11, 0, 1009))
-        self.assertIsNone(dsi.episode_pictures(other))
+        self.assertEqual(dsi.episode_pictures(other), {1009: 'Backyard_Night'})
         story = resources(*host_call(11, 0, 1009), title='01: Making Some Dough')
         self.assertEqual(dsi.episode_pictures(story), {1009: 'Backyard_Night'})
         self.assertEqual(dsi.picture_for(story, 1009), 'Backyard_Night')
@@ -204,6 +205,14 @@ class EligibilityTests(unittest.TestCase):
             del library._dsi_coverage                                      # a new start reads the library's record
             self.assertTrue(dsi.known(library, record))
             self.assertEqual(opened, ['abc'])
+            import json
+            from pathlib import Path
+            path = Path(folder) / dsi.COVERAGE_FILE
+            saved = json.loads(path.read_text(encoding='utf-8'))
+            path.write_text(json.dumps(dict(saved, rule=1)), encoding='utf-8')
+            del library._dsi_coverage
+            self.assertIsNone(dsi.known(library, record))                 # measured under the old rule: again
+            dsi.measure(library, record)
             library.addon = lambda addon_id: (dict(file='b.exp', revision=3), library.archive)
             self.assertIsNone(dsi.known(library, record))                 # another add-on: measured again
             library.held = False
@@ -217,7 +226,7 @@ class EligibilityTests(unittest.TestCase):
     def test_a_background_chosen_at_run_time_is_looked_up_too(self):
         found = resources(*host_call(11, 0, 1015))
         self.assertEqual(dsi.picture_for(found, 1010), 'Backyard_Night')    # exact: any episode that qualifies
-        self.assertIsNone(dsi.picture_for(found, 1009))                     # a stand-in: the DSi stories only
+        self.assertEqual(dsi.picture_for(found, 1009), 'Backyard_Night')    # a stand-in: any episode too (2026-11-18)
         self.assertIsNone(dsi.picture_for(found, 1003))
 
     def test_titles_are_matched_without_their_number(self):
