@@ -375,7 +375,7 @@ class FaceplaceMessage:
     image_id: int = -1
     # Continuation calls ("Tap here to ...") that follow a message belong to it: HD shows them as further
     # paragraphs of the same post and the same alert, not as new posts.
-    continuations: list['FaceplaceMessage'] = field(default_factory=list)
+    continuations: 'list[FaceplaceMessage]' = field(default_factory=list)    # whole, so 3.10's get_type_hints resolves it
 
 
 @dataclass
