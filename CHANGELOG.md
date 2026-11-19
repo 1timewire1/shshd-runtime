@@ -36,7 +36,8 @@
   optional art from Hollywood and the DSi; Reflex with your own icons; BREW-style calendars with school days, events and
   date cards; and New Rules' minigames in their arena. Its episodes are listed under **User-Created Episodes**, after
   the official ones, instead of Premium Content (re-import one added before to move it), and the SHS novel's Extended
-  adaptation joins the novel's bonus chapter under Special SHS Novel Content.
+  adaptation joins the novel's bonus chapter under Special SHS Novel Content. It is built as pack 32000 since 2026-11-18
+  (it shared 31500 with the planned Claire Hart translation); import the rebuilt copy and delete the old one.
 - **Sequences with a controller** (owner, 2026-11-17): New Rules' number-key game, which a controller couldn't play,
   takes a highlight moved round its six keys with the D-pad or stick and pressed with confirm: New Rules' highlight box
   behind the key, or a yellow outline in the X360 look.
@@ -184,6 +185,9 @@
 - **Episode versions** (resource 5): a newer import replaces the library's older copies of the same episode, asking
   first about one with a game in progress. The translators write version 1; the Creator has a Version box.
 - **Test channel** (`SHSHD_TEST_CHANNEL`, 127.0.0.1 only; debuggable Android builds): drive the app by its state.
+  For the phone passes (2026-11-18, [RUNTIME.md](docs/RUNTIME.md#test-channel-this-fork)) it gained `resize W H`,
+  `menu`, `episodes`, `addons`, `delete` and `delete-addon` (Data Management's own Delete), `memory` and
+  `timing off groups`, and `open` from inside a story now waits for the one it asked for.
 - **Options' choice pages:** Episode Titles, Start In, Confirm Button and Word Grid Controls open a page of their
   values, and show the current one under their names.
 - **Title Screen Music** (main menu, Options -> Add-Ons): Default, Auto (the game last played), or the title tune of
