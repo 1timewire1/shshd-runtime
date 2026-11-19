@@ -132,11 +132,15 @@ TRANSLATED_THREE_WORD_PACKS = (31000, 31100, 31200)
 # shshd-runtime: packs whose menus drop a blank last option, as BREW's (FUN_0000d6a0; engine.brew_menus): an option list ending in `|`
 # has one option fewer. SHS's own menus keep it (2026-11-07, the decompiled BREW engine check).
 TRANSLATED_BREW_MENU_PACKS = (31000, 31100, 31200)
-# Six photos (Fall '06's look choice, Stage 6): the chosen photo in front and the other five small in a row behind it, as the
-# ten-photo layout's middle row.
-SIX_PICKER = [(160, 275), (56, 168, .4), (108, 168, .4), (160, 168, .4), (212, 168, .4), (264, 168, .4)]
+# Six photos (Fall '06's look choice, Stage 6): the chosen photo in front and the other five around it, as the native five's four
+# (owner, 2026-11-19; until then a row behind it): the native slots' circle (radius 114 about the front photo, from its left slot
+# to its right one), five evenly spaced, each a little smaller (.46: the native .6 by how much closer together they are).
+SIX_PICKER = [(160, 275), (52, 241, .46), (93, 183, .46), (160, 161, .46), (227, 183, .46), (269, 241, .46)]
+# Three photos (Surviving Hollywood's look choice): the four-face layout with its top slot empty, so the two small photos sit
+# either side of the chosen one (owner, 2026-11-19; the native slots put them both to the left).
+THREE_PICKER = [(160, 275), (52, 241), (269, 241)]
 TRANSLATED_PICKER_LAYOUTS = {31300: {4: FOUR_PICKER}, 31100: {4: FOUR_PICKER, 10: MASH_PICKER},
-                             31200: {4: FOUR_PICKER, 6: SIX_PICKER, 10: MASH_PICKER}}
+                             31200: {4: FOUR_PICKER, 6: SIX_PICKER, 10: MASH_PICKER}, 31700: {3: THREE_PICKER}}
 
 
 def _seven_to_nine(count):
@@ -148,8 +152,9 @@ def _seven_to_nine(count):
 
 
 # shshd-runtime: an episode made in the Creator may offer up to ten photos (presentation `big_pickers`; owner, 2026-11-09): BREW's
-# layouts for four, six and ten, and the ten-photo layout's shape for seven to nine. One to three and five keep the native slots.
-CREATOR_PICKER_LAYOUTS = {4: FOUR_PICKER, 6: SIX_PICKER, **{n: _seven_to_nine(n) for n in (7, 8, 9)}, 10: MASH_PICKER}
+# layouts for three, four, six and ten, and the ten-photo layout's shape for seven to nine. One, two and five keep the native slots.
+CREATOR_PICKER_LAYOUTS = {3: THREE_PICKER, 4: FOUR_PICKER, 6: SIX_PICKER, **{n: _seven_to_nine(n) for n in (7, 8, 9)},
+                          10: MASH_PICKER}
 # shshd-runtime: a translated pack's second portrait set, shown while the player keeps "hi-res portraits" on
 # (ContentLibrary.hires_portraits): pack -> (first, end, offset), portrait resources in [first, end) moved by offset.
 # New Rules' translations keep the WinMo portraits at 26200 and the X1i jar's redrawn ones, tripled (HD-sized), at

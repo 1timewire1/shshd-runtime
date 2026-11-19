@@ -81,6 +81,30 @@ class CharacterPickerTests(unittest.TestCase):
                 restored = Session.from_snapshot(r, json.loads(json.dumps(s.snapshot())))
                 self.assertEqual(restored.engine.character_picker.positions[:count], [tuple(p) for p in expected])
 
+    def test_three_photos_sit_either_side_and_six_ring_the_chosen_one(self):
+        # Owner, 2026-11-19: Surviving Hollywood's three photos take the four-face layout without its top slot; Fall '06's six
+        # wrap round the chosen one as the native five do, on the native slots' circle.
+        import math
+        from exp_runtime.shs.profile import CREATOR_PICKER_LAYOUTS, TRANSLATED_PICKER_LAYOUTS
+        three, six = TRANSLATED_PICKER_LAYOUTS[31700][3], TRANSLATED_PICKER_LAYOUTS[31200][6]
+        self.assertEqual(three, [POSITIONS[0], POSITIONS[1], POSITIONS[4]])
+        self.assertEqual((CREATOR_PICKER_LAYOUTS[3], CREATOR_PICKER_LAYOUTS[6]), (three, six))
+        self.assertEqual((six[1][:2], six[5][:2]), (POSITIONS[1], POSITIONS[4]))
+        for x, y, _ in six[1:]:
+            self.assertAlmostEqual(math.hypot(x - 160, y - 275), 114, delta=2)
+        words, (text,) = text_words('Pick a Self Portrait')
+        array = len(words)
+        words += list(range(80, 86))
+        for pack, count, expected in ((31700, 3, three), (31200, 6, six)):
+            with self.subTest(pack=pack):
+                r = Resources(program(*host_call(78, text, count, array), 0x21, (0x1f, 0xfe01), words=words))
+                r.record['pack_id'] = pack
+                s = Session(r)
+                s.advance()
+                picker = s.engine.character_picker
+                self.assertEqual([p.end[:2] for p in picker.portraits], [(float(p[0]), float(p[1])) for p in expected])
+                self.assertEqual(picker.hit(expected[-1][:2]), count - 1)
+
     def test_a_translated_layout_takes_ten_portraits_with_smaller_unselected_ones(self):
         # The BREW M.A.S.H. packs offer ten photos (owner, 2026-11-07): their layout's slots carry their own scale.
         from exp_runtime.shs.profile import TRANSLATED_PICKER_LAYOUTS

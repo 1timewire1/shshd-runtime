@@ -443,6 +443,10 @@
   - Data Management's **Exports Folder** and **Backups Folder** show the folder under their name, as General's choices
     do, instead of on an orange button.
   - **Surviving Hollywood** is listed between '07 and '08 in the episode lists.
+- **Portrait pickers of three and six photos** (owner, 2026-11-19): Surviving Hollywood's three take the four-face layout
+  without its top slot, one either side of the chosen photo (the native slots put both to the left), and Fall '06's six wrap
+  round the chosen one as the native five do, in place of a row behind it. Episodes made in the Creator with big pickers
+  take both too.
 - **Surviving Hollywood's title and date cards** (owner, 2026-11-19; [HOLLYWOOD.md](docs/HOLLYWOOD.md)) show SHS HD's city
   skyline at sunset (1137) in both chapters, in place of the demo's pixel city and living room (The Bright Lights version 3,
   Lite version 2).

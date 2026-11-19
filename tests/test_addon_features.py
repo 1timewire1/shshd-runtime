@@ -66,7 +66,7 @@ class FeatureTests(unittest.TestCase):
 
     def test_the_creators_pickers_hold_four_to_ten_photos(self):
         layouts = GAMES['shs'].CREATOR_PICKER_LAYOUTS
-        self.assertEqual(sorted(layouts), [4, 6, 7, 8, 9, 10])
+        self.assertEqual(sorted(layouts), [3, 4, 6, 7, 8, 9, 10])          # three either side of the front (2026-11-19)
         for count, slots in layouts.items():
             with self.subTest(count=count):
                 self.assertEqual(len(slots), count)

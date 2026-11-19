@@ -198,7 +198,8 @@ project's own. The project still can't take two pictures with the same number fr
 
 The same dialog turns on the translated games' settings that need no add-on: `a(n)` and `word(s)` picked by the word or number
 in formatted lines, title cards with the date first, word games of three words, and portrait pickers of up to ten photos (the
-**Choose a look** node then takes up to ten characters; seven to nine use the ten-photo layout's shape).
+**Choose a look** node then takes up to ten characters; seven to nine use the ten-photo layout's shape, six wrap round the
+chosen one, and three sit either side of it).
 
 Every episode made in the Creator keeps the Creator's own names table, apart from the smartphone stories' and every translation's
 (a name typed in one is the one the others use). It shows in the episode lists as itself, not as the primary's game. Projects using

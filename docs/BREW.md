@@ -30,7 +30,8 @@ BREW's machine is SHS's, in KiWi's older header, so a story keeps its scripts, w
   answer is the chosen one's place in the list, as BREW's. Each photo's look is resolved first, as a speaker's is. BREW's title,
   `Pick Your Best Self Portrait`, is wider than the HD picker's one line, so it reads `Pick a Self Portrait`. The M.A.S.H. packs
   offer four photos or ten, each in the pack's own picker layout: four as New Rules' four faces (the native slots leave a side
-  empty), ten with the chosen photo in front and nine smaller behind and beside it. Keys 1-9 and 0 pick photos one to ten. The frame and the picker's panel follow the highlighted photo, blue for a boy and pink for a girl (the native picker's
+  empty), ten with the chosen photo in front and nine smaller behind and beside it. Fall '06's six wrap round the chosen one on
+  the native slots' circle, as the native five do (owner, 2026-11-19; until then a row behind it). Keys 1-9 and 0 pick photos one to ten. The frame and the picker's panel follow the highlighted photo, blue for a boy and pink for a girl (the native picker's
   panel keeps its first portrait's colour, which other episodes still do; `desktop_picker.panel_theme`).
 - **"a(n)"**. BREW writes `a(n) %s` where a script fills in a word (M.A.S.H. Pack 1's houses and cars, Fall '06's grades). In
   the BREW packs (`TRANSLATED_ARTICLE_PACKS`) the format service (22) picks "a" or "an" by the word: by its first letter, with a
