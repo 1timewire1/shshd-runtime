@@ -390,6 +390,52 @@ def round_line(narrator, scene, items):
     return f'{narrator} searches {place(scene)}.'
 
 
+# The store's sign-off at an episode's end (owner, 2026-11-20: it breaks the story's flow): a sentence naming the game,
+# its next episode or Club Pogo...
+UPSELL = re.compile(r"Claire Hart Classic|Claire Hart: Soul Searcher|Club Pogo|next episode|new episode|Episode \d|"
+                    r"come back for|next case|her new case|Look for the start|more episodes|next part|second part|"
+                    r"Thanks for playing|stay tuned|future storyline", re.I)
+# ...and the teaser just before it: a question, a call to the player...
+TEASER = re.compile(r"(\?!?|!\?)$|^(Looks like|Want to|Curious|Wonder|Find out|Check out|Join Claire)|\byour? (help|own)\b",
+                    re.I)
+# ...and, in narration (Claire's "I"), the game's own voice: Claire in the third person, or a season's greeting.
+ASIDE = re.compile(r"\bClaire('s)?\b|^Happy\b|\bstoryline\b")
+ABBREVIATION = re.compile(r'\b(Dr|Mr|Mrs|Ms|St|Jr|Sr)\. ')
+# The next chapter tells the search itself (owner, 2026-11-20: then the round's stand-in line is redundant).
+SEARCH_TOLD = re.compile(r"\b(found|find|finds|searched|searching|discovered|turned up|came across|uncovered|located)\b",
+                         re.I)
+
+
+def trim_outro(text, narration=False):
+    """An episode-end line without its sign-off: the sentences from the first UPSELL one on, and the TEASER ones just
+    before it (in `narration`, ASIDE ones too); '' when nothing of the story is left. A line without one comes back as
+    it is. "Dr. Lubbock" is one sentence."""
+    if not UPSELL.search(text):
+        return text
+    sentences = [s.replace('\0', ' ') for s in re.split(r'(?<=[.!?])\s+', ABBREVIATION.sub(r'\1.\0', text))]
+    cut = next(i for i, sentence in enumerate(sentences) if UPSELL.search(sentence))
+    while cut > 0 and (TEASER.search(sentences[cut - 1].strip()) or narration and ASIDE.search(sentences[cut - 1])):
+        cut -= 1
+    return ' '.join(sentences[:cut]).strip()
+
+
+def stem(word):
+    word = word.lower()
+    return word[:-1] if len(word) > 3 and word.endswith('s') and not word.endswith('ss') else word
+
+
+def round_told(lines, finds):
+    """Why a round's stand-in line isn't needed: the next chapter's first two lines (`lines`) name one of its finds (an
+    item the round's list resolves to, or a story object the chapter opens with), or tell a search; else None."""
+    text = ' '.join(lines)
+    for find in finds:
+        words = re.findall(r'[A-Za-z]+', find)
+        if words and re.search(rf'\b{re.escape(stem(words[-1]))}(s|es)?\b', text, re.I):
+            return f'names the {find}'
+    found = SEARCH_TOLD.search(text)
+    return f'tells the search ("{found.group(0)}")' if found else None
+
+
 def item_title(object_id):
     """A story object's name from its `dialog objects` key, for players without the picture: 'Push_Broom_SO' -> 'Push
     Broom'."""
@@ -408,6 +454,11 @@ class CaseBuilder:
         self.looks = {}                 # character id -> its look now
         self.narrator = None            # the narrator character now
         self.narrator_name = 'Claire'
+        self.player = None              # the player character now: the speaker who narrates the part (on the left)
+        self.player_folder = 'ClaireHart'   # ...the portrait folder whose speaker that is
+        self.folders = {}               # speaker character id -> its portrait folder
+        self.cast = (None, None)        # the (player, narrator) the last `speakers` node set
+        self.reviews = dict(rounds=[], outros=[])
         self.track = None
         self.music = {}                 # every chapter's music map so far: audioplayer's, kept for the session
         self.faces = {}                 # speaker key -> the face showing, this chapter
@@ -460,7 +511,24 @@ class CaseBuilder:
             self.add('character_art', character=character.id, asset=self.bank(look))
             self.looks[character.id] = look
             self.report['look changes'] += 1
+        self.folders[character.id] = path.split('/')[2]
+        if self.folders[character.id] == self.player_folder and self.player != character.id:
+            self.player = character.id
+            self.cast_now()
         return character.id, slot
+
+    def cast_now(self):
+        """A `speakers` node when the player or narrator changed: the player character's own lines go on the left, as
+        CoD's player's do (owner, 2026-11-20: Claire, or whoever narrates, is the player character)."""
+        if (self.player, self.narrator) != self.cast:
+            self.add('speakers', params={'player': self.player or '', 'narrator': self.narrator or ''})
+            self.cast = (self.player, self.narrator)
+
+    def play_as(self, folder):
+        """A part's player: the speaker with the portrait folder its narration shows most (narrating)."""
+        self.player_folder = folder
+        self.player = next((cid for cid, held in reversed(list(self.folders.items())) if held == folder), None)
+        self.cast_now()
 
     def narrate(self, path):
         """The narrator character showing `path`'s look (a character of its own, so the same person's speaker lines
@@ -472,9 +540,8 @@ class CaseBuilder:
             name = self.art['look_names'][look].split()[0]
             self.characters[key] = self.Character(f'narrator{look}', name, base, 1, [base + i for i in range(5)])
         character = self.characters[key]
-        if self.narrator != character.id:
-            self.add('speakers', params={'player': '', 'narrator': character.id})
-            self.narrator = character.id
+        self.narrator = character.id
+        self.cast_now()
         self.narrator_name = character.name
         return slot
 
@@ -492,14 +559,22 @@ class CaseBuilder:
         self.faces[key] = path
         return path
 
-    def chapter(self, config, sequence, refs):
-        """A chapter's nodes, in order (CLAIRE_HART_ENGINE.md section 4)."""
+    def chapter(self, config, sequence, refs, last=False):
+        """A chapter's nodes, in order (CLAIRE_HART_ENGINE.md section 4). In an episode's `last` chapter, its sign-off
+        goes (trim_outro; owner, 2026-11-20)."""
         self.faces = {}                 # each chapter reloads the scene, its characters with it
         self.music.update(refs.get('music') or {})
         for node in sequence['nodes']:
             kind = node['type'] if node['type'] != 'event' else node['eventtype']
             if kind == 'dialogText':
                 text = story_text(node['body'])
+                if last and UPSELL.search(text):
+                    kept = trim_outro(text, narration=node['header'] == '')
+                    self.reviews['outros'].append((config['epid'], text, kept))
+                    self.report['sign-offs trimmed' if kept else 'sign-off lines dropped'] += 1
+                    if not kept:
+                        continue
+                    text = kept
                 expression = node.get('expression') or ''
                 if node['header'] == '':
                     ref = refs.get('Claire') or refs.get('claire')
@@ -542,17 +617,34 @@ class CaseBuilder:
             else:
                 raise ValueError(f"{config['epid']}: a node this converter doesn't know: {kind}")
 
-    def round(self, config, number, chapter_refs):
-        """Round `number`, with the real rounds off: its scene, and a line naming what the narrator finds (G, G2)."""
+    def round(self, config, number, chapter_refs, following):
+        """Round `number`, with the real rounds off: its scene, and a line naming what the narrator finds (G, G2), unless
+        the next chapter (`following`, its nodes) tells it in its first two lines (round_told; owner, 2026-11-20)."""
         hog = config['hogConfig'][f'HIDDEN OBJECT GAME {number}']
-        self.add('background', asset=self.scene(folder_of(hog['scene'])))
         entry = next((value for value in chapter_refs['backgrounds'].values() if value.get('type') == 'hogScene'), {})
         items = []
         for _, item in self.mirror.round_items(entry) if entry else ():
             if item is not None and item['name'] not in items:
                 items.append(item['name'])
-        self.add(text=round_line(self.narrator_name, hog['scene'], items))
+        lines, shown = [], []
+        for node in following:              # its first two lines, and the story objects it shows by then
+            if node['type'] == 'dialogText':
+                lines.append(story_text(node['body']))
+                if len(lines) == 2:
+                    break
+            elif node.get('eventtype') == 'showStoryObject':
+                shown.append(item_title(node['id']))
+        told = round_told(lines, items + shown)
+        line = round_line(self.narrator_name, hog['scene'], items)
+        self.reviews['rounds'].append((config['epid'], number, hog['scene'], ', '.join(items), told or 'stand-in', line,
+                                       ' / '.join(lines)[:220]))
         self.report['rounds'] += 1
+        if told:
+            self.report['rounds told by the next chapter'] += 1
+            return
+        self.add('background', asset=self.scene(folder_of(hog['scene'])))
+        self.add(text=line)
+        self.report['round lines'] += 1
         self.report['round items'] += len(items)
 
 
@@ -585,15 +677,20 @@ def convert(mirror, art, case, parts):
     builder.music.update(art.get('music_before', {}).get(case['index'], {}))
     title = story_text(case_title(case))          # (Latin-1, as every line: St. Patrick's)
     for (number, config, sequences), listed_episode in zip(parts, case['episodes']):
-        builder.add('title', text=title, params={'subtitle': story_text(listed_episode['name']),
-                                                 'background': builder.scene(art['store'][config['epid']]), 'flag': 0})
+        # The card shows the episode's title over the case's, as playing it (the list shows the case's; owner,
+        # 2026-11-20, as the SHS '07 translations do).
+        builder.add('title', text=story_text(listed_episode['name']), params={
+            'subtitle': title, 'background': builder.scene(art['store'][config['epid']]), 'flag': 0})
+        builder.play_as(narrating(config, sequences))
+        chapters = [node['sequenceId'] for node in sequences['main']['nodes'] if node['type'] == 'playSequence']
         for node in sequences['main']['nodes']:
             if node['type'] == 'playSequence':
                 chapter = node['sequenceId']
-                builder.chapter(config, sequences[chapter], refs_for(config['sceneRefs'][chapter]))
+                builder.chapter(config, sequences[chapter], refs_for(config['sceneRefs'][chapter]),
+                                last=chapter == chapters[-1])
             elif node['type'] == 'playHOG':
                 n = int(node['hogId'].rsplit(' ', 1)[1])
-                builder.round(config, n, config['sceneRefs'][f'SCENE 1_{n}'])
+                builder.round(config, n, config['sceneRefs'][f'SCENE 1_{n}'], sequences[f'SCENE 1_{n + 1}']['nodes'])
     builder.add('end')
     project = Project(title=title + TITLE_TAG, game='cod', pack_id=PACK_ID, episode_id=case['index'] * 10,
                       episode_version=STORY_VERSION, nodes=builder.nodes)
@@ -604,7 +701,35 @@ def convert(mirror, art, case, parts):
     for i, node in enumerate(project.nodes):
         node.x, node.y = 40 + 320 * (i % 12), 80 + 140 * (i // 12)
     builder.report['parts'] = len(parts)
+    builder.report.reviews = builder.reviews
     return project, builder.slices, builder.report
+
+
+def narrating(config, sequences):
+    """The portrait folder an episode's narration shows most (Claire's, or Troy's, Harper's... where they narrate)."""
+    folders = collections.Counter()
+    for chapter in [node['sequenceId'] for node in sequences['main']['nodes'] if node['type'] == 'playSequence']:
+        refs = refs_for(config['sceneRefs'][chapter])
+        ref = refs.get('Claire') or refs.get('claire')
+        expressions = (ref or {'expressions': NARRATOR_DEFAULT})['expressions']
+        for node in sequences[chapter]['nodes']:
+            if node['type'] == 'dialogText' and node['header'] == '':
+                path = expressions.get(node.get('expression') or '') or expressions['default']
+                folders[path.split('/')[2]] += 1
+    return folders.most_common(1)[0][0] if folders else 'ClaireHart'
+
+
+def write_reviews(folder, reviews):
+    """The owner's lists (2026-11-20): every round, whether it keeps its stand-in line or the next chapter tells it
+    (rounds.tsv), and every episode-end sign-off trimmed (outros.tsv)."""
+    with open(Path(folder) / 'rounds.tsv', 'w', encoding='utf-8', newline='\n') as file:
+        file.write('epid\tround\tplace\tfinds\tdecision\tstand-in line\tnext chapter opens\n')
+        for row in reviews['rounds']:
+            file.write('\t'.join(str(v) for v in row) + '\n')
+    with open(Path(folder) / 'outros.tsv', 'w', encoding='utf-8', newline='\n') as file:
+        file.write('epid\tline\tkept (empty: the line goes)\n')
+        for row in reviews['outros']:
+            file.write('\t'.join(row) + '\n')
 
 
 def compiled(project, slices):
@@ -709,13 +834,17 @@ def main(argv=None):
         wanted = set(args.episodes.split(',')) if args.episodes else None
         art = converter_art(mirror, args.cache)
         args.out.mkdir(parents=True, exist_ok=True)
+        reviews = dict(rounds=[], outros=[])
         for _, case, parts in mirror.cases():
             if wanted is not None and not wanted & {config['epid'] for _, config, _ in parts}:
                 continue
             project, slices, report = convert(mirror, art, case, parts)
+            reviews['rounds'] += report.reviews['rounds']
+            reviews['outros'] += report.reviews['outros']
             name = f"CHC_{case['index']:03d}.exp"
             (args.out / name).write_bytes(compiled(project, slices))
             print(f'{name}: {project.title!r}, {len(project.nodes)} nodes, {dict(report)}')
+        write_reviews(args.out, reviews)
     elif args.command == 'places':
         scenes = sorted({hog['scene'] for _, _, parts in mirror.cases() for _, config, _ in parts
                          for hog in config['hogConfig'].values()})

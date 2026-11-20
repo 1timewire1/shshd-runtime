@@ -188,6 +188,27 @@ class ConverterTests(unittest.TestCase):
         self.assertEqual(claire_hart.item_title('Push_Broom_SO'), 'Push Broom')
         self.assertEqual(claire_hart.item_title('CarKeysSO'), 'Car Keys')
 
+    def test_episode_end_sign_offs_go(self):
+        import claire_hart
+        trim = claire_hart.trim_outro
+        self.assertEqual(trim('A new case begins in the next episode of Claire Hart Classic!'), '')
+        self.assertEqual(trim("We had the ring, we had the girl... but just what was Ethan's message? Find out in "
+                              'Episode 3! And remember, Club POGO members get a discount on the next episode!'),
+                         'We had the ring, we had the girl...')
+        self.assertEqual(trim('Is it too late to help the spirit of Mrs. Gray? Find out in the next episode of Claire '
+                              'Hart Classic.'), '')                              # "Mrs." doesn't end a sentence
+        line = 'Troy smiled. Looks like Claire did it! Happy Holidays! Come back for the next episode.'
+        self.assertEqual(trim(line, narration=True), 'Troy smiled.')             # the game's own voice goes too
+        self.assertEqual(trim('Troy smiled at me.'), 'Troy smiled at me.')       # no sign-off: as it is
+
+    def test_a_round_the_next_chapter_tells_keeps_no_stand_in(self):
+        import claire_hart
+        told = claire_hart.round_told
+        self.assertEqual(told(['I found a set of keys by the pool.', 'Thanks.'], ['Car Keys']), 'names the Car Keys')
+        self.assertEqual(told(['I searched the car.'], []), 'tells the search ("searched")')
+        self.assertIsNone(told(['We drove back during the storm.', 'Hi.'], ['Ring']))   # "during" isn't a ring
+        self.assertIsNone(told(['Troy waved.'], ['Broom']))
+
     def test_a_case_becomes_one_cod_episode(self):
         import claire_hart
         from exp_runtime.backdrop_slices import RESOURCE, decode
@@ -212,7 +233,7 @@ class ConverterTests(unittest.TestCase):
         looks = dict(zip(art['look_names'], range(len(art['look_names']))))
         title = project.nodes[0]
         self.assertEqual((title.kind, title.text, title.params['subtitle'], title.params['background']),
-                         ('title', 'Case 1', 'Haunted', 26000))
+                         ('title', 'Haunted', 'Case 1', 26000))           # the episode's title over the case's
         lines = [(names.get(c, c), t, e) for k, t, c, e in seen if k == 'dialogue']
         self.assertEqual(lines, [('', 'Hello there, friend...', 0), ('Ann', 'Hi!', 2), ('Ann', 'Still me.', 0),
                                  ('Ann', 'Typo.', 0),
@@ -228,6 +249,8 @@ class ConverterTests(unittest.TestCase):
         self.assertTrue(badge.params['hide'])
         narrators = [n.params['narrator'] for n in project.nodes if n.kind == 'speakers']
         self.assertEqual([names[n] for n in narrators], ['Claire', 'Troy'])
+        # Ann isn't the narrator's person (Claire's folder narrates most), so no speaker is the player
+        self.assertEqual({n.params['player'] for n in project.nodes if n.kind == 'speakers'}, {''})
         so = next(n for n in project.nodes if n.kind == 'story_object')
         self.assertEqual((so.text, so.asset), ('Push Broom', 27000))
         self.assertEqual(report['faces kept (a key the speaker lacks)'], 1)     # none asked shows default

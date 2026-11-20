@@ -21,7 +21,7 @@ from .audio import music_cue
 from .games import GAMES, game_id, has_translated_minigames
 from .content import feature_pack, free_setting, optional_art_offered, pack_setting
 from .dsi import picture_for as dsi_picture_for
-from .backdrop_slices import slice_box
+from .backdrop_slices import pan_box
 from .desktop_text import BitmapTextRenderer
 from .desktop_dialogue import DialogueRenderer
 from .desktop_choice import ChoiceRenderer
@@ -127,8 +127,8 @@ WEB_LINK = re.compile(r'(https?|itms(-apps)?)://', re.I)
 
 
 OPAQUE_ENOUGH = 250
-# shshd-runtime: the pictures `_image` cut to a 4:3 scene's 3:4 slice (Claire Hart decision M): each fills the 3:4 frame and
-# covers a taller one centred, as a DSi screen does, rather than pan as CoD's own scenes do.
+# shshd-runtime: the pictures `_image` cut from a 4:3 scene about its 3:4 slice (Claire Hart decision M), a quarter wider so
+# they pan with the speaker as CoD's own scenes do (`_slice_placement`).
 SLICED_BACKDROPS = weakref.WeakSet()
 # "DSi Pixels" (the DSiWare add-on's backgrounds): nearest neighbour, the DS's own pixels (the default), or smooth scaling.
 DSI_PIXELS = ('sharp', 'smooth')
@@ -2621,14 +2621,15 @@ class Desktop:
             library.shs11_language = self.shs11_language
 
     def _slice_backdrop(self, asset_id):
-        """A translated pack's 4:3 scene as its 3:4 slice (content.EpisodeResources.backdrop_slice; Claire Hart decision
-        M), in place of the whole picture in `images`."""
+        """A translated pack's 4:3 scene cut to the window it pans across about its 3:4 slice
+        (content.EpisodeResources.backdrop_slice, backdrop_slices.pan_box; Claire Hart decision M), in place of the whole
+        picture in `images`."""
         slicer = getattr(self.session.resources, 'backdrop_slice', None)
         x = slicer(asset_id) if slicer is not None else None
         image = self.images.get(asset_id)
         if x is None or image is None:
             return
-        sliced = image.subsurface(slice_box(image.get_size(), x)).copy()
+        sliced = image.subsurface(pan_box(image.get_size(), x)).copy()
         self.images[asset_id] = sliced
         SLICED_BACKDROPS.add(sliced)
 
@@ -3125,8 +3126,8 @@ class Desktop:
         background = self.pending_background
         dsi = self._dsi_screen(background)
         if dsi is None and background is not None and background in SLICED_BACKDROPS:
-            dsi = background            # a scene's 3:4 slice: the frame's own shape, placed as a DSi screen is
-        if dsi is not None:
+            placement = self._slice_placement(background, target_size)
+        elif dsi is not None:
             # A DSi screen is the frame's own 3:4: it fills HD's frame, and covers a taller one centred, its sides cut
             # (owner, 2026-11-15); the speaker's side picks the screen rather than panning it.
             background, origin = dsi, self.pending_background_origin
@@ -3405,6 +3406,17 @@ class Desktop:
                                  round(384 * bg_scale), round(512 * bg_scale))
             sx, sy = tw / window.width, th / window.height
             return (-window.x * sx, -window.y * sy, bw * sx, bh * sy)
+
+    def _slice_placement(self, background, target_size):
+        """Where a sliced scene lies (SLICED_BACKDROPS), (x, y, width, height) in target pixels: as tall as the frame (or
+        wide, in a frame too wide for it), centred upright, panned across as CoD's scenes are, flush left for a speaker on
+        the left, flush right for one on the right, narration leaving it where it was (location_pan.py, 0.25 s)."""
+        bw, bh = background.get_size()
+        tw, th = target_size
+        k = max(th / bh, tw / bw)
+        width, height = bw * k, bh * k
+        centre = self.location_pan.x(self.session.engine.panel.location_align, width, pygame.time.get_ticks(), frame=tw)
+        return centre - width / 2, (th - height) / 2, width, height
 
     def _location_pans(self, cy):
         """Whether the location layer pans by speaker (location_pan.py): a dialogue scene's picture (focal y 180)

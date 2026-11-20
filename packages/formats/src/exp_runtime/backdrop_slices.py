@@ -48,6 +48,19 @@ def decode(data):
     return out
 
 
+# How much wider than the 3:4 slice the picture shown is, so it can pan with the speaker as Cause of Death's own scenes do
+# (480-unit art in its 384-unit frame; owner, 2026-11-20): the slice centred, a quarter more scene shared either side.
+PAN = 1.25
+
+
+def pan_box(size, x):
+    """The window (left, top, width, height) a backdrop pans across: PAN times the slice's width, about the slice's centre,
+    kept inside the picture (so a slice at an edge pans further the other way)."""
+    left, _, span, height = slice_box(size, x)
+    width = min(size[0], round(span * PAN))
+    return max(0, min(size[0] - width, round(left + span / 2 - width / 2))), 0, width, height
+
+
 def slice_box(size, x):
     """The 3:4 window (left, top, width, height) of a picture `size` (width, height) at x, kept inside the picture."""
     width, height = size

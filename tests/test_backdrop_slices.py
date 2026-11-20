@@ -7,7 +7,7 @@ import os
 from types import SimpleNamespace
 import unittest
 
-from exp_runtime.backdrop_slices import RESOURCE, decode, encode, slice_box
+from exp_runtime.backdrop_slices import PAN, RESOURCE, decode, encode, pan_box, slice_box
 from exp_runtime.exp import ContentError
 from test_look_banks import resources
 
@@ -39,6 +39,13 @@ class RecordTests(unittest.TestCase):
         self.assertEqual(slice_box((1026, 770), 224), (224, 0, 578, 770))
         self.assertEqual(slice_box((400, 768), 50), (0, 0, 400, 768))           # narrower than a slice: whole
 
+    def test_it_pans_across_a_quarter_more_about_the_slice(self):
+        self.assertEqual(PAN, 1.25)                                             # CoD's own: 480-unit art, a 384-unit frame
+        self.assertEqual(pan_box((1024, 768), 326), (254, 0, 720, 768))
+        self.assertEqual(pan_box((1024, 768), 0), (0, 0, 720, 768))             # at an edge: all the extra on one side
+        self.assertEqual(pan_box((1024, 768), 448), (304, 0, 720, 768))
+        self.assertEqual(pan_box((600, 768), 0), (0, 0, 600, 768))              # no wider than the picture
+
 
 class LookupTests(unittest.TestCase):
     def test_the_episodes_own_slice_wins_then_the_addons(self):
@@ -66,7 +73,7 @@ class PlayerTests(unittest.TestCase):
         pygame.display.set_mode((1, 1))
         self.addCleanup(pygame.quit)
 
-    def test_the_picture_is_cut_to_its_slice_and_marked_to_fill_the_frame(self):
+    def test_the_picture_is_cut_to_its_pan_window_and_marked(self):
         import pygame
         from exp_runtime.desktop import Desktop, SLICED_BACKDROPS
         picture = pygame.Surface((1024, 768))
@@ -77,14 +84,31 @@ class PlayerTests(unittest.TestCase):
         Desktop._slice_backdrop(fake, 26160)
         Desktop._slice_backdrop(fake, 26999)                                  # no slice: untouched
         sliced = fake.images[26160]
-        self.assertEqual(sliced.get_size(), (576, 768))
-        self.assertEqual(sliced.get_at((0, 0))[:3], (200, 0, 0))
-        self.assertEqual(sliced.get_at((575, 767))[:3], (200, 0, 0))
+        self.assertEqual(sliced.get_size(), (720, 768))                       # 254-974: the slice, 72 px more either side
+        self.assertEqual(sliced.get_at((0, 0))[:3], (10, 10, 10))
+        self.assertEqual(sliced.get_at((72, 0))[:3], (200, 0, 0))
+        self.assertEqual(sliced.get_at((647, 767))[:3], (200, 0, 0))
+        self.assertEqual(sliced.get_at((648, 0))[:3], (10, 10, 10))
         self.assertIn(sliced, SLICED_BACKDROPS)
         self.assertEqual(fake.images[26999].get_size(), (1024, 768))
         self.assertNotIn(fake.images[26999], SLICED_BACKDROPS)
         out = io.BytesIO()                                                    # (still a picture the player can save)
         pygame.image.save(sliced, out, 'x.png')
+
+    def test_it_fills_the_frames_height_and_pans_with_the_speaker(self):
+        import pygame
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.location_pan import LocationPan
+        panel = SimpleNamespace(location_align=1)
+        fake = SimpleNamespace(location_pan=LocationPan(), session=SimpleNamespace(engine=SimpleNamespace(panel=panel)))
+        picture = pygame.Surface((720, 768))
+        self.assertEqual(Desktop._slice_placement(fake, picture, (384, 512)), (0, 0, 480, 512))   # flush left
+        panel.location_align = 3
+        x, _, w, _ = Desktop._slice_placement(fake, picture, (384, 512))      # moving right over 0.25 s
+        fake.location_pan.since -= 1000
+        self.assertEqual(Desktop._slice_placement(fake, picture, (384, 512)), (-96, 0, 480, 512))  # flush right
+        x, y, w, h = Desktop._slice_placement(fake, picture, (320, 569))      # a 9:16 frame: as tall, wider
+        self.assertEqual((round(w), round(h)), (533, 569))       # 720 x 569 / 768
 
 
 if __name__ == '__main__':
