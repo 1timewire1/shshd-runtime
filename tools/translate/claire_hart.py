@@ -478,14 +478,14 @@ class CaseBuilder:
         return slot
 
     def portrait(self, key, expressions, expression):
-        """The picture a line shows: its expression's, else the speaker's `default` on entering; a returning speaker
-        (same key, this chapter) asking for no face or one they lack keeps the face showing (character.setExpression
-        never resolves a missing key)."""
+        """The picture a line shows: its expression's; none asked shows `default` (character.slide asks setExpression for
+        `default`); a key the speaker lacks (a typo) keeps the face showing for a speaker already on stage this chapter
+        (setExpression never resolves it), and is `default` on entering (setImage)."""
         if expression in expressions:
             path = expressions[expression]
-        elif key in self.faces:
+        elif expression and key in self.faces:
             path = self.faces[key]
-            self.report['faces kept (none asked or missing)'] += 1
+            self.report['faces kept (a key the speaker lacks)'] += 1
         else:
             path = expressions['default']
         self.faces[key] = path

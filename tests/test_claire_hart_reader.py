@@ -157,7 +157,7 @@ def a_case():
         'SCENE 1_1': {'nodes': [{'type': 'event', 'eventtype': 'playMusic', 'id': 'Office'},
                                 {'type': 'stageBlockIntro', 'ref': 'Office'}, {'type': 'dialogIntro'},
                                 line('', 'Hello  there , friend… '), line('Ann', 'Hi!', 'Avatar_Ann_Happy'),
-                                line('Ann', 'Still me.'),
+                                line('Ann', 'Still me.'), line('Ann', 'Typo.', 'Avatar_Ann_Hapy'),
                                 {'type': 'event', 'eventtype': 'showStoryObject', 'id': 'Push_Broom_SO'},
                                 line('Ann', 'New dress.', 'Avatar_Ann_Purple_Normal')]},
         'SCENE 1_2': {'nodes': [{'type': 'event', 'eventtype': 'playMusic', 'id': 'Office'},
@@ -214,7 +214,8 @@ class ConverterTests(unittest.TestCase):
         self.assertEqual((title.kind, title.text, title.params['subtitle'], title.params['background']),
                          ('title', 'Case 1', 'Haunted', 26000))
         lines = [(names.get(c, c), t, e) for k, t, c, e in seen if k == 'dialogue']
-        self.assertEqual(lines, [('', 'Hello there, friend...', 0), ('Ann', 'Hi!', 2), ('Ann', 'Still me.', 2),
+        self.assertEqual(lines, [('', 'Hello there, friend...', 0), ('Ann', 'Hi!', 2), ('Ann', 'Still me.', 0),
+                                 ('Ann', 'Typo.', 0),
                                  ('Ann', 'New dress.', 0), ('', 'Claire searches the Shed and finds the Broom.', 0),
                                  ('', 'Troy here.', 0)])
         kinds = [k for k, *_ in seen]
@@ -229,7 +230,7 @@ class ConverterTests(unittest.TestCase):
         self.assertEqual([names[n] for n in narrators], ['Claire', 'Troy'])
         so = next(n for n in project.nodes if n.kind == 'story_object')
         self.assertEqual((so.text, so.asset), ('Push Broom', 27000))
-        self.assertEqual(report['faces kept (none asked or missing)'], 1)
+        self.assertEqual(report['faces kept (a key the speaker lacks)'], 1)     # none asked shows default
         self.assertEqual(report['music ids from an earlier chapter'], 1)
         self.assertEqual(slices, {26000: 224, 26001: 224})
         archive = ExpArchive(claire_hart.compiled(project, slices))
