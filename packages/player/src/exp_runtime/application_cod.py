@@ -66,6 +66,8 @@ class CodShell(HdShell):
         self.stack = MenuStack(self.data, self.perform)
         self.main.backdrop_enabled = lambda: app.state.hd_backdrop
         self.main.ch_backdrop_enabled = lambda: app.state.ch_backdrop
+        from .hd_ui import HdUi
+        HdUi.look_source = app.title_look       # Add-Ons' Title Screen Look (Claire Hart's, cod/profile.py TITLE_LOOKS)
         self.pause = CodPauseMenu(SimpleNamespace(library=library), art)
         self.pause.main_menu = True
         self.stage = 'loading'

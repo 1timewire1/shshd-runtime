@@ -226,19 +226,26 @@ class CodMainMenu(HdMainMenu):
         return [(title_layer(self.library), (384, 512))]
 
     def main_layout(self, height=FRAME[1]):
-        """The painting in a frame `height` points tall (title_backdrop), one frame-sized layer."""
+        """The painting in a frame `height` points tall (title_backdrop), one frame-sized layer; with a Title Screen Look
+        chosen (Claire Hart's: cod/profile.py TITLE_LOOKS), the look laid out as SHS HD's menu lays one out, behind the
+        same buttons."""
+        if self.title_look() is not None:
+            return super().main_layout(height)
         return [(title_backdrop(self.library, height), (384, height / 2))]
 
     @property
     def extra(self):
-        """Points the buttons move down: to the device's place at 2:3, then on (buttons_shift)."""
-        return buttons_shift(self.height)
+        """Points the buttons move down: to the device's place at 2:3, then on (buttons_shift); under a look, where SHS
+        HD's go, as the look is laid out for."""
+        return super().extra if self.title_look() is not None else buttons_shift(self.height)
 
     def draw_photo(self, layer):
-        pass
+        if self.title_look() is not None:
+            super().draw_photo(layer)
 
     def draw_ribbon_title(self, layer):
-        pass
+        if self.title_look() is not None:
+            super().draw_ribbon_title(layer)
 
     def side_art(self, size):
         """Beside the frame: SHS HD's collage, or the dark fill (owner, 2026-10-14: never the painting stretched)."""

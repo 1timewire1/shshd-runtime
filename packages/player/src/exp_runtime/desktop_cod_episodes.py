@@ -105,6 +105,8 @@ class CodPickerStyle(CodButtons):
         return recolor_border(self.bundle_image('popupBackground.png'), BORDER)
 
     def main_backdrop(self, height=1024):
+        if self.title_look() is not None:           # (a Title Screen Look: the pickers show it too, as SHS HD's do)
+            return super().main_backdrop(height)
         return title_backdrop(self.library, height)
 
 

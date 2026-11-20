@@ -35,6 +35,10 @@
   portraits through look banks (look n's expression e at 30000 + 5n + e, from chc's spec at 26998;
   [ADDONS.md](docs/ADDONS.md#chc-claire-hart-classic-in-progress-on-the-claire-hart-branch)). Probe sheet:
   `reference/screenshots/verify/claire_hart/pack_31500_probe.png`.
+- **Title Screen Look for Cause of Death: Claire Hart** (Claire Hart plan Stage 0; owner, 2026-11-19; `claire-hart`
+  branch): Add-Ons' Title Screen Look now works in CoD, with Claire Hart Classic's Play Now screen (its forest, and Claire and
+  Paul over the gem banner) from `chc` in place of CoD's painting, behind the same buttons; the episode lists follow it, and
+  Auto takes it after a Claire Hart case. Stand-in sheet: `reference/screenshots/verify/claire_hart/title_look_stand_in.png`.
 - **Test channel: Sync Devices by command** (owner, 2026-11-19): `sync receive`, `sync send [shs|cod|both]
   [nobackup]`, `sync devices`, `sync choose`, `sync answer yes|no`, `sync wait`, `sync status`, `sync ok` and
   `sync stop` run a sync without taps or screenshots ([RUNTIME.md](docs/RUNTIME.md#test-channel-this-fork)).

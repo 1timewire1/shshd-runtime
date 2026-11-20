@@ -524,13 +524,18 @@ title tune from its addon, offered when the library holds that addon (`TITLE_MUS
 | '11 | `shs11` | 26981 | Track 1, the main menu's one full tune; started 0.9 s in, past its silence (`audio.mp3_from`) |
 | Surviving Hollywood | `shshw` | 26907 | Cue 3007, the main menu's tune |
 
-**Title Screen Look** (SHS's HD main menu only, under Add-Ons; owner, 2026-11-16) chooses its art the same way: Default, Auto,
+**Title Screen Look** (the HD main menus, under Add-Ons; owner, 2026-11-16) chooses its art the same way: Default, Auto,
 or a translated game's own title art from its addon, offered when the addon carries it (`TITLE_LOOKS` in the SHS profile). The
 gold buttons, their backdrop, the gear and the info button stay; the wood, photo, ribbon and title give way to the game's
 (`title_look.py`), and the episode picker's backdrop follows. The first launch still drops the photo in and fades the title in
 where the look has them. BREW's editions are two looks: Auto takes '08's after a Campaign story (31000) and '07's after a
 Classic story or Fall '06 (31100, 31200). The looks are built by `tools/translate/title_looks.py`; which addon revisions carry
 them is listed with each addon above as they land. The plan: `reference/TITLE_SCREENS_PLAN.md` beside the repository.
+
+Cause of Death has one look so far, **Claire Hart** (`claire-hart` branch, Stage 0; the CoD profile's `TITLE_LOOKS` and
+`TITLE_LOOK_PACKS`): Classic's Play Now screen, its misty forest and Claire and Paul over the gem banner, from `chc`'s spec at
+26960. Chosen, it replaces CoD's painting behind the same buttons, laid out as SHS HD's menu lays a look out (the logo is the
+look's title, fading in), and the episode lists' backdrop follows; Auto takes it after a Claire Hart case.
 
 ## Data Management
 

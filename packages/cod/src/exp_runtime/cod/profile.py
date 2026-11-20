@@ -61,6 +61,11 @@ LOOK_BANKS = {31500: ('chc', 26998, 30000)}
 # shshd-runtime: a translated pack's own picture for the whole frame, under its backdrops (desktop._frame_backdrop): Claire
 # Hart's 4:3 scenes leave bands in CoD's 3:4 frame, which take chslim's green backdrop (28001, kept in chc).
 TRANSLATED_FRAME_BACKDROP = {31500: 28001}
+# shshd-runtime: Add-Ons' Title Screen Look for CoD (as shs/profile.py's; owner, 2026-11-19): Claire Hart's Play Now screen
+# (its forest, and Claire and Paul over the gem banner) from chc's spec at 26960 (title_look.py), drawn in place of CoD's
+# painting behind the same buttons (desktop_cod_main). Auto follows the case last played.
+TITLE_LOOKS = {'chc': ('chc', 26960)}
+TITLE_LOOK_PACKS = {31500: 'chc'}
 UI_SHIFTS = {PAID_PROFILE: 0, FREE_PROFILE: 1, LOCALIZED_FREE_PROFILE: 5}
 PROFILES = dict.fromkeys(UI_SHIFTS, 'ipa')
 # Reference UI members. Character/background/audio banks retain their IDs.

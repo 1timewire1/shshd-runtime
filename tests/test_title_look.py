@@ -164,8 +164,48 @@ class TitleLookChoiceTests(unittest.TestCase):
                 self.assertEqual((app.state.last_title_look, app.state.last_title_game), (look, tune))
 
 
-if __name__ == '__main__':
-    unittest.main()
+class CodTitleLookTests(unittest.TestCase):
+    """Cause of Death's Title Screen Look (Claire Hart plan Stage 0; owner, 2026-11-19): Claire Hart's Play Now screen from chc,
+    laid out as SHS HD's menu lays a look out, behind CoD's own buttons; without one, CoD's painting as before."""
+
+    def setUp(self):
+        pygame.init()
+        pygame.display.set_mode((1, 1))
+
+    def test_the_profile_offers_claire_harts_look_and_auto_follows_a_case(self):
+        from exp_runtime.cod import profile
+        from exp_runtime.desktop_pause_hd import TITLE_LOOK_NAMES
+        from exp_runtime.menu import TITLE_LOOK_GAMES
+        self.assertEqual((profile.TITLE_LOOKS, profile.TITLE_LOOK_PACKS), ({'chc': ('chc', 26960)}, {31500: 'chc'}))
+        self.assertIn('chc', TITLE_LOOK_GAMES)
+        self.assertEqual(TITLE_LOOK_NAMES['chc'], 'Claire Hart')
+        app = TitleLookChoiceTests.app(self, 'auto', addons=('chc',))
+        app.library.game_id = 'cod'
+        app.remember_title_game(SimpleNamespace(record=dict(pack_id=31500, episode_id=10), library=app.library,
+                                                presentation={}))
+        self.assertEqual(app.state.last_title_look, 'chc')
+        self.assertEqual(app.title_look().addon, 'chc')
+
+    def test_cods_menu_takes_the_look_or_keeps_its_painting(self):
+        from exp_runtime import desktop_cod_main
+        from exp_runtime.desktop_cod_main import CodMainMenu
+        the_look = look({'background': {'cover': {'id': 26961}}}, {26961: png((384, 1024), (0, 128, 96, 255))})
+        menu = CodMainMenu.__new__(CodMainMenu)
+        menu.library, menu.height = object(), FRAME[1]
+        painted = []
+        original = desktop_cod_main.title_backdrop
+        desktop_cod_main.title_backdrop = lambda library, height: painted.append(height) or pygame.Surface((8, 8))
+        try:
+            HdUi.look_source = lambda: the_look
+            background, _ = menu.main_layout(FRAME[1])[0]
+            self.assertEqual((background.get_at((10, 10))[:3], painted), ((0, 128, 96), []))
+            self.assertEqual(menu.extra, 0)
+            HdUi.look_source = lambda: None
+            menu.main_layout(FRAME[1])
+            self.assertEqual(painted, [FRAME[1]])
+        finally:
+            desktop_cod_main.title_backdrop = original
+            HdUi.look_source = None
 
 
 class PickerBackdropTests(unittest.TestCase):
@@ -193,3 +233,7 @@ class PickerBackdropTests(unittest.TestCase):
                     self.assertLess(max(dimmed), max(colour))
         finally:
             HdUi.look_source = None
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -63,7 +63,7 @@ def group_episodes(records, catalog, *, mega_label, novel_label, saved_label, sa
 
 # shshd-runtime: Add-Ons' Title Screen Look (owner, 2026-11-16): the main menu's art from a translated game's addon (the
 # game profile's TITLE_LOOKS); BREW's two editions are two looks.
-TITLE_LOOK_GAMES = ('nr', 'brew07', 'brew08', 'shw', 'shs11', 'x360')
+TITLE_LOOK_GAMES = ('nr', 'brew07', 'brew08', 'shw', 'shs11', 'x360', 'chc')     # (chc: CoD's Claire Hart look)
 
 MAX_NAMES = 4096               # player.json `names`: far more keys than the whole library writes
 
