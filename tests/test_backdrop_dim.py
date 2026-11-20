@@ -44,6 +44,16 @@ class BackdropDimTests(unittest.TestCase):
         self.assertEqual(tuple(picture.get_at((0, 0)))[:3], (200, 100, 255))         # the art itself is left as it is
         self.assertIs(Desktop._dimmed(game, picture), dark)                          # made once a picture
 
+    def test_a_title_card_is_not_dimmed(self):
+        """Owner, 2026-11-20: a title card shows a store picture's scene, which Claire Hart never dims, and the picker's
+        previews are photos of it; the story after it is."""
+        game = desktop(31500)
+        picture = self.picture()
+        game._session.pending = SimpleNamespace(name='presentation')
+        self.assertIs(Desktop._dimmed(game, picture), picture)
+        game._session.pending = SimpleNamespace(name='dialogue')
+        self.assertIsNot(Desktop._dimmed(game, picture), picture)
+
     def test_the_switch_off_or_another_pack_draws_it_as_it_is(self):
         picture = self.picture()
         self.assertIs(Desktop._dimmed(desktop(31500, on=False), picture), picture)

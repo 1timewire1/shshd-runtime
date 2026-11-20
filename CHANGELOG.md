@@ -30,7 +30,8 @@
   backdrops as the game drew them, to 110/255 (pack 31500, `TRANSLATED_BACKDROP_DIM`), at draw time, so the add-on keeps
   full-brightness art. A shared Add-Ons switch with the CH tag, on by default, offered once the library has a case and in
   their pause menu; it changes the picture at once. Stand-in sheet:
-  `reference/screenshots/verify/claire_hart/backdrop_dim_stand_in.png`.
+  `reference/screenshots/verify/claire_hart/backdrop_dim_stand_in.png`. Title cards, and so the picker's previews of
+  them, are left bright, as Claire Hart's store pictures are (owner, 2026-11-20).
 - **Claire Hart's pack 31500 registered** (Claire Hart plan Stage 0; `claire-hart` branch): its cases (titles tagged `(CHC)`)
   are filed under Claire Hart with the CH badge; they take chc's green backdrop under their 4:3 scenes and reach chc's
   portraits through look banks (look n's expression e at 30000 + 5n + e, from chc's spec at 26998;

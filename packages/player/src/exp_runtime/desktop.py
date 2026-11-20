@@ -2455,7 +2455,12 @@ class Desktop:
 
     def backdrop_dim(self):
         """The level this episode's backdrops are darkened to (0-255), or None to draw them as they are."""
-        resources = getattr(self.__dict__.get('_session'), 'resources', None)      # (none before a story opens)
+        session = self.__dict__.get('_session')
+        resources = getattr(session, 'resources', None)      # (none before a story opens)
+        pending = getattr(session, 'pending', None)
+        if pending is not None and pending.name == 'presentation':
+            return None             # a title card's picture is a store picture's scene, which Claire Hart never dims (owner,
+                                    # 2026-11-20), and the picker's previews are photos of it
         return pack_setting(resources, 'TRANSLATED_BACKDROP_DIM') if self.dim_backdrops and resources is not None else None
 
     def _dimmed(self, background):
