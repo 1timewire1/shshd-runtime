@@ -67,6 +67,12 @@ DUET_TITLE_LINES = 2
 DIALOGUE_TOP_ROOM = 12
 
 
+# shshd-runtime: story-object pictures (service 225, Claire Hart plan P) in framed squares along the box's bottom, right-
+# aligned as Classic's are (photos chc_09, chc_12: a slot is a fifth of the box's width there), the box a row taller for them.
+STORY_OBJECT_SLOT = 36                  # a square's side, in units, when the row fits at it (else they share the room)
+STORY_OBJECT_GAP = 3                    # between squares
+STORY_OBJECT_MARGIN = 6                 # from the box's right and bottom edges, and above the row
+STORY_OBJECT_ROOM = 270                 # the widest a narrator's box grows to hold its row
 TITLE_JOINS = ('and', '&', ',')         # a two-speaker title's words that name no one ("Kay and Kel")
 
 
@@ -175,6 +181,28 @@ class DialoguePage:
     # shshd-runtime (General's Aspect Ratio): how far the whole bubble (box, text, title, portrait) was moved up for the
     # rows it holds past HD's own (DialogueLayout.page's `extra_rows`), so its bottom stays where HD's is.
     lift: float = 0
+    # shshd-runtime: the story-object pictures shown with the line, (picture, its square) each (story_object_slots).
+    story_objects: tuple = ()
+
+
+def story_object_slots(box, pictures, *, widen=False):
+    """(box, ((picture, square), ...)): the box a row taller at its bottom, and the pictures' squares along it from the
+    right. They share the box's width when the row is too long at STORY_OBJECT_SLOT; a narrator's box (`widen`) grows to
+    hold them first, up to STORY_OBJECT_ROOM."""
+    count = len(pictures)
+    if not count:
+        return box, ()
+    wanted = count * STORY_OBJECT_SLOT + (count - 1) * STORY_OBJECT_GAP + 2 * STORY_OBJECT_MARGIN
+    if widen and box.width < wanted:
+        box = replace(box, width=min(max(box.width, STORY_OBJECT_ROOM), wanted))
+    room = box.width - 2 * STORY_OBJECT_MARGIN
+    side = min(STORY_OBJECT_SLOT, (room - (count - 1) * STORY_OBJECT_GAP) / count)
+    box = replace(box, height=box.height + side + STORY_OBJECT_MARGIN)
+    top = box.y + box.height - STORY_OBJECT_MARGIN - side
+    right = box.x + box.width - STORY_OBJECT_MARGIN
+    slots = tuple((picture, Rect(right - (count - i) * side - (count - 1 - i) * STORY_OBJECT_GAP, top, side, side))
+                  for i, picture in enumerate(pictures))
+    return box, slots
 
 
 class DialogueLayout:
@@ -556,6 +584,14 @@ class DialogueLayout:
                 name_origin = (middle - (ink[0] + ink[1]) / 2 * name_scale, name_origin[1])
                 if colors is not None:
                     name = _speaker_colors(name, partner_name or '', *colors)
+        pictures = tuple(details.get('story_objects') or ())
+        story_objects = ()
+        if pictures:
+            # A narrator's box (top-anchored) grows down for the row; a speaker's grows up, so its bottom stays put.
+            grown, story_objects = story_object_slots(box, pictures, widen=mode == 4)
+            if mode != 4:
+                lift += grown.height - box.height      # (the whole bubble moves up by it below)
+            box = grown
         up = dialogue_offset[1]
         if up:
             # Centred in a taller frame, as far as the bubble's top (its box, its title, its portrait) has room.
@@ -567,6 +603,8 @@ class DialogueLayout:
             name_origin = (name_origin[0], name_origin[1] - lift)
             portrait = None if portrait is None else replace(portrait, y=portrait.y - lift)
             name_bounds = None if name_bounds is None else replace(name_bounds, y=name_bounds.y - lift)
+            story_objects = tuple((picture, replace(r, y=r.y - lift)) for picture, r in story_objects)
         return DialoguePage(box, drawn_origin, body_font, body, portrait, name_font,
                             name, name_origin, name_scale, start, start + end, name_bounds, note_frame, note_tint,
-                            note_pack=note_pack, theme=details['theme'] if duet is not None or narration_theme else None, lift=lift)
+                            note_pack=note_pack, theme=details['theme'] if duet is not None or narration_theme else None, lift=lift,
+                            story_objects=story_objects)

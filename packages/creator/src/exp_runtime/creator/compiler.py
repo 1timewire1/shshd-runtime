@@ -12,6 +12,7 @@ from exp_runtime.authored import RESOURCE as AUTHORING_RESOURCE, MAGIC as AUTHOR
 from exp_runtime.decode.bytecode import decode_program
 from exp_runtime.x360_services import X360_BATTLE, X360_BATTLE_QUERY, X360_DISS, X360_LEASH, X360_MINIGAMES_QUERY, X360_PUZZLE, X360_SLOT
 from exp_runtime.cutscene_spec import CUTSCENE, CUTSCENE_QUERY
+from exp_runtime.story_object_services import STORY_OBJECT, STORY_OBJECT_CLEAR, STORY_OBJECT_QUERY
 from exp_runtime.shs11_services import SHS11_MINIGAMES_QUERY
 from exp_runtime.brew_services import BREW_MINIGAMES_QUERY
 from exp_runtime.addons import RESOURCE as ADDON_RESOURCE, requires_bytes
@@ -299,6 +300,12 @@ def validate_node(project, node, nodes, assets, characters):
         raise ProjectError(f'{label}: enter a result variable')
     if node.kind == 'cutscene':
         validate_cutscene(label, p, assets)
+    if node.kind == 'story_object' and not p['clear']:
+        if not node.text.strip():
+            raise ProjectError(f'{label}: name the item (a player without the picture shows the name)')
+        if node.asset is None or node.asset not in assets or (assets[node.asset].data is not None
+                                                             and not is_image(assets[node.asset].data)):
+            raise ProjectError(f"{label}: choose the picture, an imported image or an add-on's")
     if node.kind == 'random' and p['bound'] <= 0:
         raise ProjectError('Random upper bound must be positive')
     if node.kind == 'minigames_available' and p['for'] not in MINIGAME_QUERIES:
@@ -1117,6 +1124,17 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
                 asm.call(46, key, buffer)
             elif kind == 'loading': asm.call(91, int(p['wait']))
             elif kind == 'open_url': asm.call(100, asm.text(p['url']), -1)
+            elif kind == 'story_object':
+                # Service 225 where 70 selector 206 says it's drawn; elsewhere a message naming the item (a clear: nothing).
+                shown, done = ('story_object', node.id), ('story_object_done', node.id)
+                asm.call(70, STORY_OBJECT_QUERY); asm.emit(0x21); asm.jump_if(shown)
+                if not p['clear']:
+                    asm.call(33, text('title'), text('text'), 0)
+                    if project.calendars: badge_off(asm)
+                asm.jump(done)
+                asm.labels[shown] = len(asm.code)
+                asm.call(STORY_OBJECT, STORY_OBJECT_CLEAR & 0xffff if p['clear'] else node.asset)
+                asm.labels[done] = len(asm.code)
             elif kind == 'survey':
                 # HD's getPollURL: pollID, upType 2 (an array of values), the values, upSize, resultsType 2, the results
                 # buffer (finishPollDownload writes it through writeArrayToStack) and resultsSize. R is 1 when the

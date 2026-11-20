@@ -19,6 +19,12 @@ from .portrait_effects import BALL_FRAMES, BALL_UNITS, STARBURST_FRAME, ball_alp
 from . import emoticon_effects
 from .ui_assets import ImagePack, Raster, Rect, UIAssetError, read_ui
 
+# shshd-runtime: a story-object picture's square (service 225; Classic's slots, photos chc_09 and chc_12: a pale cream square
+# with a thin warm-gray edge and rounded corners), and how far inside its edge the picture sits, in units.
+STORY_OBJECT_FILL = (246, 244, 232)
+STORY_OBJECT_EDGE = (170, 165, 145)
+STORY_OBJECT_INSET = 3
+
 
 def _decoded_size(data: bytes) -> tuple[int, int]:
     if data.startswith((b'\x89PNG', b'\xff\xd8')):
@@ -52,6 +58,7 @@ class DialogueRenderer:
     def __init__(self, resources, text_renderer, image_loader, scale=1):
         self.resources = resources
         self._badges = {}
+        self._story_objects = {}      # (picture, pixels) -> the picture fitted in its square
         self.text = text_renderer
         self.image = image_loader
         # Pixels per logical (320x480) unit. Every position and size in this
@@ -1134,6 +1141,46 @@ class DialogueRenderer:
 
     autoplay = False        # Desktop's Autoplay: no Continue pill or tab, the page advances by itself
 
+    def story_object_image(self, picture, size):
+        """A story-object picture fitted inside a `size`-pixel square, its shape kept (Classic's storyobject.scaleLoop scales
+        it to the slot's constraint either way); None without the picture."""
+        key = picture, size
+        cache = self._story_objects
+        if key not in cache:
+            image = self.image(picture)
+            if image is not None:
+                width, height = image.get_size()
+                factor = size / max(width, height, 1)
+                image = pygame.transform.smoothscale(image, (max(1, round(width * factor)), max(1, round(height * factor))))
+            if len(cache) > 32:
+                cache.clear()
+            cache[key] = image
+        return cache[key]
+
+    def draw_story_objects(self, page, alpha):
+        """shshd-runtime (service 225, Claire Hart plan P): the line's story-object pictures, each in a framed square along
+        the box's bottom (DialoguePage.story_objects), coming in with the title as Classic's come in with the box."""
+        squares = getattr(page, 'story_objects', ())
+        if not squares or alpha <= 0:
+            return
+        k = self.scale
+        left = min(r.x for _, r in squares)
+        top = min(r.y for _, r in squares)
+        right = max(r.x + r.width for _, r in squares)
+        layer = pygame.Surface((round((right - left) * k) + 2, round(squares[0][1].height * k) + 2), pygame.SRCALPHA).convert_alpha()
+        layer.fill((0, 0, 0, 0))
+        for picture, square in squares:
+            frame = pygame.Rect(round((square.x - left) * k), round((square.y - top) * k),
+                                round(square.width * k), round(square.height * k))
+            radius = max(2, round(4 * k))
+            pygame.draw.rect(layer, STORY_OBJECT_FILL, frame, border_radius=radius)
+            pygame.draw.rect(layer, STORY_OBJECT_EDGE, frame, max(1, round(k)), border_radius=radius)
+            inset = round(STORY_OBJECT_INSET * k)
+            image = self.story_object_image(picture, max(1, frame.width - 2 * inset))
+            if image is not None:
+                layer.blit(image, image.get_rect(center=frame.center))
+        self.canvas.blit(faded(layer, alpha), (round(left * k), round(top * k)))
+
     def draw_continue(self, session, page, theme):
         if self.autoplay:
             return
@@ -1389,6 +1436,7 @@ class DialogueRenderer:
                               page.body_origin[0] * k, page.body_origin[1] * k,
                               scale=k, source_end=motion.revealed, inline=notes, inline_density=density)
         self.canvas.blit(faded(self.name_layer, motion.name_alpha), self._name_area.topleft, self._name_area)
+        self.draw_story_objects(page, motion.name_alpha)
         # Real-device confirmed (reference/football_star_beth_greeting_hd.webp):
         # the relationship icon sits above the box, the body text and the
         # speaker name -- everything except the portrait itself, which

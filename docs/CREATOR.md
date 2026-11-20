@@ -58,6 +58,7 @@ The selected choice connects to two dialogue paths. Its inspector sets a
 | Set variable, condition | Signed-word arithmetic, comparisons, boolean conditions and increments such as `points + 1`; game-state reads `prop`, `bit` and `art` |
 | Property flag | Set or clear one bit of a numeric property (50); read it with `bit(owner, key, n)` |
 | Random variable | Native service 27 with an exclusive positive upper bound; save result for branches |
+| Story object picture | shshd-runtime: a picture (imported, or an add-on's) in a framed square along the bottom of the dialogue box from the next line on, as Claire Hart shows the items Claire finds (service 225). Up to 8 stack in a row, which goes at the next change of speaker or at a node with **Clear**. Other players show a message naming the item (the node's text, under its title) |
 | Cutscenes?, storyboard cutscene | SHS, shshd-runtime only: whether the player draws them, then [a timeline](#storyboard-cutscenes) of panned pictures, overlays and sounds |
 | Text input, text answer condition | Native name/input panel, stored `{variable}` or shared `$KEY` substitution and native string comparison |
 | Set text, text default | Store a text under `{name}` or `$KEY` (46), or only while it is empty (47), as the original stories do for `$ZOE` |
@@ -470,7 +471,7 @@ a replacement for an existing episode slot:
 
 The original apps can't read add-ons or run this runtime's own mechanics, so:
 
-- **A project using a mechanic is blocked,** with the explanation of which: the translated mini-games, the X360 games, SHS '11's games, the BREW catch game or storyboard cutscenes, including an imported episode whose scripts call them.
+- **A project using a mechanic is blocked,** with the explanation of which: the translated mini-games, the X360 games, SHS '11's games, the BREW catch game, storyboard cutscenes or story-object pictures, including an imported episode whose scripts call them.
 - **A project that only takes pictures and sounds from add-ons is blocked with an offer** to pack them into the `.exp`, from the selected library. Your project stays as it is. Headlessly, that's `--pack-addons --library PATH`.
 
 [Presentation features](#shshd-runtime-presentation) aren't blocked: other apps ignore them and show the episode as they do.

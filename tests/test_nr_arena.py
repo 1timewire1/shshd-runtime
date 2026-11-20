@@ -228,7 +228,7 @@ class ArenaServiceTests(unittest.TestCase):
         self.assertEqual(session.answer().name, 'arena_frame')
         self.assertIsNotNone(session.engine.nr_arena)
         snapshot = json.loads(json.dumps(session.snapshot()))
-        self.assertEqual(snapshot['version'], 42)
+        self.assertEqual(snapshot['version'], 43)
         restored = Session.from_snapshot(resources(story), snapshot)
         for machine in (session, restored):
             self.assertEqual(machine.tick(33).name, 'arena_frame')      # no key: another frame

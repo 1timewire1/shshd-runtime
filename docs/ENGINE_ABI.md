@@ -141,7 +141,7 @@ All rows derive from `native-yield-dispatcher.c`. Additional evidence is in `nat
 
 shshd-runtime completes the rows marked "SHS" with the HD build's `SHSScript::syscall` behaviour (`engine.SHS_HD_YIELDS`), for both SHS editions; Cause of Death still stops at them.
 
-IDs beyond 100 take the inspected Android dispatcher's default path. The HD build's 101-120 are in section 6 and shshd-runtime's own 200-224 in sections 5.1-5.6a; any other unknown ID stays an explicit stop. The Python host intentionally does not treat unknown IDs as successful no-ops.
+IDs beyond 100 take the inspected Android dispatcher's default path. The HD build's 101-120 are in section 6 and shshd-runtime's own 200-225 in sections 5.1-5.6b; any other unknown ID stays an explicit stop. The Python host intentionally does not treat unknown IDs as successful no-ops.
 
 ### Imported SHS corpus follow-up
 
@@ -688,6 +688,21 @@ it reads football's score with 95 after 94. Surviving Hollywood's translated reh
 demo scores the letters typed right when time runs out (Tardy-Slip `web/shw/screens.js` `Spelling.check`), so Glamlet's
 soliloquy can give its middle reaction (owner, 2026-11-17). Native players and upstream exp-runtime stop at it as an
 unknown service.
+
+## 5.6b Story-object pictures (shshd-runtime service 225)
+
+Service **225** (`picture`) puts an episode-bank picture (the episode's own, or a required add-on's: Claire Hart Classic's are
+chc's 27000 on) in the dialogue box, as Claire Hart's `showStoryObject` does (CLAIRE_HART_ENGINE.md §4.7; plan decision P). It
+completes at once with 0. The picture waits for the next dialogue line and shows with it, in a framed square along the box's
+bottom, right-aligned (`dialogue.story_object_slots`; the box grows a row for them, upward for a speaker so its bottom stays,
+downward for a narrator). More pictures before a line join the row, up to 8 (`STORY_OBJECT_ROW`). The row goes at the next
+change of speaker (character, name and presentation), as Classic's go when the next box comes in; `picture` −1
+(`STORY_OBJECT_CLEAR`) empties it at once, as a box coming in for the same speaker does there; Skip Ahead empties it too, as
+Classic's Skip does. Saves keep the row, what waits for the next line and whose lines it is shown with (save version 43).
+
+A story asks **70 selector 206** (`STORY_OBJECT_QUERY`) first. Cause of Death's dispatcher answers 1; native players, upstream
+exp-runtime and this player's SHS answer 0, and the story shows a message naming the item instead (the Creator's **Story object
+picture** node compiles both ways).
 
 ## 5.7 The BREW packs' text and menus
 

@@ -18,6 +18,13 @@
   Claire Hart Classic's pack 31500 (`TRANSLATED_NARRATION_PORTRAITS`). Stand-in review sheet:
   `reference/screenshots/verify/claire_hart/narration_portrait_stand_in.png`. The Creator's option follows once the
   look is settled.
+- **Story-object pictures** (Claire Hart plan Stage 0, P; `claire-hart` branch): a new service, 225, shows a picture
+  (an episode's own, or a required add-on's) in a framed square along the bottom of the dialogue box from the next line
+  on, as Claire Hart Classic shows the items Claire finds. Up to 8 stack in a row, which goes at the next change of
+  speaker, at a clear, or on Skip Ahead; the box grows a row to hold them. Cause of Death answers its question (service
+  70 selector 206); other players show a message naming the item. The Creator's **Story object picture** node makes
+  both ([ENGINE_ABI.md](docs/ENGINE_ABI.md#56b-story-object-pictures-shshd-runtime-service-225)). Saves are version 43.
+  Stand-in review sheet: `reference/screenshots/verify/claire_hart/story_objects_stand_in.png`.
 - **Test channel: Sync Devices by command** (owner, 2026-11-19): `sync receive`, `sync send [shs|cod|both]
   [nobackup]`, `sync devices`, `sync choose`, `sync answer yes|no`, `sync wait`, `sync status`, `sync ok` and
   `sync stop` run a sync without taps or screenshots ([RUNTIME.md](docs/RUNTIME.md#test-channel-this-fork)).

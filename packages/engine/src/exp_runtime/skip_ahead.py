@@ -121,4 +121,6 @@ def skip_ahead(session):
     finally:
         session.durable = durable
     session.take_vibrations()                                   # nothing buzzes for what was skipped
+    # Claire Hart's Skip takes the story-object pictures away (storyobjectmanager, on PTSD.skip); so does this one.
+    session.engine.story_objects, session.engine.story_objects_due = [], []
     return True

@@ -49,7 +49,8 @@ MECHANIC_NODES = {'minigames_available': 'the translated mini-games', 'x360_slot
 MECHANIC_SERVICES = ((range(200, 214), "New Rules' minigame arena"), (range(214, 218), 'the X360 mini-games'),
                      (range(218, 219), 'storyboard cutscenes'), (range(219, 221), "SHS '11's mini-games"),
                      (range(221, 222), "the BREW games' catch game"), (range(222, 223), 'the X360 mini-games'),
-                     (range(223, 224), 'running a scene and coming back'), (range(224, 225), "the word grid's part score"))
+                     (range(223, 224), 'running a scene and coming back'), (range(224, 225), "the word grid's part score"),
+                     (range(225, 226), 'story-object pictures'))
 
 
 def node_addon(project, kind):

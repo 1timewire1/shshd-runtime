@@ -138,6 +138,7 @@ RUNTIME_STATUS = {
     222: emits('x360_battle'),
     223: emits('call_scene', 'run_due'),
     224: emits('grid'),
+    225: emits('story_object'),
 }
 PRESENTATION_STATUS = {
     'duet': emits('dialogue'), 'narration_theme': emits('dialogue'), 'portrait_effects': emits('dialogue'),

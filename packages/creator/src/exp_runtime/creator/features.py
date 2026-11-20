@@ -23,7 +23,7 @@ NAMES = dict(dialogue='Dialogue', choice='Choice', background='Background', set=
              faceplace='Faceplace (SHS HD)', faceplace_post='Faceplace post (SHS HD)',
              faceplace_link='Faceplace link / photo (SHS HD)', tree='Decision Tree (SHS HD)',
              tree_node='Tree scene (SHS HD)', tree_result='Tree result (SHS HD)', append_text='Append text',
-             loading='Loading screen (SHS)', open_url='Open a link', survey='Survey (SHS)',
+             loading='Loading screen (SHS)', open_url='Open a link', story_object='Story object picture', survey='Survey (SHS)',
              end='End episode', native='Native bytecode block')
 
 DEFAULTS = {
@@ -109,7 +109,7 @@ DEFAULTS = {
     'faceplace': {'action': 'enable', 'key': '$USR'}, 'faceplace_post': {}, 'faceplace_link': {'url': ''},
     'tree': {'action': 'enable', 'id': 0}, 'tree_node': {'type': 1203, 'width': 0, 'condition': 0},
     'tree_result': {'index': 0}, 'append_text': {'key': '$NAME'}, 'loading': {'wait': True},
-    'open_url': {'url': ''}, 'survey': {'poll_id': 1001, 'answers': ['rating'], 'results': []},
+    'open_url': {'url': ''}, 'story_object': {'title': '', 'clear': False}, 'survey': {'poll_id': 1001, 'answers': ['rating'], 'results': []},
     'end': {}, 'native': {},
 }
 INPUT_GATES = frozenset(('dialogue', 'choice', 'input', 'title', 'message', 'word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'picker'))

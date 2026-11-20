@@ -28,7 +28,7 @@ FIELDS = {
     'faceplace': ('text', 'next'), 'faceplace_post': ('text', 'character', 'expression', 'next'),
     'faceplace_link': ('text', 'asset', 'next'), 'tree': ('next',), 'tree_node': ('text', 'next'),
     'tree_result': ('text', 'next'), 'append_text': ('text', 'next'), 'loading': ('next',),
-    'open_url': ('next',), 'survey': ('next',),
+    'open_url': ('next',), 'survey': ('next',), 'story_object': ('text', 'asset', 'next'),
     'end': (), 'native': (),
 }
 TEXT_NOTE = (' Text may format numbers with {expression} placeholders, such as {points} or {prop(0, 400)}, and shows '
@@ -121,6 +121,10 @@ NOTES = {
                            'x360_diss), "x360_battle" the Diss Battle, "shs11" SHS \'11\'s Memory and Reflex, '
                            '"brew_catch" the catch game. Each game must be behind a query for its own (a player may '
                            'have one and not another); the project is refused otherwise.',
+    'story_object': "Shows the picture (asset: an imported image or an add-on's) in a framed square along the bottom of "
+                    'the dialogue box, from the next line on, as Claire Hart does (SHSHD Runtime, service 225). Several in a '
+                    'row stack, up to 8; the row goes at the next change of speaker, or with params.clear. Other players '
+                    'show a message naming the item instead: text, under params.title.',
     'cutscene_available': "shshd-runtime only. Stores in result whether the player draws storyboard cutscenes: 1 where it "
                           'does, 0 on any other player, which should go straight on.',
     'cutscene': "shshd-runtime only, behind cutscene_available. Plays the storyboard whose JSON spec is resource `spec`, in the "

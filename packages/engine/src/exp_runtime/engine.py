@@ -22,6 +22,7 @@ from .x360_services import X360_BATTLE
 # read after service 96 as football's score is after 94 (95). Surviving Hollywood's rehearsals score a missed word by it.
 GRID_PART_SCORE = 224
 from .x360_puzzle import JewelPuzzle, X360_PUZZLE
+from .story_object_services import STORY_OBJECT, STORY_OBJECT_ROW
 from .brew_catch import BREW_CATCH, CatchGame, ITEM_WORDS, MAX_ITEMS
 from .shs11_games import MemoryGame, REFLEX_ROUND_WORDS, ReflexGame, ROUND_WORDS, SHS11_MEMORY, SHS11_REFLEX
 from .cutscene import CUTSCENE, Cutscene
@@ -232,6 +233,11 @@ class EngineState:
     football: GameState | None = None
     football_scores: list[int | None] = field(default_factory=lambda: [None, None])
     grid_part_score: int = 0                    # shshd-runtime: the last word grid's part score (service 224)
+    # shshd-runtime: story-object pictures (service 225, Claire Hart plan P): those due with the next line, the row shown with
+    # the current speaker's lines, and that speaker ([character, name, presentation]), whose change empties the row.
+    story_objects_due: list[int] = field(default_factory=list)
+    story_objects: list[int] = field(default_factory=list)
+    story_objects_speaker: list | None = None
     next_dialogue_notice: str = ''
     notice: str = ''
     notice_ms: int = 0
@@ -383,6 +389,9 @@ class EngineState:
         extra = dict(status_icons=True) if status_icons is not None else {}
         if narration:
             extra['narration'] = True
+        row = self.story_object_row([character, self.panel.speaker, presentation])
+        if row:
+            extra['story_objects'] = row
         return dict(**extra, text=text, raw_text=raw_text, character_id=character,
                     visible_character_id=visible, speaker=speaker, expression=expression,
                     initial_expression=initial_expression,
@@ -397,6 +406,18 @@ class EngineState:
         ids of the first join there and merges into it."""
         uid = self.numbers.get(self.number_key(0, 2000), 0) * 1000 + self.numbers.get(self.number_key(0, 0x3e9), 0)
         return self.dt_view.add_node(node_type, label, exw, uid, pc, state=read_state(self))
+
+    def story_object_row(self, speaker):
+        """shshd-runtime (service 225, Claire Hart plan P): the story-object pictures shown with this line. As Classic's
+        storyobjectmanager: pictures wait hidden and show when the next box comes in, and that row goes at the change of
+        speaker after (or when a script empties it). Pictures added while the same speaker goes on join the row."""
+        if self.story_objects and speaker != self.story_objects_speaker:
+            self.story_objects = []
+        if self.story_objects_due:
+            self.story_objects = (self.story_objects + self.story_objects_due)[:STORY_OBJECT_ROW]
+            self.story_objects_due = []
+        self.story_objects_speaker = speaker
+        return list(self.story_objects)
 
     def align_location(self):
         """SHSUIDialog::animateLocationLayer: speaker type 1 aligns the location left, type 2 right; the
@@ -1246,6 +1267,14 @@ class EngineState:
         if y == GRID_PART_SCORE:
             need(0)
             return complete('get_grid_part_score', self.grid_part_score)
+        if y == STORY_OBJECT:
+            need(1)
+            picture = signed16(args[0])
+            if picture < 0:                     # STORY_OBJECT_CLEAR: the row goes now, and nothing waits for the next line
+                self.story_objects, self.story_objects_due = [], []
+            elif len(self.story_objects_due) < STORY_OBJECT_ROW:
+                self.story_objects_due.append(picture)
+            return complete('story_object')
         if y == BREW_CATCH:                                     # (likewise): the kind, target, spawn ms, speed, spread, chance, angle,
             if len(args) != 12:                                 # player's picture, list of items, table of sizes, sizes in it, and
                 need(11)                                        # (12th, optional) the story's cut-offs, for the skip prompt only

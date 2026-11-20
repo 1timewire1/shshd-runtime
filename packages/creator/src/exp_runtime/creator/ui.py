@@ -562,7 +562,7 @@ class Editor(QMainWindow):
             if node.kind in ('dialogue', 'choice', 'title', 'message', 'notice', 'scene_label', 'word_game', 'quest',
                              'journal_updated',
                              'set_text', 'text_default', 'character_name', 'picker', 'faceplace', 'faceplace_post',
-                             'faceplace_link', 'tree_node', 'tree_result', 'append_text'):
+                             'faceplace_link', 'tree_node', 'tree_result', 'append_text', 'story_object'):
                 text = QTextEdit()
                 text.setPlainText(node.text)
                 text.setAcceptRichText(False)
@@ -570,12 +570,13 @@ class Editor(QMainWindow):
                 text.setMinimumHeight(120)
                 text.textChanged.connect(lambda: self.set_node('text', text.toPlainText()))
                 form.addRow('Text', text)
-            if (node.kind in ('background', 'character_art', 'faceplace_link')
+            if (node.kind in ('background', 'character_art', 'faceplace_link', 'story_object')
                     or node.kind == 'dialogue' and not node.character):
                 key = 'portrait' if node.kind == 'dialogue' else 'asset'
                 images = [('None', None)] + [(f'{a.id} · {a.name}', a.id) for a in self.project.assets
                                              if a.data is None or is_image(a.data)]
-                form.addRow({'background': 'Background', 'faceplace_link': 'Photo'}.get(node.kind, 'Portrait'), self.combo(
+                form.addRow({'background': 'Background', 'faceplace_link': 'Photo',
+                             'story_object': 'Picture'}.get(node.kind, 'Portrait'), self.combo(
                     images, getattr(node, key), lambda value: self.set_node(key, value)))
             if node.kind in ('dialogue', 'choice') and self.project.game == 'cod':
                 # CoD's two (compiler.COD_THEMES): its grey box with a slanted name, or an upright one (owner, 2026-11-19).

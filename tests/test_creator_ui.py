@@ -153,7 +153,7 @@ class CreatorInspectorTests(unittest.TestCase):
                     wanted = kind in ('dialogue', 'choice', 'title', 'message', 'notice', 'scene_label', 'word_game',
                                       'set_text', 'text_default', 'character_name', 'picker', 'faceplace',
                                       'faceplace_post', 'faceplace_link', 'tree_node', 'tree_result', 'append_text',
-                                      'quest', 'journal_updated')
+                                      'quest', 'journal_updated', 'story_object')
                     self.assertEqual(text is not None, wanted)
         finally:
             editor.dirty = False

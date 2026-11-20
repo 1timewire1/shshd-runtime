@@ -1450,7 +1450,7 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=42,
+        return dict(format='shs-runtime-save', version=43,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
@@ -1504,8 +1504,14 @@ class Session:
     @classmethod
     def from_snapshot(cls, resources: EpisodeResources, state: dict):
         try:
-            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 43):
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 44):
                 raise SaveError('Unsupported save format or version')
+            # Version 43 adds story-object pictures (service 225, Claire Hart plan P); an older save showed none.
+            if state['version'] < 43 and isinstance(state.get('engine'), dict):
+                state = deepcopy(state)
+                state['engine'].setdefault('story_objects_due', [])
+                state['engine'].setdefault('story_objects', [])
+                state['engine'].setdefault('story_objects_speaker', None)
             # Version 42 gives the X360 leash game its swings and its cast's animation (B1, x360_games.LeashGame). An open
             # game takes its level as its highest and lowest, no script run yet, and the cast idling, not drawn: a close
             # already under way keeps its 0.3 s.

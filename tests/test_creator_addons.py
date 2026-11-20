@@ -246,8 +246,8 @@ class NativeExportTests(Library):
         from test_runtime import Resources, host_call
         from test_vm import program
         named = {number for services, _ in MECHANIC_SERVICES for number in services}
-        self.assertEqual(named, set(range(200, 225)))
-        session = Session(Resources(program(*host_call(225), 0x33)))
+        self.assertEqual(named, set(range(200, 226)))
+        session = Session(Resources(program(*host_call(226), 0x33)))
         self.assertEqual(session.advance().name, 'unhandled_yield')        # the first one the runtime doesn't answer
 
     def test_an_imported_episode_that_needs_an_addon_cant_be_packed(self):
