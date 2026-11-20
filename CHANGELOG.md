@@ -49,7 +49,10 @@
   Continue, and its story-object squares. Narration is Romic Bold slanted by the player (Romic has no italic; owner,
   2026-11-19), as CoD's narration is italic. CoD's emphasis takes Claire Hart's gold. A glyph a font lacks now draws nothing
   instead of the face's box (`vector_text.ttf_covered`). Art in `chc` 29100 on (`tools/translate/ch_dialogue_skin.py`).
-  Review sheet: `reference/screenshots/verify/claire_hart/dialogue_skin_stand_in.png`.
+  Review sheet: `reference/screenshots/verify/claire_hart/dialogue_skin_stand_in.png`. A new speaker's tab now comes in
+  with the box's strip, ahead of the name (which had shown over the backdrop until the box finished growing), and the
+  ring stays whole over the box instead of being cut square at its corner as the box finished opening (owner,
+  2026-11-20; `dialogue_entrance_before_after.png`).
 - **Claire Hart Classic's reader and `chc` revision 1** (Claire Hart plan Stage 1; `claire-hart` branch):
   `tools/translate/claire_hart.py` reads Classic's cases (`report`; `ids` writes the E-number table) and writes the story
   add-on (`addon`, 454 MB): all 835 portraits folded into 185 looks of CoD's five expressions (the spec's look banks), the 787

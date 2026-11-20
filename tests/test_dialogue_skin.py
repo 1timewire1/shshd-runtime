@@ -64,6 +64,25 @@ class SkinTabTests(unittest.TestCase):
         tab, _ = DialogueLayout.skin_tab(SPEC, box, Rect(0, 230, 128, 128), 1, self.name(240))
         self.assertLessEqual(tab.x + tab.width, box.x + box.width + 10 - 4)
 
+    def test_the_tab_comes_in_ahead_of_its_name(self):
+        """Owner, 2026-11-20: a new speaker's name showed over the backdrop before its tab, which waited for the box to
+        finish growing. The tab comes in from when the box's strip is in place, faster than the name fades in."""
+        try:
+            from exp_runtime.desktop_dialogue import DialogueRenderer
+        except ImportError as error:                    # (the player's pygame)
+            self.skipTest(str(error))
+        from exp_runtime.dialogue_animation import DialogueAnimation, DialoguePortrait
+        motion = DialogueAnimation(20, portrait=DialoguePortrait(1, 2, 1, 0), changed=True, box_grow=True)
+        start = motion.name_delay_ms
+        for elapsed in range(start - 50, start + 400, 10):
+            motion.elapsed_ms = elapsed
+            self.assertGreaterEqual(DialogueRenderer.skin_tab_alpha(motion), motion.name_alpha)
+        motion.elapsed_ms = start + DialogueRenderer.SKIN_TAB_FADE_MS
+        self.assertEqual(DialogueRenderer.skin_tab_alpha(motion), 255)
+        box = motion.box_rect(Rect(30, 300, 260, 70), Rect(0, 230, 128, 128))
+        self.assertEqual((box.y, box.width), (300, 260))                # its top edge is in place from then on
+        self.assertLess(box.height, 70)
+
     def test_the_faces_are_romic_bold_and_narration_slanted(self):
         self.assertEqual((SKIN_BODY, SKIN_NAME, SKIN_NARRATION), ('CHRomicBold16', 'CHRomicBold18', 'CHRomicBoldItalic16'))
 

@@ -1349,6 +1349,17 @@ class DialogueRenderer:
             self._skin_art[key] = found
         target.blit(found, (x, y))
 
+    SKIN_TAB_FADE_MS = 120
+
+    @classmethod
+    def skin_tab_alpha(cls, motion):
+        """Claire Hart Dialogue's name tab comes in with the box: from the moment its strip reaches its place (its top
+        edge, where the tab sits, is final from then while it grows down), faster than the name fades in, so the name
+        never shows before its tab (owner, 2026-11-20: it did, over the backdrop, until the box had grown)."""
+        if motion.visuals_finished or not motion.changed:
+            return 255
+        return int(255 * min(1.0, max(0.0, (motion.elapsed_ms - motion.name_delay_ms) / cls.SKIN_TAB_FADE_MS)))
+
     def draw_skin_tab(self, page, alpha):
         """The name's tab (DialoguePage.tab): its caps kept, its middle stretched to the name, over the box's top edge."""
         tab = page.tab
@@ -1550,14 +1561,17 @@ class DialogueRenderer:
             if not waiting:
                 self.box(self.wide, Rect(box.x + m, box.y, box.width, box.height),
                          theme, alpha=self.box_alpha(), scale=k)
-            if self.skin is not None and box == page.box:
-                self.draw_skin_tab(page, motion.name_alpha)     # (Claire Hart Dialogue: the name's tab, once it's grown)
+            if self.skin is not None and (box.y, box.width) == (page.box.y, page.box.width):
+                self.draw_skin_tab(page, self.skin_tab_alpha(motion))
         # HD draws the portrait's rings under the body text: the third line's
         # top edge crosses the ring's bottom arc (white on the white box, so
         # invisible there), and drawing the ring over it clipped the glyphs.
         # The ring is clipped once the box has finished its entrance (`dialog-bubble-grow` completing calls
         # clipPortraitHousingAgainstBubble; for a shake, when its rotation ends): `housing_clipped`.
-        bubble = self.housing_polygon(page.box) if motion.housing_clipped else None
+        # Claire Hart Dialogue keeps its ring whole over the box: its dark ring and light disc are one layer, so the clip
+        # cut both off square at the box's corner, the face left hanging over the box, and it snapped in as the box
+        # finished opening (owner, 2026-11-20). The white rings on CoD's and SHS's white boxes never showed either.
+        bubble = self.housing_polygon(page.box) if motion.housing_clipped and self.skin is None else None
         self.draw_portrait(motion.previous, motion.previous_scale, 'rings', bubble, factor=leaving_factor)
         self.draw_portrait(leaving, motion.previous_scale, 'rings', bubble, factor=leaving_factor)
         self.draw_portrait(motion.portrait, motion.portrait_scale, 'rings', bubble)
