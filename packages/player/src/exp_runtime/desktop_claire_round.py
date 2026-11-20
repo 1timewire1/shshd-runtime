@@ -40,6 +40,16 @@ ARROW_SPEED = 900                          # canvas pixels a second, as the scen
 ZOOM_STEP = 0.05                           # touchdetector: the wheel's 0.05 a notch, 1x to 2x
 FOUND_POP = 1.08
 FOUND_NAME_ALPHA = 90                      # a found name, greyed until it leaves (chc_06's "Marker")
+# hogscene.doHiddenObjectRemovalAnimation: the found particle flies to the object's name along a Catmull-Rom curve through a
+# point 130 units above the object and 60 to the name's side, in 1.67 s (its trail: the particle system's, drawn here as fading
+# sparks behind a twinkle).
+TRAIL_MS, TRAIL_RISE, TRAIL_SIDE = 1670, 130, 60
+TRAIL_SPARKS, TRAIL_SPACING_MS = 14, 28
+TRAIL_COLOUR = (190, 255, 160)
+# hintpowerup.sendIndicatorToPosition: the star drops from the orb to its object in (distance / 400 x 1.2) s, easing out;
+# the orb's explosion (hint_explosion: 0.5 s) as it goes.
+HINT_SPEED, HINT_TIME = 400, 1.2
+EXPLOSION_MS = 500
 
 
 def clamp(value, low=0., high=1.):
@@ -116,6 +126,8 @@ class ClaireRoundRenderer:
         self.pressed = None
         self.clock = 0                     # ms, for the renderer's own animations
         self._marks = (cr.NO_OBJECT,) * 3     # the hint's, Focus's and the Locator's objects last drawn
+        self.effects = []                  # [kind, start clock, data]: trails, the hint's flight, the orb's explosion
+        self._seen_found = None            # (game, how many found) last drawn: a new find starts its trail
 
     # -- the add-ons ----------------------------------------------------------------------------------------------------------
     def addon(self, addon, resource):
@@ -270,12 +282,14 @@ class ClaireRoundRenderer:
             self._scaled = None
         if self.held and self.view is not None:
             self.view.pan(-self.held * ARROW_SPEED * elapsed_ms / 1000, 0)
+        self.start_effects(game)
         self.follow_marks(game)
         self.draw_scene(game)
         self.draw_marks(game)
         self.draw_found(game)
         self.draw_top(game)
         self.draw_bottom(game)
+        self.draw_effects(game)
         self.draw_arrows()
         if game.lock_ms:
             self.draw_spam_popup()
@@ -392,6 +406,115 @@ class ClaireRoundRenderer:
         _, normal, _, hint = self.spec()['scenes'][game.scene]['objects'][obj]
         return normal[3] + normal[1] / 2 + hint[0], normal[4] + normal[2] / 2 - hint[1]
 
+    # -- effects --------------------------------------------------------------------------------------------------------------
+    def start_effects(self, game):
+        """A new find starts its trail to its name; a new hint, the star's flight from the orb and the orb's explosion."""
+        if self._seen_found is None or self._seen_found[0] is not game:
+            self._seen_found = (game, len(game.found))
+            self.effects.clear()
+        for obj in game.found[self._seen_found[1]:]:
+            if obj in game.slots:
+                slot = game.slots.index(obj)
+                start = self.view.to_canvas(*self.found_centre(game, obj)) if self.view else (0, 0)
+                self.effects.append(['trail', self.clock, (start, self.label_point(slot))])
+        self._seen_found = (game, len(game.found))
+        if game.hint_target != cr.NO_OBJECT and game.hint_target != self._marks[0]:
+            self.effects.append(['hint', self.clock, game.hint_target])
+            self.effects.append(['explosion', self.clock, None])
+        self.effects = [e for e in self.effects if self.clock - e[1] < self.effect_length(e)]
+
+    def effect_length(self, effect):
+        kind = effect[0]
+        if kind == 'trail':
+            return TRAIL_MS + TRAIL_SPARKS * TRAIL_SPACING_MS
+        if kind == 'explosion':
+            return EXPLOSION_MS
+        return self.flight_ms(effect)
+
+    def found_centre(self, game, obj):
+        _, _, found, _ = self.spec()['scenes'][game.scene]['objects'][obj]
+        return found[3] + found[1] / 2, found[4] + found[2] / 2
+
+    def flight_ms(self, effect):
+        """The hint star's flight time (hintpowerup: distance / 400 x 1.2 s, in design units)."""
+        game_target = effect[2]
+        start, end = self.flight_ends(game_target)
+        return max(200, round(math.hypot(end[0] - start[0], end[1] - start[1]) / self.k / HINT_SPEED * HINT_TIME * 1000))
+
+    def flight_ends(self, target):
+        game = self._seen_found[0]
+        return self.orb_rect().center, self.view.to_canvas(*self.mark_centre(game, target))
+
+    def flying(self, target):
+        return any(e[0] == 'hint' and e[2] == target for e in self.effects)
+
+    @staticmethod
+    def catmull_rom(points, t):
+        """A point along a Catmull-Rom curve through `points` (ends doubled), t from 0 to 1."""
+        pts = [points[0], *points, points[-1]]
+        segments = len(points) - 1
+        f = min(segments - 1e-9, max(0.0, t * segments))
+        i = int(f)
+        u = f - i
+        p0, p1, p2, p3 = pts[i], pts[i + 1], pts[i + 2], pts[i + 3]
+        return tuple(0.5 * ((2 * p1[n]) + (-p0[n] + p2[n]) * u + (2 * p0[n] - 5 * p1[n] + 4 * p2[n] - p3[n]) * u * u
+                            + (-p0[n] + 3 * p1[n] - 3 * p2[n] + p3[n]) * u ** 3) for n in (0, 1))
+
+    def draw_effects(self, game):
+        for kind, start, data in self.effects:
+            age = self.clock - start
+            if kind == 'trail':
+                self.draw_trail(age, *data)
+            elif kind == 'hint':
+                self.draw_flight(age, data)
+            elif kind == 'explosion':
+                count = self.spec()['hud']['vfx_explosion'][1]
+                frame = self.frame('vfx_explosion', min(count - 1, age * count // EXPLOSION_MS))
+                frame = self.scaled(frame, self.orb_rect().width / 120)
+                self.canvas.blit(frame, frame.get_rect(center=self.orb_rect().center))
+
+    def draw_trail(self, age, start, end):
+        side = TRAIL_SIDE if end[0] > start[0] else -TRAIL_SIDE
+        middle = (start[0] + side * self.k, start[1] - TRAIL_RISE * self.k)
+        points = (start, middle, end)
+        for n in range(TRAIL_SPARKS):
+            t = (age - n * TRAIL_SPACING_MS) / TRAIL_MS
+            if not 0 <= t <= 1:
+                continue
+            x, y = self.catmull_rom(points, t)
+            fade = 1 - n / TRAIL_SPARKS
+            radius = max(1, round((6 - 4 * n / TRAIL_SPARKS) * self.k))
+            spark = pygame.Surface((radius * 4, radius * 4), pygame.SRCALPHA)
+            spark.fill((0, 0, 0, 0))
+            pygame.draw.circle(spark, (*TRAIL_COLOUR, round(90 * fade)), (radius * 2, radius * 2), radius * 2)
+            pygame.draw.circle(spark, (255, 255, 240, round(230 * fade)), (radius * 2, radius * 2), radius)
+            self.canvas.blit(spark, (round(x) - radius * 2, round(y) - radius * 2))
+        t = age / TRAIL_MS
+        if 0 <= t <= 1:
+            count = self.spec()['hud']['vfx_sparkles'][1]
+            twinkle = self.scaled(self.frame('vfx_sparkles', (age // 40) % count), 0.5 * self.k)
+            x, y = self.catmull_rom(points, t)
+            self.canvas.blit(twinkle, twinkle.get_rect(center=(round(x), round(y))))
+
+    def draw_flight(self, age, target):
+        """The hint's star on its way: easing out from the orb to the object, its tail behind it."""
+        start, end = self.flight_ends(target)
+        length = self.flight_ms(['hint', 0, target])
+        t = min(1.0, age / length)
+        eased = 1 - (1 - t) ** 2
+        x, y = start[0] + (end[0] - start[0]) * eased, start[1] + (end[1] - start[1]) * eased
+        tails = self.spec()['hud']['vfx_hint_tail'][1]
+        tail = self.scaled(self.frame('vfx_hint_tail', min(tails - 1, round(t * (tails - 1)))), 0.6 * self.k)
+        angle = math.degrees(math.atan2(-(end[1] - start[1]), end[0] - start[0])) - 90
+        tail = pygame.transform.rotate(tail, angle)
+        dx, dy = end[0] - start[0], end[1] - start[1]
+        norm = math.hypot(dx, dy) or 1
+        behind = (x - dx / norm * tail.get_height() * 0.25, y - dy / norm * tail.get_height() * 0.25)
+        self.canvas.blit(tail, tail.get_rect(center=(round(behind[0]), round(behind[1]))))
+        count = self.spec()['hud']['vfx_hint_starburst'][1]
+        star = self.scaled(self.frame('vfx_hint_starburst', (age // 33) % count), (1.0 - 0.3 * eased) * 0.7 * self.k)
+        self.canvas.blit(star, star.get_rect(center=(round(x), round(y))))
+
     def follow_marks(self, game):
         """A new mark (the hint's star, Focus, the Psychic Locator) brings its object into view, the zoom back to 1x as
         Classic's hint resets it (touchTracker.resetZoomLevel): with the scene wider than the frame, it might be off screen."""
@@ -415,7 +538,7 @@ class ClaireRoundRenderer:
             pygame.draw.circle(dark, (0, 0, 0, 0), (round(centre[0]), round(centre[1])), round(110 * self.k))
             self.canvas.blit(dark, (0, 0))
         for target in (game.hint_target, game.locator_target):
-            if target == cr.NO_OBJECT:
+            if target == cr.NO_OBJECT or (target == game.hint_target and self.flying(target)):
                 continue
             _, normal, _, hint = entry[target]
             centre = self.view.to_canvas(normal[3] + normal[1] / 2 + hint[0], normal[4] + normal[2] / 2 - hint[1])

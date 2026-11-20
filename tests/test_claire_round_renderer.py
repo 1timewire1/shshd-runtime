@@ -39,7 +39,7 @@ def an_addon(objects=8):
         resources[resource] = png(sizes.get(name, (60, 60)), (0, 120, 120, 255))
         hud[name] = resource
         resource += 1
-    for animation in ('vfx_HintFill', 'vfx_hint_starburst'):
+    for animation in ('vfx_HintFill', 'vfx_hint_starburst', 'vfx_hint_tail', 'vfx_explosion', 'vfx_sparkles'):
         resources[resource] = cr.encode_sprite_pack([png((40, 40), (0, 255, 0, 255))] * 3)
         hud[animation] = [resource, 3]
         resource += 1
@@ -103,6 +103,24 @@ class RendererTests(unittest.TestCase):
         r.draw_game(game)
         x, _ = r.view.to_canvas(*r.mark_centre(game, 0))
         self.assertTrue(0 <= x <= 768)
+
+    def test_a_find_trails_to_its_name_and_a_hint_flies_from_the_orb(self):
+        from exp_runtime import desktop_claire_round as dcr
+        r, game = self.renderer, self.game
+        r.draw_game(game, 16)
+        game.tap([game.listed[1]])
+        r.draw_game(game, 16)
+        trail = [e for e in r.effects if e[0] == 'trail']
+        self.assertEqual(len(trail), 1)
+        self.assertEqual(trail[0][2][1], r.label_point(1))                 # to its own name
+        game.hint(Random48(3))
+        r.draw_game(game, 16)
+        self.assertEqual(sorted(e[0] for e in r.effects), ['explosion', 'hint', 'trail'])
+        self.assertTrue(r.flying(game.hint_target))                       # the star isn't on its object yet
+        r.draw_game(game, dcr.TRAIL_MS + 2000)
+        self.assertEqual(r.effects, [])                                    # all over
+        middle = r.catmull_rom(((0, 0), (10, -20), (20, 0)), 0.5)
+        self.assertEqual(middle, (10, -20))                                # the curve goes through its middle point
 
     def test_whole_frames_draw_at_3_4_and_9_21(self):
         r, game = self.renderer, self.game
