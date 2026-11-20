@@ -518,3 +518,17 @@ as shown and loads in either language. The SHS '11 translator writes it
 Translations (`creator/features.languages_record`). A choice's options joined
 with `|`, or an option and its detail line, that have no entry of their own
 take each part's.
+
+## Backdrop slices extension (shshd-runtime)
+
+An episode may contain resource **7**, UTF-8 JSON with `format:
+"shshd-backdrop-slices"`, `version: 1` and `slices`, `{"<resource>": x}`
+(`backdrop_slices.py`; Claire Hart plan decision M, owner 2026-11-19). Claire
+Hart's scenes are 4:3 while Cause of Death's frame is 3:4: for a pack in its game
+profile's `BACKDROP_SLICES` (CoD: 31500, `chc`'s spec at 26998), a backdrop shows
+as its 3:4 slice, a window as tall as the picture whose left edge is `x` pixels
+in, filling the frame (a taller frame covers centred). The episode's record wins
+over the add-on spec's `scenes`, so a translated case can move a slice without a
+new add-on. The Claire Hart translator writes it
+(`tools/translate/claire_hart.py`). Native players and upstream exp-runtime
+never read resource 7.

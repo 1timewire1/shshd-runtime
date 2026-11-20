@@ -56,6 +56,15 @@
   scenes' backdrops with each one's 3:4 slice (at Cause of Death's own cut of it, else centred), the 33 tracks as MP3, the
   645 story-object pictures, the Title Screen Look and jingle, and Claire Hart Dialogue, used by a case or not, beside
   chslim revision 1's pictures under their IDs. Review sheets: `reference/screenshots/verify/claire_hart/chc_rev1_*.png`.
+- **Claire Hart Classic's cases as Cause of Death episodes** (Claire Hart plan Stage 2; `claire-hart` branch):
+  `claire_hart.py build` turns each case into one translated episode (pack 31500, the case's place × 10, requiring
+  `chc`): a title card per original episode over the scene its store picture shows, every line with its speaker's look
+  and face (a narrator of its own, so Claire's own lines keep her name plate), backdrops, music as Classic restarts it,
+  story objects, and each hidden-object round as a line naming the place searched and what's found. Its rules follow a
+  check of Classic's decompiled story player. A new episode record, **backdrop slices** (resource 7,
+  [SCHEMA.md](docs/SCHEMA.md#backdrop-slices-extension-shshd-runtime)), and the cod profile's `BACKDROP_SLICES` show a
+  4:3 scene as its 3:4 slice filling the frame, the episode's own slice first, so moving one needs no new add-on.
+  Pilot: Case 1, Case 6, Case 45 and Christmas Special II, matching Classic line for line.
 - **Test channel: Sync Devices by command** (owner, 2026-11-19): `sync receive`, `sync send [shs|cod|both]
   [nobackup]`, `sync devices`, `sync choose`, `sync answer yes|no`, `sync wait`, `sync status`, `sync ok` and
   `sync stop` run a sync without taps or screenshots ([RUNTIME.md](docs/RUNTIME.md#test-channel-this-fork)).

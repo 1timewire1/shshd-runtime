@@ -2013,6 +2013,35 @@ class EpisodeResources:
             kept = self._looks = (archive, looks)
         return kept[1]
 
+    def backdrop_slice(self, resource_id):
+        """shshd-runtime (Claire Hart plan Stage 2, decision M): the left edge, in the picture's pixels, of the 3:4 slice
+        of a 4:3 scene this episode shows as its backdrop, or None to draw the picture as any other. For a pack in the
+        game profile's BACKDROP_SLICES, (add-on, spec): the episode's own record (resource 7, backdrop_slices.py) first,
+        so a case can move a slice without a new add-on, then the add-on spec's `scenes` ({folder: [resource, x]})."""
+        bank = pack_setting(self, 'BACKDROP_SLICES')
+        if bank is None:
+            return None
+        kept = self.__dict__.get('_slices')
+        if kept is None:
+            from .backdrop_slices import RESOURCE as SLICES, decode as decode_slices
+            slices = {}
+            found = self.library.addon(bank[0]) if hasattr(self.library, 'addon') else None
+            if found is not None and bank[1] in found[1].entries:
+                try:
+                    scenes = json.loads(found[1].read(bank[1])).get('scenes', {})
+                    slices.update({entry[0]: entry[1] for entry in scenes.values()
+                                   if isinstance(entry, list) and len(entry) == 2
+                                   and all(type(value) is int for value in entry)})
+                except (ValueError, AttributeError, ContentError) as error:
+                    logging.warning('The backdrop slices in %s %s are unreadable: %s', bank[0], bank[1], error)
+            if SLICES in self.archive.entries:
+                try:
+                    slices.update(decode_slices(self.archive.read(SLICES)))
+                except ContentError as error:
+                    logging.warning('%s: %s', self.record.get('name', 'episode'), error)
+            kept = self._slices = slices
+        return kept.get(resource_id)
+
     # New Rules loads its minigame library (25200) beside whichever story runs: a linked segment (VM_SPEC.md §2.3).
     LINKED_SCRIPT = 25200
 

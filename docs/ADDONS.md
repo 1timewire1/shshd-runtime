@@ -461,14 +461,17 @@ superseding chslim at revision 2). It keeps revision 1 until it goes to testers.
 
 ```sh
 python tools/translate/claire_hart.py addon --mirror CLAIRE_HART_DIR --pairs PAIRS.txt --catalog COD_CATALOG_PORTRAITS \
-    --cod-library COD_LIBRARY --extras EXTRAS_DIR --out OUT_DIR      # FFmpeg on PATH, for the tracks
+    --cod-library COD_LIBRARY --extras EXTRAS_DIR --sequel SHADOWS_DIR --out OUT_DIR   # FFmpeg on PATH, for the tracks
 python tools/translate/claire_hart.py report --mirror CLAIRE_HART_DIR
 python tools/translate/claire_hart.py ids --mirror CLAIRE_HART_DIR --out claire_hart_ids.tsv
+python tools/translate/claire_hart.py build --mirror CLAIRE_HART_DIR --out OUT_DIR [--episodes E001,E018] [--cache STORE.json]
+python tools/translate/claire_hart.py places --mirror CLAIRE_HART_DIR --out claire_hart_places.tsv
 ```
 
 | Resources | What |
 | --- | --- |
 | 26000–26786 | The 787 scenes' backdrops (`template`), in the scene folders' sorted order: Classic's own PNGs (paletted; full brightness, dimmed at draw time) |
+| 26800 | An extra scene for a title card: the sequel's Van der Walt Den without its objects, which E265's store picture shows (from the sequel's mirror, `--sequel`) |
 | 26900–26932 | The 33 tracks, MP3 128 kb/s |
 | 26960–26962, 26990 | The Title Screen Look (its spec, Classic's Play Now forest, its logo) and Title Screen Music (the main jingle) |
 | 26998 | The spec, JSON (version 1): `looks` (each look's 5 picture IDs: Normal, Angry, Happy, Sad, Surprised), `look_names`, `pictures` (portrait path → look, slot, ID), `scenes` (folder → backdrop ID, the 3:4 slice's left edge in the scene's pixels), `music` (track → ID), `story_objects` (picture path → ID) |

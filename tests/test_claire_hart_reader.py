@@ -40,7 +40,7 @@ def mirror_at(root, portraits=(), scenes=(), cuts=None, cases=None, storyobjs=()
     folder.mkdir(parents=True)
     caselist = {}
     for key, (record, parts) in (cases or {}).items():
-        caselist[key] = dict(record, episodes=[{} for _ in parts])
+        caselist[key] = dict(record, episodes=[{'name': config.get('title', '').strip()} for config, _ in parts])
         for number, (config, sequences) in enumerate(parts, 1):
             episode = folder / record['case'].replace('CASE ', 'case').replace(' ', '') / f'ep{number}'
             episode.mkdir(parents=True)
@@ -133,6 +133,107 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(spec['music'], {'Beach': 26900, 'Park': 26901})
         self.assertEqual(spec['scenes'], {'Office': [26000, 224]})
         self.assertEqual(json.loads(json.dumps(spec)), spec)
+
+
+def a_case():
+    """One part: chapter 1 (music, a backdrop, narration, a speaker's faces, a story object, a change of outfit), its
+    round in the Shed, and chapter 2 (its track from chapter 1's map, Troy narrating)."""
+    ann = {'default': f'{CH}Ann/Avatar_Ann_Normal', 'Avatar_Ann_Happy': f'{CH}Ann/Avatar_Ann_Happy',
+           'Avatar_Ann_Purple_Normal': f'{CH}Ann/Avatar_Ann_Purple_Normal'}
+    chapter1 = {'backgrounds': {'Office': {'type': 'texture', 'resource': 'references/backgrounds/Office/hd/template'},
+                                'HIDDEN OBJECT GAME 1': {'type': 'hogScene', 'scene': 'Shed',
+                                                         'storyobject': ['Broom (by the door)', 'Nothing']}},
+                'characters': {'Ann': {'expressions': ann}}, 'music': {'Office': 'Theme.mp3'},
+                'dialog objects': {'Push_Broom_SO': 'references/storyobjs/broomso'}, 'textColors': {}, 'sounds': {}}
+    chapter2 = {'backgrounds': {'Office': chapter1['backgrounds']['Office']}, 'characters': {}, 'music': {},
+                'dialog objects': {}, 'textColors': {}, 'sounds': {}}
+
+    def line(header, body, expression=''):
+        return {'type': 'dialogText', 'header': header, 'body': body, 'expression': expression}
+    sequences = {
+        'main': {'nodes': [{'type': 'playSequence', 'sequenceId': 'SCENE 1_1'},
+                           {'type': 'playHOG', 'hogId': 'HIDDEN OBJECT GAME 1'},
+                           {'type': 'playSequence', 'sequenceId': 'SCENE 1_2'}]},
+        'SCENE 1_1': {'nodes': [{'type': 'event', 'eventtype': 'playMusic', 'id': 'Office'},
+                                {'type': 'stageBlockIntro', 'ref': 'Office'}, {'type': 'dialogIntro'},
+                                line('', 'Hello  there , friend… '), line('Ann', 'Hi!', 'Avatar_Ann_Happy'),
+                                line('Ann', 'Still me.'),
+                                {'type': 'event', 'eventtype': 'showStoryObject', 'id': 'Push_Broom_SO'},
+                                line('Ann', 'New dress.', 'Avatar_Ann_Purple_Normal')]},
+        'SCENE 1_2': {'nodes': [{'type': 'event', 'eventtype': 'playMusic', 'id': 'Office'},
+                                {'type': 'stageBlockIntro', 'ref': 'Office'},
+                                line('', 'Troy here.', 'Avatar_Troy_Event')]}}
+    config = dict(epid='E001', title='Haunted', hogConfig={'HIDDEN OBJECT GAME 1': {'scene': 'Shed'}},
+                  sceneRefs={'SCENE 1_1': chapter1, 'SCENE 1_2': chapter2})
+    return {'case1': ({'case': 'CASE 1', 'index': 1, 'title': ''}, [(config, sequences)])}
+
+
+@unittest.skipUnless(HAS_PIL, 'the reader measures scenes with Pillow')
+class ConverterTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+
+    def test_text_and_round_lines(self):
+        import claire_hart
+        self.assertEqual(claire_hart.story_text('Hello  there , friend’s ‘dog’… '),
+                         "Hello there, friend's 'dog'...")
+        self.assertEqual(claire_hart.story_text('Wait ... now'), 'Wait ... now')      # only a lone mark joins
+        self.assertEqual(claire_hart.place('Driveway'), 'the Driveway')
+        self.assertEqual(claire_hart.place("Claire's Office"), "Claire's Office")
+        self.assertEqual(claire_hart.place('The Aquatic Center'), 'The Aquatic Center')
+        self.assertEqual(claire_hart.round_line('Troy', 'Driveway', ['Broom', 'Car Keys', 'Map']),
+                         'Troy searches the Driveway and finds the Broom, the Car Keys and the Map.')
+        self.assertEqual(claire_hart.round_line('Claire', 'Driveway', []), 'Claire searches the Driveway.')
+        self.assertEqual(claire_hart.item_title('Push_Broom_SO'), 'Push Broom')
+        self.assertEqual(claire_hart.item_title('CarKeysSO'), 'Car Keys')
+
+    def test_a_case_becomes_one_cod_episode(self):
+        import claire_hart
+        from exp_runtime.backdrop_slices import RESOURCE, decode
+        from exp_runtime.exp import ExpArchive
+        portraits = [f'{CH}Ann/Avatar_Ann_Normal', f'{CH}Ann/Avatar_Ann_Happy', f'{CH}Ann/Avatar_Ann_Purple_Normal',
+                     f'{CH}ClaireHart/Avatar_Claire_Normal', f'{CH}TroyHarris/Avatar_Troy_Normal']
+        root = mirror_at(self.temporary.name, portraits=portraits, cases=a_case(),
+                         scenes={'Office': (1024, 768, []), 'Shed': (1024, 768, [{'normal': 'ho_obj_shed_broom',
+                                                                                    'name': 'Broom'}])},
+                         storyobjs=['references/storyobjs/broomso'], tracks=['references/music/ogg/Theme'])
+        cache = Path(self.temporary.name) / 'store.json'
+        cache.write_text(json.dumps({'E001': 'Office'}))
+        mirror = claire_hart.Mirror(root)
+        art = claire_hart.converter_art(mirror, cache)
+        (_, case, parts), = mirror.cases()
+        project, slices, report = claire_hart.convert(mirror, art, case, parts)
+        self.assertEqual((project.title, project.game, project.pack_id, project.episode_id),
+                         ('Case 1 (CHC)', 'cod', 31500, 10))
+        self.assertEqual(project.addons, [dict(id='chc', revision=1)])
+        seen = [(n.kind, n.text, n.character, n.expression) for n in project.nodes]
+        names = {c.id: c.name for c in project.characters}
+        looks = dict(zip(art['look_names'], range(len(art['look_names']))))
+        title = project.nodes[0]
+        self.assertEqual((title.kind, title.text, title.params['subtitle'], title.params['background']),
+                         ('title', 'Case 1', 'Haunted', 26000))
+        lines = [(names.get(c, c), t, e) for k, t, c, e in seen if k == 'dialogue']
+        self.assertEqual(lines, [('', 'Hello there, friend...', 0), ('Ann', 'Hi!', 2), ('Ann', 'Still me.', 2),
+                                 ('Ann', 'New dress.', 0), ('', 'Claire searches the Shed and finds the Broom.', 0),
+                                 ('', 'Troy here.', 0)])
+        kinds = [k for k, *_ in seen]
+        # the track restarts in chapter 2 from chapter 1's map; Ann's outfit is a look change; no relationship badge
+        self.assertEqual(kinds.count('music'), 2)
+        self.assertEqual(kinds.count('character_art'), 1)
+        art_node = next(n for n in project.nodes if n.kind == 'character_art')
+        self.assertEqual(art_node.asset, 30000 + 5 * looks['Ann Purple'])
+        badge = next(n for n in project.nodes if n.kind == 'relationship')
+        self.assertTrue(badge.params['hide'])
+        narrators = [n.params['narrator'] for n in project.nodes if n.kind == 'speakers']
+        self.assertEqual([names[n] for n in narrators], ['Claire', 'Troy'])
+        so = next(n for n in project.nodes if n.kind == 'story_object')
+        self.assertEqual((so.text, so.asset), ('Push Broom', 27000))
+        self.assertEqual(report['faces kept (none asked or missing)'], 1)
+        self.assertEqual(report['music ids from an earlier chapter'], 1)
+        self.assertEqual(slices, {26000: 224, 26001: 224})
+        archive = ExpArchive(claire_hart.compiled(project, slices))
+        self.assertEqual(decode(archive.read(RESOURCE)), slices)
 
 
 if __name__ == '__main__':

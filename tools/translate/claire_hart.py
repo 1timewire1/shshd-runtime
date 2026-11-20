@@ -49,6 +49,7 @@ SLOTS = ('Normal', 'Angry', 'Happy', 'Sad', 'Surprised')    # CoD's expression s
 BACKDROP_BASE, MUSIC_BASE, STORY_OBJECT_BASE = 26000, 26900, 27000
 TITLE_SPEC, TITLE_BACKGROUND, TITLE_LOGO, TITLE_MUSIC = 26960, 26961, 26962, 26990
 SPEC, SPEC_VERSION = 26998, 1                               # (LOOK_BANKS reads its `looks`)
+LOOK_BANK_BASE = 30000                                      # cod/profile.py LOOK_BANKS: look n is 30000 + 5n on
 CUT_AGREEMENT = 0.5                                         # a CoD cut this sure of its scene places the slice
 # The Title Screen Look (Stage 0, decision Q): Classic's Play Now forest, and its logo (Claire and Paul over the gem banner)
 # cut from the loading atlas; the jingle the episode select plays once.
@@ -60,6 +61,30 @@ TITLE_LOOK = {'version': 1,
               # 1.4 points a pixel: 638 points of the 768-wide frame, its foot about 50 points above Play/Resume (HD's
               # 753); in a taller frame it stays halfway between the top and where the buttons go.
               'title': {'picture': {'id': TITLE_LOGO, 'scale': 1.4}, 'centre': [384, 440], 'follow': 0.5}}
+# Title cards (decision N2; owner, 2026-11-19): a part's card shows the scene its store picture shows (matched, STORE_MATCH),
+# but for two whose store art is no Classic scene: E265's is the sequel's Van der Walt Den without its objects, which chc
+# carries as an extra scene (EXTRA_SCENES, from the sequel's mirror); E191's bridal shop exists nowhere, so the episode's
+# own Dress Shop stands in.
+STORE_MATCH = 0.9
+DEN = 'Shadows/VanDerWaltDen'
+EXTRA_SCENES = {DEN: (26800, 'references/backgrounds/VanDerWaltDen_HO/hd/hovanderwaltden')}
+STORE_SCENES = {'E191': 'DressShop', 'E265': DEN}
+STORY_VERSION = 1                       # the cases' version (episode_version.py): a newer build replaces an older copy
+TITLE_TAG = ' (CHC)'                    # the Claire Hart category (cod/profile.py)
+NARRATOR_DEFAULT = {                    # characterutil.NARRATOR.DEFAULT: narration's portraits when a chapter has no 'Claire'
+    'default': 'references/characters/ClaireHart/Avatar_Claire_Normal',
+    'Avatar_Troy_Event': 'references/characters/TroyHarris/Avatar_Troy_Normal',
+    'Avatar_Harper_Event': 'references/characters/Harper/Avatar_Harper_Normal',
+    'Avatar_ClairePurple_Event': 'references/characters/ClaireHart/Avatar_Claire_Purple_Normal',
+    'Avatar_Purple_Event': 'references/characters/ClaireHart/Avatar_Claire_Purple_Normal',
+    'Avatar_Event_Purple': 'references/characters/ClaireHart/Avatar_Claire_Purple_Normal',
+    'Avatar_Event_Troy': 'references/characters/TroyHarris/Avatar_Troy_Normal',
+    'Avatar_WillYuBlue_Event': 'references/characters/WillYu/Avatar_WillYu_Blue_Normal',
+}
+# Text (TRANSLATOR_PLAN's rules for Classic): the Creator's text is Latin-1, so the 124 curly quotes, ellipses and dashes
+# and 3 ō become plain ones; a line's trailing space goes and its 6 newlines join as spaces.
+TEXT = str.maketrans({'\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"', '\u2026': '...', '\u2013': '-',
+                      '\u2014': '-', '\u014d': 'o', '\n': ' ', '\r': ' '})
 WRAPPED = ('textColors', 'music', 'sounds', 'dialog objects', 'sprites')    # driver.runConfig keeps these as sub-maps
 NOTHING = ('nothing', 'none', 'noobject', 'nostoryobject')
 FACE = re.compile(r'(.*?)_?(Normal|Sad|Angry|Happy|Surprised|Scream|Masked)( \d)?$')
@@ -246,26 +271,67 @@ class Mirror:
         path = self.scenes_dir / folder / 'names.json'
         return self._load(path)['names'] if path.exists() else []
 
+    def round_items(self, value):
+        """A round's story-object list (its chapter's `hogScene` entry, `value`) resolved (decision G2):
+        [(entry, item or None)], the item the names.json entry the list names: by its name, else as build 157 matched (a
+        substring of the sprite or name). Annotations ("(by the door)") are dropped; "Nothing" and the like list none."""
+        listed = value.get('storyobject')
+        if listed is None:
+            return []
+        out = []
+        names = self.scene_items(folder_of(value['scene']))
+        for entry in [listed] if isinstance(listed, str) else listed:
+            base = norm(re.sub(r'\s*[\[\(].*$', '', entry).strip())
+            if not base or base in NOTHING or 'nostoryobject' in norm(entry):
+                continue
+            hit = [e for e in names if norm(e['name']) == base] or \
+                  [e for e in names if base in norm(e['normal']) or base in norm(e['name'])] or \
+                  [e for e in names if norm(e['name']) and norm(e['name']) in base]
+            out.append((entry, hit[0] if hit else None))
+        return out
+
     def story_objects(self):
-        """Every round's story-object list resolved (decision G2): [(epid, round scene, entry, item or None)], the item the
-        names.json entry the list names: by its name, else as build 157 matched (a substring of the sprite or name)."""
+        """Every round's story-object list resolved: [(epid, round scene, entry, item or None)] (round_items)."""
         out = []
         for _, _, parts in self.cases():
             for _, config, _ in parts:
                 for chapter in config['sceneRefs'].values():
                     for value in chapter.get('backgrounds', {}).values():
-                        if value.get('type') != 'hogScene' or value.get('storyobject') is None:
-                            continue
-                        listed = value['storyobject']
-                        for entry in [listed] if isinstance(listed, str) else listed:
-                            base = norm(re.sub(r'\s*[\[\(].*$', '', entry).strip())
-                            if not base or base in NOTHING or 'nostoryobject' in norm(entry):
-                                continue
-                            names = self.scene_items(folder_of(value['scene']))
-                            hit = [e for e in names if norm(e['name']) == base] or \
-                                  [e for e in names if base in norm(e['normal']) or base in norm(e['name'])] or \
-                                  [e for e in names if norm(e['name']) and norm(e['name']) in base]
-                            out.append((config['epid'], value['scene'], entry, hit[0] if hit else None))
+                        if value.get('type') == 'hogScene':
+                            out += [(config['epid'], value['scene'], entry, item)
+                                    for entry, item in self.round_items(value)]
+        return out
+
+    # --- the store pictures (title cards) ------------------------------------------------------------------------------
+    def store_scenes(self, cache=None):
+        """{epid: scene folder}: the scene each episode's store picture shows (a template shrunk to 320 x 240; 264 of 266,
+        found by matching). The two that show no Classic scene take STORE_SCENES' stand-ins. `cache`: a JSON file kept
+        between runs (the matching reads all 787 scenes)."""
+        if cache is not None and Path(cache).exists():
+            return json.loads(Path(cache).read_text(encoding='utf-8'))
+        import numpy as np
+        from PIL import Image
+
+        def vector(image):
+            pixels = np.asarray(image.convert('L').resize((64, 48), Image.BILINEAR), dtype=float)
+            pixels -= pixels.mean()
+            return (pixels / (np.linalg.norm(pixels) + 1e-9)).ravel()
+        folders = self.scene_folders()
+        table = np.stack([vector(Image.open(self.scenes_dir / f / 'hd' / 'template.png')) for f in folders])
+        out = {}
+        for _, case, parts in self.cases():
+            for (_, config, _), listed in zip(parts, case['episodes']):
+                if config['epid'] in STORE_SCENES:
+                    out[config['epid']] = STORE_SCENES[config['epid']]
+                    continue
+                scores = table @ vector(Image.open(self.files[listed['thumbnail']]))
+                best = int(scores.argmax())
+                if scores[best] < STORE_MATCH:
+                    raise ValueError(f"{config['epid']}'s store picture matches no scene (best {folders[best]}, "
+                                     f'{scores[best]:.3f}): give it a stand-in in STORE_SCENES')
+                out[config['epid']] = folders[best]
+        if cache is not None:
+            Path(cache).write_text(json.dumps(out, indent=1, sort_keys=True), encoding='utf-8')
         return out
 
     # --- the add-on ----------------------------------------------------------------------------------------------------
@@ -279,6 +345,269 @@ class Mirror:
                 'story_objects': self.story_object_ids()}
 
 
+# --- the converter: a case as a Creator project (plan Stage 2) ---------------------------------------------------------
+# Scene names that take no "the" in a round line beyond the rule's own (place): proper names. The owner checks the list
+# (`places` command) and moves names in or out.
+PROPER_PLACES = frozenset((
+    'Beacon Park', 'Buckingham Palace', 'Cherry Lake', 'Chinatown', 'Colfax Manor', 'Covent Garden', 'Dolores Park Knits',
+    'Grafton Street', 'Gray Consultants', 'Haight Ashbury', 'Honey Island Swamp', 'La Maison', 'Lauderdale Beach', 'London',
+    'Lower Haight', 'Lyon Street', 'Main Street', 'Mardi Gras', 'Pier 39', 'Point Reyes', 'Sannen Street', 'Seacliff Park',
+    'Union Square', 'Whitman Manor'))
+# Round scene names as the data spells them that a line would show oddly (joined words, a stray digit), as said.
+SCENE_NAMES = {'CafeBakery': 'Cafe Bakery', 'CasualRestaurant': 'Casual Restaurant', 'NyeNightClub': 'NYE Night Club',
+               'NyeDinnerNyeEvent': 'NYE Dinner', 'Nye Ballroom': 'NYE Ballroom', 'Poolside2': 'Poolside',
+               'Busstop': 'Bus Stop', 'Tower Of London': 'Tower of London'}
+
+
+def story_text(body):
+    """A line's text as Classic's dialogue shows it, by the text rules (TEXT): Latin-1, trimmed, single spaces (its
+    tokenizer splits on spaces and drops the empty words), and a lone punctuation mark joined to the word before it
+    ("wanting , loss" shows as "wanting, loss": dialogue.js's PUNCTUATION; "Wait ..." stays)."""
+    text = re.sub(r' {2,}', ' ', body.translate(TEXT).strip())
+    return re.sub(r''' ([.,;:'"?!])(?= |$)''', r'\1', text)
+
+
+def place(scene):
+    """A round scene's name as a round line says it: 'Driveway' -> 'the Driveway'. A possessive ("Claire's Office"), a name
+    that starts with 'The', or one of PROPER_PLACES keeps its own."""
+    name = SCENE_NAMES.get(scene.strip(), scene.strip())
+    if "'s " in name or name.endswith("'s") or "s' " in name or name.startswith('The ') or name in PROPER_PLACES:
+        return name
+    return 'the ' + name
+
+
+def listed(things):
+    """'the A', 'the A and the B', 'the A, the B and the C'."""
+    things = ['the ' + thing for thing in things]
+    return things[0] if len(things) == 1 else ', '.join(things[:-1]) + ' and ' + things[-1]
+
+
+def round_line(narrator, scene, items):
+    """Decision G (owner, 2026-11-19): a round, with the real rounds off, as one narration line."""
+    if items:
+        return f'{narrator} searches {place(scene)} and finds {listed(items)}.'
+    return f'{narrator} searches {place(scene)}.'
+
+
+def item_title(object_id):
+    """A story object's name from its `dialog objects` key, for players without the picture: 'Push_Broom_SO' -> 'Push
+    Broom'."""
+    words = re.sub(r'_?SO$', '', object_id).replace('_', ' ')
+    return ' '.join(re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', words).split()) or object_id
+
+
+class CaseBuilder:
+    """One case's nodes, characters and assets (convert)."""
+
+    def __init__(self, mirror, art):
+        from exp_runtime.creator import Asset, Character, Node
+        self.Asset, self.Character, self.Node = Asset, Character, Node
+        self.mirror, self.art = mirror, art
+        self.nodes, self.characters, self.assets = [], {}, {}
+        self.looks = {}                 # character id -> its look now
+        self.narrator = None            # the narrator character now
+        self.narrator_name = 'Claire'
+        self.track = None
+        self.music = {}                 # every chapter's music map so far: audioplayer's, kept for the session
+        self.faces = {}                 # speaker key -> the face showing, this chapter
+        self.slices = {}
+        self.report = collections.Counter()
+
+    def add(self, kind='dialogue', **fields):
+        node = self.Node(f'n{len(self.nodes)}', kind, **fields)
+        if self.nodes:
+            self.nodes[-1].next = node.id
+        self.nodes.append(node)
+        return node
+
+    def asset(self, ident, name):
+        self.assets.setdefault(ident, self.Asset(ident, name, None, chslim.CHC_ID))
+
+    def bank(self, look):
+        """Look `look`'s 5 IDs (cod/profile.py LOOK_BANKS), declared as chc's."""
+        base = LOOK_BANK_BASE + 5 * look
+        for slot in range(5):
+            self.asset(base + slot, f'{self.art["look_names"][look]} {SLOTS[slot]}')
+        return base
+
+    def scene(self, folder):
+        """A scene's backdrop ID, its slice kept for the episode's record."""
+        ident, x = self.art['scenes'][folder]
+        self.asset(ident, folder)
+        if folder in self.art['own_scenes']:
+            self.slices[ident] = x
+        return ident
+
+    def face(self, path):
+        look, slot = self.art['faces'][path]
+        return look, slot
+
+    def speaker(self, header, path):
+        """A speaker's character, its art turned to this line's look when it changed (service 72)."""
+        look, slot = self.face(path)
+        key = header
+        if key not in self.characters:
+            cid = f'c{len(self.characters)}'
+            base = self.bank(look)
+            self.characters[key] = self.Character(cid, header, base, 1, [base + i for i in range(5)])
+            self.looks[cid] = look
+            # No CoD relationship badge: Claire Hart has none (property 629 = 1 hides it; the X360 stories' way).
+            self.add('relationship', character=cid, params={'operation': 'add', 'value': 0, 'romantic': False,
+                                                            'hide': True, 'result': f'badge_{cid}'})
+        character = self.characters[key]
+        if self.looks[character.id] != look:
+            self.add('character_art', character=character.id, asset=self.bank(look))
+            self.looks[character.id] = look
+            self.report['look changes'] += 1
+        return character.id, slot
+
+    def narrate(self, path):
+        """The narrator character showing `path`'s look (a character of its own, so the same person's speaker lines
+        keep their name plate: engine.py takes any line of the narrator character as narration)."""
+        look, slot = self.face(path)
+        key = ('narrator', look)
+        if key not in self.characters:
+            base = self.bank(look)
+            name = self.art['look_names'][look].split()[0]
+            self.characters[key] = self.Character(f'narrator{look}', name, base, 1, [base + i for i in range(5)])
+        character = self.characters[key]
+        if self.narrator != character.id:
+            self.add('speakers', params={'player': '', 'narrator': character.id})
+            self.narrator = character.id
+        self.narrator_name = character.name
+        return slot
+
+    def portrait(self, key, expressions, expression):
+        """The picture a line shows: its expression's, else the speaker's `default` on entering; a returning speaker
+        (same key, this chapter) asking for no face or one they lack keeps the face showing (character.setExpression
+        never resolves a missing key)."""
+        if expression in expressions:
+            path = expressions[expression]
+        elif key in self.faces:
+            path = self.faces[key]
+            self.report['faces kept (none asked or missing)'] += 1
+        else:
+            path = expressions['default']
+        self.faces[key] = path
+        return path
+
+    def chapter(self, config, sequence, refs):
+        """A chapter's nodes, in order (CLAIRE_HART_ENGINE.md section 4)."""
+        self.faces = {}                 # each chapter reloads the scene, its characters with it
+        self.music.update(refs.get('music') or {})
+        for node in sequence['nodes']:
+            kind = node['type'] if node['type'] != 'event' else node['eventtype']
+            if kind == 'dialogText':
+                text = story_text(node['body'])
+                expression = node.get('expression') or ''
+                if node['header'] == '':
+                    ref = refs.get('Claire') or refs.get('claire')
+                    expressions = (ref or {'expressions': NARRATOR_DEFAULT})['expressions']
+                    slot = self.narrate(self.portrait('Claire', expressions, expression))
+                    self.add(text=text, expression=slot)
+                    self.report['narration'] += 1
+                else:
+                    ref = refs.get(node['header']) or refs.get(node['header'].lower())
+                    cid, slot = self.speaker(node['header'],
+                                             self.portrait(node['header'], ref['expressions'], expression))
+                    self.add(text=text, character=cid, expression=slot)
+                    self.report['speaker lines'] += 1
+            elif kind == 'stageBlockIntro':
+                backdrop = refs.get(node['ref']) or refs.get(node['ref'].lower())
+                folder = backdrop['resource'].split('/')[2]
+                self.add('background', asset=self.scene(folder))
+                self.report['backdrops'] += 1
+            elif kind == 'playMusic':
+                # audioplayer: the id in every map loaded so far (an earlier chapter's may answer a missing one), else
+                # nothing changes; a found track always restarts, even the one playing (a hard stop, then play).
+                track = self.music.get(node['id'])
+                if track is None:
+                    self.report['music ids missing (track kept)'] += 1
+                    continue
+                if (refs.get('music') or {}).get(node['id']) is None:
+                    self.report['music ids from an earlier chapter'] += 1
+                ident = self.art['music'][track.rsplit('.', 1)[0]]
+                self.asset(ident, track)
+                self.add('music', params={'resource': ident, 'loop': True})
+                self.track = ident
+            elif kind == 'showStoryObject':
+                picture = (refs.get('dialog objects') or {}).get(node['id'])
+                ident = self.art['story_objects'][picture]
+                self.asset(ident, node['id'])
+                self.add('story_object', text=item_title(node['id']), asset=ident)
+                self.report['story objects'] += 1
+            elif kind in ('dialogIntro', 'stageBlockOutro'):
+                continue                # (the box comes with a line; a new backdrop replaces the old)
+            else:
+                raise ValueError(f"{config['epid']}: a node this converter doesn't know: {kind}")
+
+    def round(self, config, number, chapter_refs):
+        """Round `number`, with the real rounds off: its scene, and a line naming what the narrator finds (G, G2)."""
+        hog = config['hogConfig'][f'HIDDEN OBJECT GAME {number}']
+        self.add('background', asset=self.scene(folder_of(hog['scene'])))
+        entry = next((value for value in chapter_refs['backgrounds'].values() if value.get('type') == 'hogScene'), {})
+        items = []
+        for _, item in self.mirror.round_items(entry) if entry else ():
+            if item is not None and item['name'] not in items:
+                items.append(item['name'])
+        self.add(text=round_line(self.narrator_name, hog['scene'], items))
+        self.report['rounds'] += 1
+        self.report['round items'] += len(items)
+
+
+def converter_art(mirror, cache=None):
+    """What convert reads of chc: the look table, scenes, tracks and story objects (as Mirror.spec), and the store scenes."""
+    banks, names, slots = mirror.look_banks()
+    scenes = {folder: (ident, x) for folder, (ident, x, _) in mirror.scenes().items()}
+    own = set(scenes)
+    for folder, (ident, _) in EXTRA_SCENES.items():
+        scenes[folder] = (ident, 0)
+    return dict(looks=banks, look_names=names, faces=slots, scenes=scenes, own_scenes=own,
+                music={stem: ident for stem, (ident, _) in mirror.tracks().items()},
+                story_objects=mirror.story_object_ids(), store=mirror.store_scenes(cache))
+
+
+def convert(mirror, art, case, parts):
+    """A case as (a Creator Project for Cause of Death, its backdrop slices {resource: x}, a report): its parts in order,
+    each opened by a title card over its store picture's scene (N2), its chapters' lines, backdrops, music and story
+    objects, and each round as a line (G)."""
+    from exp_runtime.creator import Project
+    builder = CaseBuilder(mirror, art)
+    title = case_title(case)
+    for (number, config, sequences), listed_episode in zip(parts, case['episodes']):
+        builder.add('title', text=title, params={'subtitle': listed_episode['name'].strip(),
+                                                 'background': builder.scene(art['store'][config['epid']]), 'flag': 0})
+        for node in sequences['main']['nodes']:
+            if node['type'] == 'playSequence':
+                chapter = node['sequenceId']
+                builder.chapter(config, sequences[chapter], refs_for(config['sceneRefs'][chapter]))
+            elif node['type'] == 'playHOG':
+                n = int(node['hogId'].rsplit(' ', 1)[1])
+                builder.round(config, n, config['sceneRefs'][f'SCENE 1_{n}'])
+    builder.add('end')
+    project = Project(title=title + TITLE_TAG, game='cod', pack_id=PACK_ID, episode_id=case['index'] * 10,
+                      episode_version=STORY_VERSION, nodes=builder.nodes)
+    project.addons = [dict(id=chslim.CHC_ID, revision=chslim.CHC_REVISION)]
+    project.assets = [builder.assets[ident] for ident in sorted(builder.assets)]
+    project.characters = list(builder.characters.values())
+    project.start = builder.nodes[0].id
+    for i, node in enumerate(project.nodes):
+        node.x, node.y = 40 + 320 * (i % 12), 80 + 140 * (i // 12)
+    builder.report['parts'] = len(parts)
+    return project, builder.slices, builder.report
+
+
+def compiled(project, slices):
+    """The case's .exp: the project compiled, with its backdrop slices (resource 7, backdrop_slices.py)."""
+    from exp_runtime.backdrop_slices import RESOURCE as SLICES, encode as encode_slices
+    from exp_runtime.creator import compile_project
+    from exp_runtime.exp import ExpArchive, encode_exp
+    archive = ExpArchive(compile_project(project))
+    resources = {ident: archive.read(ident) for ident in archive.entries}
+    resources[SLICES] = encode_slices(slices)
+    return encode_exp(resources)
+
+
 def mp3(ogg, folder):
     """An OGG as a 128 kb/s MP3, by FFmpeg."""
     out = Path(folder) / 'track.mp3'
@@ -287,8 +616,16 @@ def mp3(ogg, folder):
     return out.read_bytes()
 
 
-def addon(mirror, pairs, catalog, sources, extras, progress=print):
-    """chc's resources {ID: bytes} and a report: chslim revision 1's (`chslim.contents(chc=True)`) and the rest."""
+def sequel_file(sequel, real_path):
+    """A picture of the sequel's mirror (Claire Hart: Secret in the Shadows), by its path in the game."""
+    with open(Path(sequel) / 'bundle_names.csv', encoding='utf-8-sig', newline='') as file:
+        row = next(r for r in csv.DictReader(file) if r['real_path'] == real_path and r.get('part') == 'native')
+    return Path(sequel) / row['local_path']
+
+
+def addon(mirror, pairs, catalog, sources, extras, sequel, progress=print):
+    """chc's resources {ID: bytes} and a report: chslim revision 1's (`chslim.contents(chc=True)`) and the rest. `sequel`:
+    the sequel's mirror, for EXTRA_SCENES (E265's title card)."""
     from PIL import Image
     from exp_runtime.addons import RESOURCE as ADDON_RECORD, provides_bytes
     if shutil.which('ffmpeg') is None:
@@ -317,6 +654,11 @@ def addon(mirror, pairs, catalog, sources, extras, progress=print):
     resources[TITLE_BACKGROUND] = chslim.png(Image.open(mirror.files[FOREST]).convert('RGBA'))
     resources[TITLE_LOGO] = chslim.png(Image.open(mirror.root / ATLAS).convert('RGBA').crop(LOGO))
     spec = mirror.spec()
+    for folder, (ident, real_path) in EXTRA_SCENES.items():
+        resources[ident] = sequel_file(sequel, real_path).read_bytes()
+        with Image.open(sequel_file(sequel, real_path)) as image:
+            width, height = image.size
+        spec['scenes'][folder] = [ident, (width - round(height * 3 / 4)) // 2]     # centred
     resources[SPEC] = json.dumps(spec, separators=(',', ':')).encode('utf-8')
     resources[ADDON_RECORD] = provides_bytes(chslim.CHC_ID, chslim.CHC_TITLE, chslim.CHC_REVISION,
                                              supersedes=((chslim.ADDON_ID, chslim.ADDON_REVISION),))
@@ -329,16 +671,20 @@ def addon(mirror, pairs, catalog, sources, extras, progress=print):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest='command', required=True)
-    for name in ('report', 'ids', 'addon'):
+    for name in ('report', 'ids', 'addon', 'build', 'places'):
         command = commands.add_parser(name)
         command.add_argument('--mirror', type=Path, required=True)
-        if name == 'ids':
+        if name in ('ids', 'build', 'places'):
             command.add_argument('--out', type=Path, required=True)
+        if name == 'build':
+            command.add_argument('--episodes', help='only the cases holding these E-numbers (E001,E018,...)')
+            command.add_argument('--cache', type=Path, help='the store scenes matched (made on first use)')
         if name == 'addon':
             command.add_argument('--pairs', type=Path, required=True)
             command.add_argument('--catalog', type=Path, required=True, help="the CoD catalogue's portraits folder")
             command.add_argument('--cod-library', type=Path, required=True)
             command.add_argument('--extras', type=Path, required=True)
+            command.add_argument('--sequel', type=Path, required=True, help="the sequel's mirror (E265's title card)")
             command.add_argument('--out', type=Path, required=True)
     args = parser.parse_args(argv)
     mirror = Mirror(args.mirror)
@@ -349,6 +695,26 @@ def main(argv=None):
             writer.writeheader()
             writer.writerows(rows)
         print(f'{len(rows)} episodes in {len({row["case"] for row in rows})} cases -> {args.out}')
+    elif args.command == 'build':
+        wanted = set(args.episodes.split(',')) if args.episodes else None
+        art = converter_art(mirror, args.cache)
+        args.out.mkdir(parents=True, exist_ok=True)
+        for _, case, parts in mirror.cases():
+            if wanted is not None and not wanted & {config['epid'] for _, config, _ in parts}:
+                continue
+            project, slices, report = convert(mirror, art, case, parts)
+            name = f"CHC_{case['index']:03d}.exp"
+            (args.out / name).write_bytes(compiled(project, slices))
+            print(f'{name}: {project.title!r}, {len(project.nodes)} nodes, {dict(report)}')
+    elif args.command == 'places':
+        scenes = sorted({hog['scene'] for _, _, parts in mirror.cases() for _, config, _ in parts
+                         for hog in config['hogConfig'].values()})
+        with open(args.out, 'w', encoding='utf-8', newline='\n') as file:
+            file.write('# Round scenes as a round line names them (claire_hart.place). Proper names that should take no\n'
+                       '# "the" go in PROPER_PLACES.\n')
+            for scene in scenes:
+                file.write(f'{scene}\t{place(scene)}\n')
+        print(f'{len(scenes)} round scenes -> {args.out}')
     elif args.command == 'report':
         cases = mirror.cases()
         banks, _, slots = mirror.look_banks()
@@ -363,7 +729,7 @@ def main(argv=None):
     else:
         from exp_runtime.exp import encode_exp
         resources, report = addon(mirror, chslim.read_pairs(args.pairs.read_text(encoding='utf-8')), args.catalog,
-                                  chslim.library_pictures(args.cod_library), args.extras)
+                                  chslim.library_pictures(args.cod_library), args.extras, args.sequel)
         args.out.mkdir(parents=True, exist_ok=True)
         data = encode_exp(resources)
         del resources
