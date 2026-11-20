@@ -526,7 +526,7 @@ class CaseBuilder:
                     self.report['music ids missing (track kept)'] += 1
                     continue
                 if (refs.get('music') or {}).get(node['id']) is None:
-                    self.report['music ids from an earlier chapter'] += 1
+                    self.report['music ids from an earlier chapter or case'] += 1
                 ident = self.art['music'][track.rsplit('.', 1)[0]]
                 self.asset(ident, track)
                 self.add('music', params={'resource': ident, 'loop': True})
@@ -563,8 +563,16 @@ def converter_art(mirror, cache=None):
     own = set(scenes)
     for folder, (ident, _) in EXTRA_SCENES.items():
         scenes[folder] = (ident, 0)
+    # audioplayer's map is kept for the session, so a case played after the ones before it in the case list starts with
+    # their maps loaded (the last loaded wins): what answers an id missing from its own chapters (E035's "Claire's Office")
+    music_before, session = {}, {}
+    for _, case, parts in mirror.cases():
+        music_before[case['index']] = dict(session)
+        for _, config, _ in parts:
+            for chapter in sorted(config['sceneRefs']):
+                session.update(config['sceneRefs'][chapter].get('music') or {})
     return dict(looks=banks, look_names=names, faces=slots, scenes=scenes, own_scenes=own,
-                music={stem: ident for stem, (ident, _) in mirror.tracks().items()},
+                music={stem: ident for stem, (ident, _) in mirror.tracks().items()}, music_before=music_before,
                 story_objects=mirror.story_object_ids(), store=mirror.store_scenes(cache))
 
 
@@ -574,9 +582,10 @@ def convert(mirror, art, case, parts):
     objects, and each round as a line (G)."""
     from exp_runtime.creator import Project
     builder = CaseBuilder(mirror, art)
-    title = case_title(case)
+    builder.music.update(art.get('music_before', {}).get(case['index'], {}))
+    title = story_text(case_title(case))          # (Latin-1, as every line: St. Patrick's)
     for (number, config, sequences), listed_episode in zip(parts, case['episodes']):
-        builder.add('title', text=title, params={'subtitle': listed_episode['name'].strip(),
+        builder.add('title', text=title, params={'subtitle': story_text(listed_episode['name']),
                                                  'background': builder.scene(art['store'][config['epid']]), 'flag': 0})
         for node in sequences['main']['nodes']:
             if node['type'] == 'playSequence':
