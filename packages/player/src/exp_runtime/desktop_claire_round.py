@@ -43,6 +43,8 @@ ARROW_SIZE = (54, 120)                     # the edge arrows (new: Classic has n
 ARROW_SPEED = 900                          # canvas pixels a second, as the scene scrolls under a held arrow
 ZOOM_STEP = 0.05                           # touchdetector: the wheel's 0.05 a notch, 1x to 2x
 FOUND_POP = 1.08
+COUNT_EXPAND_MS = 850                       # Clairvoyance's six more: "n/18 Items Found" grows and shrinks (itemCountExpand)
+BLUE_DARK = (10, 120, 110)
 FOUND_NAME_ALPHA = 90                      # a found name, greyed until it leaves (chc_06's "Marker")
 # hogscene.doHiddenObjectRemovalAnimation: the found particle flies to the object's name along a Catmull-Rom curve through a
 # point 130 units above the object and 60 to the name's side, in 1.67 s (its trail: the particle system's, drawn here as fading
@@ -144,6 +146,7 @@ class ClaireRoundRenderer:
         self._ticks = None                 # the wall clock at the last draw (draw: the renderer's own animations)
         self.drag = None                   # (start, last) canvas points of a press on the scene, panning once it moves
         self._seen_found = None            # (game, how many found) last drawn: a new find starts its trail
+        self._expanded_at = None           # when Clairvoyance last added its six (the count's expansion)
 
     # -- the add-ons ----------------------------------------------------------------------------------------------------------
     def addon(self, addon, resource):
@@ -219,6 +222,13 @@ class ClaireRoundRenderer:
         if found is None:
             found = self._images[key] = pygame.transform.smoothscale(surface, size)
         return found
+
+    def arrow_shown(self, side):
+        """Whether the scene goes on that way (-1 left, 1 right): at its edge, that arrow goes (owner, 2026-11-20)."""
+        if self.view is None:
+            return True
+        left, _, width, _ = self.view.source()
+        return left > 0.5 if side < 0 else left + width < self.view.scene[0] - 0.5
 
     def arrows(self):
         """The two edge arrows' rectangles (left, right), at the scene's middle height between the bars."""
@@ -305,7 +315,7 @@ class ClaireRoundRenderer:
 
     def sound_cues(self, game):
         """Queue Classic's sounds for what changed since the last frame."""
-        now = dict(found=len(game.found), x5=game.x5_finds, names=tuple(game.slots), hint=game.hint_target,
+        now = dict(found=len(game.found), x5=game.x5_finds, to_find=game.to_find, names=tuple(game.slots), hint=game.hint_target,
                    warp=game.time_warp, lock=bool(game.lock_ms), over=game.over, focus=game.focus_target,
                    locator=game.locator_target)
         was, self._was = self._was, now
@@ -322,6 +332,10 @@ class ClaireRoundRenderer:
             self.sounds.append(SOUND_FOCUS)
         if now['warp'] and not was['warp']:
             self.sounds.append(SOUND_WARP)
+        if now['to_find'] > was['to_find']:
+            self.sounds.append(SOUND_HINT)
+            self._expanded_at = self.clock
+            self.effects.append(['explosion_at', self.clock, self.segment_rects()[cr.CLAIRVOYANCE].center])
         if now['lock'] and not was['lock']:
             self.sounds.append(SOUND_POPUP)
         if now['over'] and not was['over']:
@@ -338,6 +352,8 @@ class ClaireRoundRenderer:
             self._scaled = None
         if self.held and self.view is not None:
             self.view.pan(-self.held * ARROW_SPEED * elapsed_ms / 1000, 0)
+            if not self.arrow_shown(self.held):
+                self.held = 0                   # (at the edge: its arrow has gone)
         self.start_effects(game)
         self.sound_cues(game)
         self.follow_marks(game)
@@ -388,7 +404,11 @@ class ClaireRoundRenderer:
         k = self.k
         top = self.bar_top()
         self.canvas.blit(self.scaled(self.hud('cmp_UIbar_bottom'), k), (0, round(top)))
-        self.text(f'{game.found_count}/{game.to_find} Items Found', True, 16, TEXT, self.design(*FOUND_LINE, bottom=True))
+        grow = 1.0
+        if self._expanded_at is not None and self.clock - self._expanded_at < COUNT_EXPAND_MS:
+            grow = 1 + 0.35 * math.sin(math.pi * (self.clock - self._expanded_at) / COUNT_EXPAND_MS)   # (itemCountExpand)
+        self.text(f'{game.found_count}/{game.to_find} Items Found', True, round(16 * grow), TEXT if grow == 1.0 else BLUE_DARK,
+                  self.design(*FOUND_LINE, bottom=True))
         for slot, obj in enumerate(game.slots):
             if obj == cr.NO_OBJECT:
                 continue
@@ -430,12 +450,12 @@ class ClaireRoundRenderer:
         back = self.scaled(self.hud('hint_empty_back'), orb.width / 84)
         self.canvas.blit(back, back.get_rect(center=orb.center))
         count = self.spec()['hud']['vfx_HintFill'][1]
-        if game.hint_ready:
-            fill_frame = count - 1
-        elif game.hint_refill_ms:
-            fill_frame = round((1 - game.hint_refill_ms / cr.HINT_REFILL_MS) * (count - 1))
+        if game.hint_refill_ms > cr.HINT_FILL_MS:          # (hint_empty: draining)
+            fill_frame = round((game.hint_refill_ms - cr.HINT_FILL_MS) / cr.HINT_EMPTY_MS * (count - 1))
+        elif game.hint_refill_ms:                          # (hint_full_fill: refilling)
+            fill_frame = round((1 - game.hint_refill_ms / cr.HINT_FILL_MS) * (count - 1))
         else:
-            fill_frame = 0
+            fill_frame = count - 1
         fill = self.scaled(self.green_fill(fill_frame), orb.width / 104)
         self.canvas.blit(fill, fill.get_rect(center=orb.center))
         glass = self.scaled(self.hud('hint_glass_reflection'), orb.width / 84)
@@ -454,6 +474,8 @@ class ClaireRoundRenderer:
 
     def draw_arrows(self):
         for side, rect in enumerate(self.arrows()):
+            if not self.arrow_shown(1 if side else -1):
+                continue
             key = ('arrow', side, rect.size, self.held == (1 if side else -1))
             tab = self._images.get(key)
             if tab is None:
@@ -495,7 +517,7 @@ class ClaireRoundRenderer:
         kind = effect[0]
         if kind == 'trail':
             return TRAIL_MS + TRAIL_SPARKS * TRAIL_SPACING_MS
-        if kind == 'explosion':
+        if kind in ('explosion', 'explosion_at'):
             return EXPLOSION_MS
         return self.flight_ms(effect)
 
@@ -535,11 +557,11 @@ class ClaireRoundRenderer:
                 self.draw_trail(age, *data)
             elif kind == 'hint':
                 self.draw_flight(age, data)
-            elif kind == 'explosion':
+            elif kind in ('explosion', 'explosion_at'):
                 count = self.spec()['hud']['vfx_explosion'][1]
                 frame = self.frame('vfx_explosion', min(count - 1, age * count // EXPLOSION_MS))
                 frame = self.scaled(frame, self.orb_rect().width / 120)
-                self.canvas.blit(frame, frame.get_rect(center=self.orb_rect().center))
+                self.canvas.blit(frame, frame.get_rect(center=self.orb_rect().center if kind == 'explosion' else data))
 
     def draw_trail(self, age, start, end):
         side = TRAIL_SIDE if end[0] > start[0] else -TRAIL_SIDE
@@ -712,7 +734,7 @@ class ClaireRoundRenderer:
             _, _, button = self.summary_rects()
             return ('continue',) if button.collidepoint(x, y) else None
         for side, rect in zip((-1, 1), self.arrows()):
-            if rect.collidepoint(x, y):
+            if rect.collidepoint(x, y) and self.arrow_shown(side):
                 return ('arrow', side)
         if y >= self.bar_top() + 20 * self.k or y < TOP_BAR * self.k:
             if self.orb_rect().collidepoint(x, y):

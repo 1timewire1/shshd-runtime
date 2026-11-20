@@ -142,6 +142,19 @@ class HintAndPowerupTests(unittest.TestCase):
         game.tick(cr.HINT_REFILL_MS)
         self.assertTrue(game.hint_ready)
 
+    def test_the_hint_comes_back_a_minute_after_its_use(self):
+        """hintpowerup.disableButton from the use: the orb empties (1 s) and refills (60.6 s: hint_full_fill at speed 0.0165),
+        even when its object is found at once (owner, 2026-11-20: it came back at once, so 12 went in seconds)."""
+        game = a_round()
+        target = game.hint(Random48(1))
+        game.tap([target])
+        game.tick(cr.FOUND_MS + cr.NAME_HIDE_MS)
+        game.tick(cr.HINT_EMPTY_MS + 30000)
+        self.assertFalse(game.hint_ready)
+        game.tick(cr.HINT_FILL_MS)
+        self.assertTrue(game.hint_ready)
+        self.assertEqual(cr.HINT_REFILL_MS, 61606)
+
     def test_the_hint_may_point_at_a_story_object(self):
         """R5 (owner, 2026-11-20): Classic's hint skipped story objects; here it doesn't."""
         hinted = set()

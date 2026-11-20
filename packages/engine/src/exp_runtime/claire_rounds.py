@@ -28,7 +28,11 @@ TIME_WARP_SLOWDOWN = 0.5                # addtimepowerup.js: the drain at half s
 # A find's flight (FoundObjectPrefab's clip, objectClicked: 0.83 s), then its name fading out (aolhide: 0.25 s): the next
 # name comes in after both (hogscene.objectRemoved).
 FOUND_MS, NAME_HIDE_MS = 833, 250
-HINT_REFILL_MS = 1170                   # hintpowerup's orb: hint_empty (0.17 s) then hint_full_fill (1 s), once its object is found
+# hintpowerup.disableButton, from the hint's use: the orb empties (hint_empty: 0.17 s at speed 0.17, 1 s) and refills
+# (hint_full_fill: 1 s at speed 0.0165, 60.6 s; the clips' `speed`, read from their packed records); it can be used again once
+# that's done and its star's object has been found (enablePowerups).
+HINT_EMPTY_MS, HINT_FILL_MS = 1000, 60606
+HINT_REFILL_MS = HINT_EMPTY_MS + HINT_FILL_MS
 HIT_WINDOW = 9                          # touchdetector's 9 x 9 pixel window
 
 # The Power-Ups setting (owner, 2026-11-20)
@@ -250,7 +254,6 @@ class ClaireRound:
             self.time_warp_can_end = True                           # addtimepowerup.allowPowerupDisable
         if obj == self.hint_target:
             self.hint_target = NO_OBJECT
-            self.hint_refill_ms = HINT_REFILL_MS
         if obj == self.focus_target:
             self.focus_target = NO_OBJECT
         if obj == self.locator_target:
@@ -297,6 +300,7 @@ class ClaireRound:
         self.hint_target = choices[random.below(len(choices))]
         self.chosen.append(self.hint_target)
         self.hints += 1
+        self.hint_refill_ms = HINT_REFILL_MS
         return self.hint_target
 
     def uses_left(self, powerup):

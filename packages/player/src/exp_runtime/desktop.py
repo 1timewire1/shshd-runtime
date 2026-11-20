@@ -2623,8 +2623,10 @@ class Desktop:
 
     def claire_powerups_switch(self):
         """Whether this is a Claire Hart case and the library holds its rounds (chcrounds)."""
+        # (a pack's TRANSLATED_MINIGAMES entry is None for all its episodes: minigames_switch asks it rightly; pack_setting's
+        # None read as "not one", and the setting never showed in a case, owner 2026-11-20)
         library = getattr(self.session.resources, 'library', None)
-        return (pack_setting(self.session.resources, 'TRANSLATED_MINIGAMES') is not None and game_id(self.session.resources) == 'cod'
+        return (game_id(self.session.resources) == 'cod' and self.minigames_switch()
                 and any(a.get('addon') == 'chcrounds' for a in getattr(library, 'addons', None) or ()))
 
     def ch_dialogue_switch(self):

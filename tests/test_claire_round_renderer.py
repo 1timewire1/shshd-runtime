@@ -94,6 +94,18 @@ class RendererTests(unittest.TestCase):
         bare = r.view.to_canvas(370, 200)
         self.assertEqual(r.hit(game, *bare), ('scene', []))
 
+    def test_an_arrow_goes_at_its_edge(self):
+        r, game = self.renderer, self.game
+        r.draw_game(game)
+        self.assertTrue(r.arrow_shown(-1) and r.arrow_shown(1))         # centred: both ways
+        r.view.pan(10000, 0)                                               # as far left as it goes
+        self.assertFalse(r.arrow_shown(-1))
+        self.assertTrue(r.arrow_shown(1))
+        self.assertNotEqual(r.hit(game, *r.arrows()[0].center)[0], 'arrow')        # (a tap there is on the scene)
+        r.held = -1
+        r.draw_game(game, 100)
+        self.assertEqual(r.held, 0)                                        # (held at the edge: it stops)
+
     def test_a_new_mark_comes_into_view(self):
         r, game = self.renderer, self.game
         r.draw_game(game)
