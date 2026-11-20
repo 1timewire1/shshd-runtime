@@ -568,6 +568,9 @@
 
 ### Fixed
 
+- **"Play with sound?" came back as Cause of Death's launch faded** (owner, 2026-11-19): after the answer, CoD's EA
+  screen fades out with the launch still waiting on the question, and the check that asks again when a window over it
+  closed it (iPad, 2026-11-17) showed it again under the fade. It no longer asks while a fade is under way.
 - **The chooser's Options cost a frame's time sitting still** (iPad, 2026-11-19): its pages were laid out again every
   frame, 28 ms on a PC and 38 on the iPad. A page is drawn again as it was until something on it changes.
 - **UIKit switches over Sync's notice on the iPad** (2026-11-19): the chooser's Options placed the page's switches

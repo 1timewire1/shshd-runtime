@@ -311,10 +311,12 @@ class HdShell:
                 and not self.app.update_holds_launch(self.age - LOADING_TIME - SOUND_DELAY)):
             self.stage = 'sound'
             self.ask_sound()
-        elif self.stage == 'sound' and not self.stack.stack:
+        elif self.stage == 'sound' and not self.stack.stack and self.fade is None:
             # Nothing left to answer: a window over the question closed it with itself (a confirmation's answer clears
             # the stack, as an import's "Replace Saved Episodes?" did on the iPad, 2026-11-17), and the launch waited
-            # under a blank screen. Ask again.
+            # under a blank screen. Ask again. Not while a fade is under way: CoD's answer fades its EA screen out with
+            # the stage still 'sound' (CodShell.perform 1), and asking then showed the question again as the screen
+            # faded (owner, 2026-11-19).
             self.ask_sound()
         elif self.stage == 'flash':
             self.flash_age += seconds

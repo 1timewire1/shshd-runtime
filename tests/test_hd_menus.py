@@ -789,6 +789,12 @@ class CodShellActionTests(unittest.TestCase):
         shell.perform(1)
         self.assertEqual((state.music, state.sound), (False, False))
         self.assertEqual((self.entered, shell.stack.stack, shell.app.played, shell.fade[0]), ([], [], [], 'out'))
+        # While the EA screen fades out the stage is still 'sound' with nothing open: the question isn't asked again
+        # (it showed again as the screen faded; owner, 2026-11-19).
+        shell.app.update_holds_launch, shell.app.external_music = (lambda seconds: False), (lambda: False)
+        shell.age, shell.main = 10.0, SimpleNamespace(tick=lambda seconds: None)
+        shell.tick(0.1)
+        self.assertEqual(shell.stack.stack, [])
         shell.fade[2]()                                     # once black: the menu, fading in (no EA flash, no jingle)
         self.assertEqual((self.entered, shell.fade[0]), ([dict(intro=True)], 'in'))
 
