@@ -171,10 +171,11 @@ class Mirror:
         """The testing table (decision N): a row per original episode, E-number to its case, part and translated entry."""
         rows = []
         for key, case, parts in self.cases():
-            for number, config, _ in parts:
+            for (number, config, _), listed_episode in zip(parts, case['episodes']):
+                # the title players saw: the case list's (4 differ from epconfig's, which the game never reads)
                 rows.append(dict(epid=config['epid'], case=key, case_index=case['index'], case_title=case_title(case),
                                  part=number, parts=len(parts), pack=PACK_ID, episode=case['index'] * 10,
-                                 title=config['title'].strip()))
+                                 title=listed_episode['name'].strip()))
         return rows
 
     # --- portraits and looks -------------------------------------------------------------------------------------------
