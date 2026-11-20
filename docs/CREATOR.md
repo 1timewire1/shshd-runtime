@@ -49,7 +49,7 @@ The selected choice connects to two dialogue paths. Its inspector sets a
 
 | Node/control | Authoring behavior |
 | --- | --- |
-| Dialogue, choice | Narration, named text, portraits, expressions 0–4 or the character default, native themes, timed answers and conditional options |
+| Dialogue, choice | Narration, named text, portraits, expressions 0–4 or the character default, native themes (SHS: gray, pink, blue, gold; Cause of Death: its grey box with the name standard or upright, as its own episodes have it), timed answers and conditional options |
 | Player / narrator | Native primary speaker (74) and the character whose lines become narration (75); both change mid-episode |
 | Background, pan | Image selection, automatic speaker tracking or left/center/right alignment |
 | Music, sound, stop audio | Native resource IDs or embedded MP3/WAV, looping flag, immediate runtime stop; listen to a library or embedded track. SHS: a "then loop" track the music runs into (see below) |

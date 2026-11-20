@@ -568,6 +568,11 @@
 
 ### Fixed
 
+- **The Creator's colours for Cause of Death** (owner, 2026-11-19): CoD has one box style, grey, with the speaker's
+  name slanted (every character in its episodes) or upright (its narrator, and Holiday Interlude's Ghostly Specter); its
+  pink-red box is never used. The Creator offered SHS's four colours and gave new characters "Blue", which drew that
+  pink-red box. A CoD project now chooses Name: Standard or Upright, new characters start Standard, and older CoD projects
+  export with CoD's own (upright stays, anything else is standard).
 - **"Play with sound?" came back as Cause of Death's launch faded** (owner, 2026-11-19): after the answer, CoD's EA
   screen fades out with the launch still waiting on the question, and the check that asks again when a window over it
   closed it (iPad, 2026-11-17) showed it again under the fade. It no longer asks while a fade is under way.

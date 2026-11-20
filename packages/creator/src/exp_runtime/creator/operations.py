@@ -48,7 +48,7 @@ def apply(workspace, project, operation):
             collection.remove(record)
         else:
             if record is None:
-                record = Node(key) if op == 'node' else Character(key)
+                record = Node(key) if op == 'node' else Character(key, theme=1 if project.game == 'cod' else 2)
                 collection.append(record)
             patch_record(record, operation.get('changes', {}), {f.name for f in fields(record)} - {'id'})
     elif op == 'rename_node': graph.rename_node(project, operation['id'], operation['new_id'])

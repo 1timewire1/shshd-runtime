@@ -577,7 +577,16 @@ class Editor(QMainWindow):
                                              if a.data is None or is_image(a.data)]
                 form.addRow({'background': 'Background', 'faceplace_link': 'Photo'}.get(node.kind, 'Portrait'), self.combo(
                     images, getattr(node, key), lambda value: self.set_node(key, value)))
-            if node.kind in ('dialogue', 'choice'):
+            if node.kind in ('dialogue', 'choice') and self.project.game == 'cod':
+                # CoD's two (compiler.COD_THEMES): its grey box with a slanted name, or an upright one (owner, 2026-11-19).
+                from .compiler import COD_THEMES
+                style = self.combo([(name, value) for value, name in COD_THEMES.items()], 3 if node.theme == 3 else 1,
+                                   lambda value: self.set_node('theme', value))
+                style.setEnabled(not node.character and (node.kind == 'choice' or node.portrait is not None))
+                style.setToolTip("Cause of Death's own: its grey box with the speaker's name slanted, or upright (its narrator "
+                                 "and a ghostly voice have it).")
+                form.addRow('Name', style)
+            elif node.kind in ('dialogue', 'choice'):
                 color = self.combo([('Gray', 0), ('Pink', 1), ('Blue', 2), ('Gold', 3)],
                                    node.theme, lambda value: self.set_node('theme', value))
                 color.setEnabled(not node.character and (node.kind == 'choice' or node.portrait is not None))
@@ -1405,7 +1414,7 @@ class Editor(QMainWindow):
         if self.project.native:
             self.error('Original character definitions remain in their native instructions.'); return
         dialog = ListDialog([asdict(c) for c in self.project.characters], self, 'Characters',
-                            template=asdict(Character(uuid.uuid4().hex[:10])))
+                            template=asdict(Character(uuid.uuid4().hex[:10], theme=1 if self.project.game == 'cod' else 2)))
         if dialog.exec() == QDialog.DialogCode.Accepted:
             try:
                 candidate = deepcopy(self.project); candidate.characters = [Character(**r) for r in dialog.value]

@@ -712,6 +712,17 @@ class Compilation:
     characters: dict[str, int]
 
 
+# Cause of Death's own colours (owner, 2026-11-19; scanned in 60 of its episodes): every character 1, its grey box with a slanted
+# name, and 3 for an upright name (its narrator, and Holiday Interlude's Ghostly Specter); its pink-red 2 and 0 never. A CoD
+# project's colours come out as one of those two: 3 stays, anything else is 1. SHS keeps all four.
+COD_THEMES = {1: 'Standard', 3: 'Upright name'}
+
+
+def game_theme(project, theme):
+    """The colour (character number 651) a line or character of `project` is given: in CoD, 3 or 1 (COD_THEMES)."""
+    return (3 if theme == 3 else 1) if project.game == 'cod' else theme
+
+
 def _character_bank(project, resources):
     slots, definitions = {}, []
     assets = {asset.id: asset for asset in project.assets}
@@ -730,12 +741,12 @@ def _character_bank(project, resources):
                 resources.update({portrait + i: assets[value].data for i, value in enumerate(variants)})
         number = len(definitions) + 1
         slots[c.id] = number
-        definitions.append((number, translated(project, f'character.{c.id}.name', c.name), portrait, c.theme))
+        definitions.append((number, translated(project, f'character.{c.id}.name', c.name), portrait, game_theme(project, c.theme)))
     for name, portrait, theme in sorted({(n.speaker, n.portrait, n.theme) for n in project.nodes
                                        if n.kind == 'dialogue' and not n.character and n.portrait is not None}):
         number = len(definitions) + 1
         slots[name, portrait, theme] = number
-        definitions.append((number, name, portrait, theme))
+        definitions.append((number, name, portrait, game_theme(project, theme)))
     return slots, definitions
 
 
@@ -911,7 +922,7 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
                 for key, _ in marks: asm.call(54, key, 0)
                 if project.calendars: badge_off(asm)
             elif kind == 'choice':
-                asm.call(52, 0, 651, node.theme)
+                asm.call(52, 0, 651, game_theme(project, node.theme))
                 asm.call(2, text('speaker'), text('text'), node.timeout_ms, node.timeout_option, character(), 0)
                 for i, option in enumerate(node.options):
                     label_text = translated(project, base + f'option.{i}', option.text)

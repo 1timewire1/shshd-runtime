@@ -202,6 +202,9 @@ def node_schema(kind=None):
         if name in properties:
             properties[name].update(minimum=-1 if kind == 'dialogue' and name == 'expression' else 0,
                                     maximum=3 if name == 'theme' else 4)
+    if 'theme' in properties:
+        properties['theme']['description'] = ("SHS: 0 gray, 1 pink, 2 blue, 3 gold. Cause of Death has its grey box only: 3 gives an "
+                                              "upright name, any other value its standard slanted one (compiler.COD_THEMES).")
     if 'options' in properties:
         properties['options'].update(minItems=2, maxItems=8, items=dict(type='object', additionalProperties=False,
             properties=dict(text=dict(type='string', minLength=1), target=dict(type='string', minLength=1),
