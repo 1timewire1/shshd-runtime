@@ -510,6 +510,35 @@ picture isn't found.
   screenshot.
 - The backdrop on CoD's menus was tested through its function, not captured on a menu screen.
 
+### `chcrounds`: Claire Hart Classic: Rounds (in progress on the `claire-hart` branch)
+
+Optional, for the translated cases (pack 31500): Classic's hidden-object rounds played for real
+(Other Games/docs/CLAIRE_HART_ROUNDS_PLAN.md). Without it, or with Use Translated Mini-Games off, a round is the case's
+narrated stand-in line. `tools/translate/claire_rounds_addon.py` writes it (via `claire_hart.py rounds`), streaming the archive
+to disk as it goes (`write_exp`); `tools/translate/claire_rounds_check.py` redraws every scene from it and compares each with
+Classic's own `template.png`. Revision 1 until it goes to testers. The round's HUD art joins it in Stage 3's step 3.
+
+```sh
+python tools/translate/claire_hart.py rounds --mirror CLAIRE_HART_DIR --out OUT_DIR [--scenes A,B] [--workers 3]   # FFmpeg on PATH
+python tools/translate/claire_rounds_check.py OUT_DIR/CH_Classic_Rounds.exp CLAIRE_HART_DIR [SCENE ...]
+```
+
+| Resources | What |
+| --- | --- |
+| 26000 | The spec, JSON (version 1): `scenes` (folder → `base`, `sprites`, `size` and its `objects`, each `[name, normal, found, hint offset]`, a sprite being `[number in the pack, width, height, left, top]`: its top left in the base's pixels), `rounds` (E-number → its rounds in order, each `[scene, [story object indices]]`), `balance` (Classic's gamebalance.json), `sounds`, `particles`, `fonts` |
+| 26001–26787 | The 787 scenes' bases (1026 × 770; EstateBedroom's bg with its shadow), in the scene folders' sorted order, as chc's backdrops: Classic's own PNGs |
+| 26800–26899 | (Stage 3 step 3: the round's HUD) |
+| 26900–26912 | Classic's 13 round sound effects, as WAV (the jingle is chc's 26990) |
+| 26930– | Its particle systems: each `.plist`, then its picture |
+| 26960– | The Roboto, Roboto Condensed and Roboto Slab faces |
+| 27001–27787 | Each scene's sprite pack (`claire_rounds.encode_sprite_pack`): every object's normal then found sprite, Classic's own PNG files after an index (the add-on's 16-bit IDs can't give the 78,577 sprites one each). Repacking them into true-colour atlas pages was tried first and more than doubled the add-on (2.4 GB) |
+
+About 1.1 GB, built in under a minute.
+
+A group with no normal sprite is no object (KeepersCottage's Handbell). Story objects are resolved as `chc`'s round lines are
+(`Mirror.round_items`), then to the scene's object by its normal sprite: 983 in all; E014's Flyer and E125's Snowman Toy have no
+sprite in their scenes (`names.json` entries without an object), so those rounds play as Classic picked them.
+
 ## Settings
 
 Switches that only concern translated games and addons live on **Options › Add-Ons** (`ADDON_KEYS` in `desktop_pause_hd.py`), which

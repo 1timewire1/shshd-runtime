@@ -39,6 +39,34 @@ POWERUPS = (FOCUS, LOCATOR, CLAIRVOYANCE, TIME_WARP)
 
 NO_OBJECT = -1
 
+# A scene's sprites in `chcrounds` (one resource a scene: the add-on's IDs are 16 bits, its sprites 78,577): their original
+# PNG files one after another, after an index. b'CHSP', a u32 count, then each sprite's u32 offset and length (big-endian).
+SPRITE_PACK_MAGIC = b'CHSP'
+
+
+def encode_sprite_pack(files):
+    import struct
+    head = len(SPRITE_PACK_MAGIC) + 4 + 8 * len(files)
+    index, offset = bytearray(), head
+    for data in files:
+        index += struct.pack('>II', offset, len(data))
+        offset += len(data)
+    return SPRITE_PACK_MAGIC + struct.pack('>I', len(files)) + bytes(index) + b''.join(files)
+
+
+def sprite_from_pack(pack, number):
+    """Sprite `number`'s PNG bytes from a sprite pack."""
+    import struct
+    if pack[:4] != SPRITE_PACK_MAGIC:
+        raise ValueError('Not a Claire Hart sprite pack')
+    count, = struct.unpack_from('>I', pack, 4)
+    if not 0 <= number < count:
+        raise ValueError('No such sprite')
+    offset, length = struct.unpack_from('>II', pack, 8 + 8 * number)
+    if offset + length > len(pack):
+        raise ValueError('A truncated sprite pack')
+    return pack[offset:offset + length]
+
 
 def pixel_hit(alpha, width, height, x, y):
     """touchdetector's test: whether any pixel of a `width` x `height` sprite within the 9 x 9 window centred on its pixel

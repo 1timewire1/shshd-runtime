@@ -5,6 +5,7 @@
     python tools/translate/claire_hart.py ids --mirror CLAIRE_HART_DIR --out claire_hart_ids.tsv
     python tools/translate/claire_hart.py addon --mirror CLAIRE_HART_DIR --pairs PAIRS.txt --catalog COD_CATALOG_PORTRAITS \\
         --cod-library COD_LIBRARY --extras EXTRAS_DIR --out OUT_DIR
+    python tools/translate/claire_hart.py rounds --mirror CLAIRE_HART_DIR --out OUT_DIR   (chcrounds: claire_rounds_addon.py)
 
 CLAIRE_HART_DIR is the mirror (`reference/Other Games/Claire Hart Classic`: bundle_names.csv, raw/, unpacked/, index/).
 
@@ -961,7 +962,7 @@ def addon(mirror, pairs, catalog, sources, extras, sequel, progress=print):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest='command', required=True)
-    for name in ('report', 'ids', 'addon', 'build', 'places'):
+    for name in ('report', 'ids', 'addon', 'build', 'places', 'rounds'):
         command = commands.add_parser(name)
         command.add_argument('--mirror', type=Path, required=True)
         if name in ('ids', 'build', 'places'):
@@ -969,6 +970,10 @@ def main(argv=None):
         if name == 'build':
             command.add_argument('--episodes', help='only the cases holding these E-numbers (E001,E018,...)')
             command.add_argument('--cache', type=Path, help='the store scenes matched (made on first use)')
+        if name == 'rounds':
+            command.add_argument('--out', type=Path, required=True, help='the folder for CH_Classic_Rounds.exp')
+            command.add_argument('--scenes', help='only these scene folders (a check build)')
+            command.add_argument('--workers', type=int, default=3)
         if name == 'addon':
             command.add_argument('--pairs', type=Path, required=True)
             command.add_argument('--catalog', type=Path, required=True, help="the CoD catalogue's portraits folder")
@@ -1001,6 +1006,13 @@ def main(argv=None):
             (args.out / name).write_bytes(compiled(project, slices))
             print(f'{name}: {project.title!r}, {len(project.nodes)} nodes, {dict(report)}')
         write_reviews(args.out, reviews)
+    elif args.command == 'rounds':
+        import claire_rounds_addon
+        args.out.mkdir(parents=True, exist_ok=True)
+        out = args.out / 'CH_Classic_Rounds.exp'
+        report = claire_rounds_addon.build(mirror, out, only=set(args.scenes.split(',')) if args.scenes else None,
+                                           workers=args.workers)
+        print(f"addon: {claire_rounds_addon.ROUNDS_TITLE!r} -> {out} ({report['bytes'] // 2 ** 20} MB), {report}")
     elif args.command == 'places':
         scenes = sorted({hog['scene'] for _, _, parts in mirror.cases() for _, config, _ in parts
                          for hog in config['hogConfig'].values()})
