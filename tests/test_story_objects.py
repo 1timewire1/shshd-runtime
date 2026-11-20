@@ -59,7 +59,7 @@ class StoryObjectTests(unittest.TestCase):
         rows(session, 1)                                    # Ann's second line is up, with the broom and the key
         state = json.loads(json.dumps(session.snapshot()))
         self.assertEqual((state['version'], state['engine']['story_objects'], state['engine']['story_objects_due']),
-                         (43, [27001, 27002], []))
+                         (44, [27001, 27002], []))
         restored = Session.from_snapshot(story_resources(), state)
         self.assertEqual(rows(restored, 2), [[27001, 27002], []])
         old = json.loads(json.dumps(state))

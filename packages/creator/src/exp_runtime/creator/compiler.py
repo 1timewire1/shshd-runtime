@@ -15,6 +15,7 @@ from exp_runtime.cutscene_spec import CUTSCENE, CUTSCENE_QUERY
 from exp_runtime.story_object_services import STORY_OBJECT, STORY_OBJECT_CLEAR, STORY_OBJECT_QUERY
 from exp_runtime.shs11_services import SHS11_MINIGAMES_QUERY
 from exp_runtime.brew_services import BREW_MINIGAMES_QUERY
+from exp_runtime.claire_round_services import CLAIRE_ROUND, CLAIRE_ROUNDS_QUERY
 from exp_runtime.addons import RESOURCE as ADDON_RESOURCE, requires_bytes
 from exp_runtime.episode_version import RESOURCE as VERSION_RESOURCE, version_bytes
 from exp_runtime.episode_languages import RESOURCE as LANGUAGES_RESOURCE, languages_bytes
@@ -65,11 +66,13 @@ from exp_runtime.presentation import TRANSLATION_PACKS  # noqa: E402
 # where it plays that game (with Use Translated Mini-Games on). The X360 games ask 201; the Diss Battle came later (205),
 # and SHS '11's games (203) and the catch game (204) have their own, as their translations ask (owner, 2026-11-17).
 MINIGAME_QUERIES = {'': X360_MINIGAMES_QUERY, 'x360_battle': X360_BATTLE_QUERY, 'shs11': SHS11_MINIGAMES_QUERY,
-                    'brew_catch': BREW_MINIGAMES_QUERY}
+                    'brew_catch': BREW_MINIGAMES_QUERY, 'claire_round': CLAIRE_ROUNDS_QUERY}
 QUERY_FOR = {'x360_slot': '', 'x360_leash': '', 'x360_puzzle': '', 'x360_diss': '', 'x360_battle': 'x360_battle',
-             'shs11_memory': 'shs11', 'shs11_reflex': 'shs11', 'brew_catch': 'brew_catch'}
+             'shs11_memory': 'shs11', 'shs11_reflex': 'shs11', 'brew_catch': 'brew_catch', 'claire_round': 'claire_round'}
 QUERY_NAMES = {'': 'the X360 games', 'x360_battle': 'the Diss Battle', 'shs11': "SHS '11's games",
-               'brew_catch': 'the catch game'}
+               'brew_catch': 'the catch game', 'claire_round': "Claire Hart's rounds"}
+# CoD's own: Claire Hart Classic's hidden-object round (claire_round_services; Claire Hart plan Stage 3), and the query for it.
+COD_ONLY_KINDS = frozenset(('claire_round',))
 # shshd-runtime presentation (SCHEMA.md "Presentation extension"): the SHS global numbers (service 54) a dialogue line
 # sets for its second speaker (ID + 1) and their expression, a named line's bubble colour and the emoticon over its
 # speaker, cleared after the line. They are the numbers tools/translate uses for New Rules and the X360 prototype; the
@@ -136,7 +139,7 @@ def variable_names(project):
     names = {n.variable for n in project.nodes if n.kind in ('set', 'branch') and n.variable}
     for node in project.nodes:
         p = parameters(node)
-        if node.kind in ('random', 'minigames_available', 'cutscene_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle', 'word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'relationship', 'score', 'picker'):
+        if node.kind in ('random', 'minigames_available', 'cutscene_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle', 'word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'claire_round', 'relationship', 'score', 'picker'):
             names.add(p['result'])
         if node.kind == 'football':
             names.update(name for name in (p['home_result'], p['away_result']) if name)
@@ -295,7 +298,7 @@ def validate_node(project, node, nodes, assets, characters):
         raise ProjectError(f'{label}: property operation must be set or add')
     if node.kind == 'relationship' and not node.character:
         raise ProjectError(f'{label}: choose a reusable character')
-    if node.kind in ('random', 'minigames_available', 'cutscene_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle', 'word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'input', 'relationship',
+    if node.kind in ('random', 'minigames_available', 'cutscene_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle', 'word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'claire_round', 'input', 'relationship',
                      'score') and not p['result'].strip():
         raise ProjectError(f'{label}: enter a result variable')
     if node.kind == 'cutscene':
@@ -309,7 +312,9 @@ def validate_node(project, node, nodes, assets, characters):
     if node.kind == 'random' and p['bound'] <= 0:
         raise ProjectError('Random upper bound must be positive')
     if node.kind == 'minigames_available' and p['for'] not in MINIGAME_QUERIES:
-        raise ProjectError('A minigames query is for the X360 games (empty), x360_battle, shs11 or brew_catch')
+        raise ProjectError('A minigames query is for the X360 games (empty), x360_battle, shs11, brew_catch or claire_round')
+    if node.kind == 'claire_round' and not 1 <= p['round'] <= 32767:
+        raise ProjectError(f"{label}: the round is its original episode's number x 10 + the round (E018's third: 183)")
     if node.kind == 'x360_diss' and p['tutorial'] not in (0, 1):
         raise ProjectError('Diss Practice tutorial is 0 or 1')
     if node.kind == 'x360_battle':
@@ -374,8 +379,11 @@ def validate_node(project, node, nodes, assets, characters):
             raise ProjectError(f'{label}: enter a result variable')
     if node.kind in HD_KINDS:
         validate_hd_node(project, node, p, label, assets)
-    if node.kind in SHS_ONLY_KINDS and project.game != 'shs':
+    claire_query = node.kind == 'minigames_available' and p.get('for') == 'claire_round'
+    if node.kind in SHS_ONLY_KINDS and project.game != 'shs' and not claire_query:
         raise ProjectError(f'{label}: the CoD game has no {node.kind.replace("_", " ")} service')
+    if (node.kind in COD_ONLY_KINDS or claire_query) and project.game != 'cod':
+        raise ProjectError(f"{label}: Claire Hart's rounds are Cause of Death's")
     from .addons import node_addon
     needed = node_addon(project, node.kind)
     if (needed is not None and not any(entry['id'] == needed for entry in project.addons)
@@ -511,7 +519,7 @@ def presentation_record(project):
                                  stats=[[stat['label'], stat['key'], stat['prefix']] for stat in project.journal])
     record.update({name: True for name, on in sorted(project.options.items()) if on})
     if any(node.kind in ('minigames_available', 'brew_catch', 'shs11_memory', 'shs11_reflex', 'x360_slot', 'x360_leash',
-                         'x360_puzzle', 'x360_diss', 'x360_battle') for node in project.nodes):
+                         'x360_puzzle', 'x360_diss', 'x360_battle', 'claire_round') for node in project.nodes):
         record['minigames'] = True
     from .model import primary_addon
     primary = primary_addon(project)
@@ -1049,6 +1057,8 @@ def compile_details(project: Project, *, language=None, start=None, include_proj
                     refs.extend(text(f'rounds.{i}.words.{j}', word, plain=True) for j, word in enumerate(record['words']))
                 asm.call(X360_BATTLE, p['tutorial'], p['bonus'], len(p['rounds']), asm.table(refs))
                 asm.emit(0x21); store_variable(p['result'])
+            elif kind == 'claire_round':
+                asm.call(CLAIRE_ROUND, p['round']); asm.emit(0x21); store_variable(p['result'])
             elif kind == 'brew_catch':
                 branches = [(n.operator, n.value) for n in project.nodes
                             if n.kind == 'branch' and n.variable == p['result']]

@@ -44,6 +44,7 @@ import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import chslim                                               # noqa: E402
+from exp_runtime.claire_round_services import round_key  # noqa: E402
 
 PACK_ID = chslim.PACK_ID                                    # 31500
 SLOTS = ('Normal', 'Angry', 'Happy', 'Sad', 'Surprised')    # CoD's expression slots, in order
@@ -528,6 +529,8 @@ class CaseBuilder:
         self.folders = {}               # speaker character id -> its portrait folder
         self.cast = (None, None)        # the (player, narrator) the last `speakers` node set
         self.reviews = dict(rounds=[], outros=[], intros=[])
+        self.pending = None             # loose ends the next node joins (add), else the last node
+        self.asked = False              # whether the case has asked if its rounds can be played (round)
         self.track = None
         self.music = {}                 # every chapter's music map so far: audioplayer's, kept for the session
         self.faces = {}                 # speaker key -> the face showing, this chapter
@@ -535,9 +538,15 @@ class CaseBuilder:
         self.report = collections.Counter()
 
     def add(self, kind='dialogue', **fields):
+        """A node after the last one, or, where `pending` names loose ends ((node, 'next' or 'otherwise')), after those."""
         node = self.Node(f'n{len(self.nodes)}', kind, **fields)
-        if self.nodes:
-            self.nodes[-1].next = node.id
+        if self.pending is None:
+            if self.nodes:
+                self.nodes[-1].next = node.id
+        else:
+            for loose, slot in self.pending:
+                setattr(loose, slot, node.id)
+            self.pending = None
         self.nodes.append(node)
         return node
 
@@ -748,14 +757,27 @@ class CaseBuilder:
         self.reviews['rounds'].append((config['epid'], number, hog['scene'], ', '.join(items), told or 'stand-in', line,
                                        ' / '.join(lines)[:220]))
         self.report['rounds'] += 1
+        # The round played for real where it can be (chcrounds, Use Translated Mini-Games: Stage 3), else the stand-in.
+        if not self.asked:
+            self.add('minigames_available', params={'result': 'real_rounds', 'for': 'claire_round'})
+            self.asked = True
+        real = self.add('branch', params={'expression': '(real_rounds == 1)'})
+        self.pending = [(real, 'next')]
+        played = self.add('claire_round', params={'round': round_key(config['epid'], number), 'result': 'round_score'})
+        ends = [(played, 'next')]
+        self.pending = [(real, 'otherwise')]
+        self.report['real rounds'] += 1
         if told:
             self.report['rounds told by the next chapter'] += 1
-            return
-        self.add('background', asset=self.scene(folder_of(hog['scene'])))
-        self.narrate_as_player()
-        self.add(text=line, expression=0)
-        self.report['round lines'] += 1
-        self.report['round items'] += len(items)
+            self.pending += ends
+        else:
+            self.add('background', asset=self.scene(folder_of(hog['scene'])))
+            self.narrate_as_player()
+            last = self.add(text=line, expression=0)
+            self.pending = [(last, 'next')] + ends
+            self.report['round lines'] += 1
+            self.report['round items'] += len(items)
+        self.cast = (None, None)        # (only the stand-in turned the narrator: the next line says who's who again)
 
 
 def converter_art(mirror, cache=None):

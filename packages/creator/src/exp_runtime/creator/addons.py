@@ -15,7 +15,7 @@ NODE_ADDONS = {'shs11_reflex': 'shs11', 'x360_slot': 'shsx360', 'x360_leash': 's
                'nr_arena': 'shsnr'}
 # ...and the add-on a node plays from when the library has it, without needing it: SHS '11's Memory wears '11's own look with
 # its add-on, else SHS HD's art (owner, 2026-11-17). Added with the node when the library has it, and kept while the node is.
-OPTIONAL_NODE_ADDONS = {'shs11_memory': 'shs11', 'shs11_reflex': 'shs11'}
+OPTIONAL_NODE_ADDONS = {'shs11_memory': 'shs11', 'shs11_reflex': 'shs11', 'claire_round': 'chcrounds'}
 # What a primary add-on brings (its settings that need its pictures and sounds; the runtime's ADDON_FEATURE_PACKS) and what any
 # declared add-on adds: id -> (brought as the primary, played as an extra too). For the Add-Ons panel.
 ADDON_FEATURES = {
@@ -35,7 +35,7 @@ ADDON_FEATURES = {
 }
 # Node kinds only this runtime answers, and how to name them to a person.
 MECHANIC_NODES = {'minigames_available': 'the translated mini-games', 'x360_slot': 'the X360 slot machine',
-                  'brew_catch': "the BREW games' catch game",
+                  'brew_catch': "the BREW games' catch game", 'claire_round': "Claire Hart's hidden-object rounds",
                   'shs11_memory': "SHS '11's Memory", 'shs11_reflex': "SHS '11's Reflex",
                   'x360_leash': 'the X360 leash game', 'x360_puzzle': 'the X360 jewel puzzle',
                   'x360_diss': 'X360 Diss Practice', 'x360_battle': 'the X360 Diss Battle',
@@ -50,7 +50,7 @@ MECHANIC_SERVICES = ((range(200, 214), "New Rules' minigame arena"), (range(214,
                      (range(218, 219), 'storyboard cutscenes'), (range(219, 221), "SHS '11's mini-games"),
                      (range(221, 222), "the BREW games' catch game"), (range(222, 223), 'the X360 mini-games'),
                      (range(223, 224), 'running a scene and coming back'), (range(224, 225), "the word grid's part score"),
-                     (range(225, 226), 'story-object pictures'))
+                     (range(225, 226), 'story-object pictures'), (range(226, 227), "Claire Hart's hidden-object rounds"))
 
 
 def node_addon(project, kind):

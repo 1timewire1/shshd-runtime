@@ -11,7 +11,7 @@ from .model import ProjectError
 
 # The engine's open mini-games (and cutscene) whose whole state the debugger reports.
 MINIGAME_STATES = ('word_game', 'football', 'word_grid', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle',
-                   'shs11_memory', 'shs11_reflex', 'brew_catch', 'cutscene')
+                   'shs11_memory', 'shs11_reflex', 'brew_catch', 'claire_round', 'cutscene')
 
 
 class _Paused(Exception):

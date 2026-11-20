@@ -50,6 +50,14 @@ TRAIL_COLOUR = (190, 255, 160)
 # the orb's explosion (hint_explosion: 0.5 s) as it goes.
 HINT_SPEED, HINT_TIME = 400, 1.2
 EXPLOSION_MS = 500
+# Classic's sounds (references/gamesfx): a find (Object_6_Combo at x5, as combometer.increment), a name coming into the list
+# (activeobjectlist.queueShowName), the hint (hintpowerup), Time Warp (addtimepowerup), "Clicking Too Fast", the scene cleared
+# (levelsummary) and a button.
+SOUND_FIND, SOUND_FIND_X5 = 'Claire_Hart_2_GS_Object_1_Combo', 'Claire_Hart_2_GS_Object_6_Combo'
+SOUND_NAME, SOUND_HINT = 'Claire_Hart_2_GS_Object_In_Objectlist', 'Claire_Hart_2_GS_Hint_Power_Up'
+SOUND_WARP, SOUND_POPUP = 'Claire_Hart_2_GS_Time_Wrap_Power_Up', 'Claire_Hart_2_GS_Pop_UP_Notification'
+SOUND_CLEARED, SOUND_BUTTON = 'Claire_Hart_2_GS_Scene_Cleard', 'Claire_Hart_2_GES_Button_Click'
+SOUND_FOCUS = 'Claire_Hart_2_DS_Focus_Different_Character'
 
 
 def clamp(value, low=0., high=1.):
@@ -127,6 +135,10 @@ class ClaireRoundRenderer:
         self.clock = 0                     # ms, for the renderer's own animations
         self._marks = (cr.NO_OBJECT,) * 3     # the hint's, Focus's and the Locator's objects last drawn
         self.effects = []                  # [kind, start clock, data]: trails, the hint's flight, the orb's explosion
+        self.sounds = []                   # Classic's sounds due (their names), for the player to play and empty
+        self._was = None                   # what the last frame showed, for the sounds
+        self._ticks = None                 # the wall clock at the last draw (draw: the renderer's own animations)
+        self.drag = None                   # (start, last) canvas points of a press on the scene, panning once it moves
         self._seen_found = None            # (game, how many found) last drawn: a new find starts its trail
 
     # -- the add-ons ----------------------------------------------------------------------------------------------------------
@@ -272,7 +284,37 @@ class ClaireRoundRenderer:
 
     # -- the frame ------------------------------------------------------------------------------------------------------------
     def draw(self, session):
-        self.draw_game(session.engine.claire_round)
+        now = pygame.time.get_ticks()
+        elapsed = 0 if self._ticks is None else max(0, min(250, now - self._ticks))
+        self._ticks = now
+        self.draw_game(session.engine.claire_round, elapsed)
+
+    def sound_cues(self, game):
+        """Queue Classic's sounds for what changed since the last frame."""
+        now = dict(found=len(game.found), x5=game.x5_finds, names=tuple(game.slots), hint=game.hint_target,
+                   warp=game.time_warp, lock=bool(game.lock_ms), over=game.over, focus=game.focus_target,
+                   locator=game.locator_target)
+        was, self._was = self._was, now
+        if was is None:
+            return
+        if now['found'] > was['found']:
+            self.sounds.append(SOUND_FIND_X5 if now['x5'] > was['x5'] else SOUND_FIND)
+        if any(o != cr.NO_OBJECT and o != before for o, before in zip(now['names'], was['names'])):
+            self.sounds.append(SOUND_NAME)
+        if now['hint'] != cr.NO_OBJECT and now['hint'] != was['hint']:
+            self.sounds.append(SOUND_HINT)
+        if (now['focus'] != was['focus'] and now['focus'] != cr.NO_OBJECT) or \
+                (now['locator'] != was['locator'] and now['locator'] != cr.NO_OBJECT):
+            self.sounds.append(SOUND_FOCUS)
+        if now['warp'] and not was['warp']:
+            self.sounds.append(SOUND_WARP)
+        if now['lock'] and not was['lock']:
+            self.sounds.append(SOUND_POPUP)
+        if now['over'] and not was['over']:
+            self.sounds.append(SOUND_CLEARED)
+
+    def sound_resource(self, name):
+        return self.spec()['sounds'].get(name)
 
     def draw_game(self, game, elapsed_ms=0):
         self.clock += elapsed_ms
@@ -283,6 +325,7 @@ class ClaireRoundRenderer:
         if self.held and self.view is not None:
             self.view.pan(-self.held * ARROW_SPEED * elapsed_ms / 1000, 0)
         self.start_effects(game)
+        self.sound_cues(game)
         self.follow_marks(game)
         self.draw_scene(game)
         self.draw_marks(game)

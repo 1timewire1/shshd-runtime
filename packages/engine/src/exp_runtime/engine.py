@@ -24,6 +24,8 @@ GRID_PART_SCORE = 224
 from .x360_puzzle import JewelPuzzle, X360_PUZZLE
 from .story_object_services import STORY_OBJECT, STORY_OBJECT_ROW
 from .brew_catch import BREW_CATCH, CatchGame, ITEM_WORDS, MAX_ITEMS
+from .claire_round_services import CLAIRE_ROUND
+from .claire_rounds import ClaireRound
 from .shs11_games import MemoryGame, REFLEX_ROUND_WORDS, ReflexGame, ROUND_WORDS, SHS11_MEMORY, SHS11_REFLEX
 from .cutscene import CUTSCENE, Cutscene
 from .game_state import GameState
@@ -152,6 +154,11 @@ class EngineState:
     hd_version = None
     # Not saved: the DSiWare add-on's translation for the language picked (EpisodeResources.dsi_translation; Session sets it).
     translation_source = None
+    # Not saved: Claire Hart's rounds (Session sets them): a round's (scene, names, story objects, title) by its key from the
+    # chcrounds add-on, or None without it; and the Power-Ups setting for a round opened.
+    claire_round_source = None
+    claire_powerups = 'once'
+    claire_rounds_ready = False             # (chcrounds is in the library)
     badge_sounds = None            # Not saved: a translated pack's own (for, against) (TRANSLATED_BADGE_SOUNDS; Session sets it)
     # Not saved: whether service 22 makes "a(n) word" "a word" or "an word", and "1 Win(s)" "1 Win" (choose_plurals) (a pack in
     # TRANSLATED_ARTICLE_PACKS; Session sets it).
@@ -227,6 +234,7 @@ class EngineState:
     shs11_reflex: ReflexGame | None = None      # shshd-runtime: and its Reflex
     shs11_reflex_tutorial_seen: bool = False
     brew_catch: CatchGame | None = None         # shshd-runtime: the BREW games' catch game (brew_catch.py)
+    claire_round: ClaireRound | None = None     # shshd-runtime: Claire Hart Classic's hidden-object round (claire_rounds.py)
     random: NativeRandom = field(default_factory=NativeRandom)
     word_grid: GameState | None = None
     grid_tutorials_seen: bool = False
@@ -296,6 +304,7 @@ class EngineState:
         self.cutscene = None
         self.x360_diss = self.x360_battle = None
         self.shs11_memory = self.shs11_reflex = self.brew_catch = None
+        self.claire_round = None
         self.character_picker = self.loading = self.message_panel = self.title_screen = None
         self.choice_builder = None
         self.choice_ms = 250
@@ -1264,6 +1273,15 @@ class EngineState:
             self.shs11_reflex = ReflexGame.opened(rounds, args[0], args[1],
                                                   tutorial=self.shs11_tutorial_due('shs11_reflex_tutorial_seen', ReflexGame.KIND))
             return EngineAction('shs11_reflex', request, False, _shs11_details(args[4]))
+        if y == CLAIRE_ROUND:                                   # (likewise): the round's key (claire_round_services.round_key)
+            need(1)
+            found = self.claire_round_source(args[0]) if self.claire_round_source is not None else None
+            if found is None:
+                return EngineAction('unhandled_yield', request, False,
+                                    dict(reason=f'Claire Hart round {args[0]}: the chcrounds add-on has no such round'))
+            scene, names, story, title = found
+            self.claire_round = ClaireRound.opened(scene, names, story, self.random, self.claire_powerups, title)
+            return EngineAction('claire_round', request, False)
         if y == GRID_PART_SCORE:
             need(0)
             return complete('get_grid_part_score', self.grid_part_score)

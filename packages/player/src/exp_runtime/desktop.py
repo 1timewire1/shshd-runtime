@@ -46,6 +46,7 @@ from .desktop_x360_puzzle import X360PuzzleRenderer, cell_at, on_board
 from .desktop_x360_slot import X360SlotRenderer
 from .desktop_shs11_memory import Shs11MemoryRenderer, memory_spec
 from .desktop_brew_catch import BrewCatchRenderer
+from .desktop_claire_round import ClaireRoundRenderer, SOUND_BUTTON as CLAIRE_BUTTON
 from .desktop_shs11_reflex import Shs11ReflexRenderer
 from .gamepad import REPEAT_DELAY_MS, REPEAT_MS
 from .x360_games import DOWN, LEFT, RIGHT, SHAKE_WINDOW_STICK_MS, UP
@@ -623,6 +624,7 @@ class Desktop:
         self.shs11_reflex_renderer._images = self.shs11_memory_renderer._images
         self.shs11_reflex_renderer._glyphs = self.shs11_memory_renderer._glyphs
         self.brew_catch_renderer = BrewCatchRenderer(session.resources)
+        self.claire_round_renderer = ClaireRoundRenderer(session.resources)
         self.x360_leash_renderer = X360LeashRenderer(session.resources)
         self.x360_puzzle_renderer = X360PuzzleRenderer(session.resources)
         self.cutscene_renderer = CutsceneRenderer(session.resources)
@@ -1339,6 +1341,10 @@ class Desktop:
                        else 'Diss battle: catch the word that rhymes with the needle.')
             prompt = self._open_prompt(action, 'Skip this mini-game?', summary,
                                        self.SKIP_OPTIONS, lambda index: self._resolve_x360_diss(action, index))
+        if (prompt is None and self.skip_minigames and action is not None and action.name == 'claire_round'
+                and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
+            prompt = self._open_prompt(action, 'Skip this mini-game?', 'A hidden-object round. Its score changes nothing that '
+                                       'follows.', ('Skip', 'Play'), lambda index: self._resolve_claire_round(action, index))
         if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_puzzle'
                 and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
             prompt = self._open_prompt(action, 'Skip this mini-game?', 'A jewel puzzle. Its score changes nothing that follows.',
@@ -1438,6 +1444,127 @@ class Desktop:
             getattr(self.session.engine, action.name).start()      # the prompt was its go-ahead: no second one
             return
         self._attempt(lambda: self.session.skip_minigame(index == 0))
+
+    def _resolve_claire_round(self, action, index):
+        """A Claire Hart round's skip prompt: Skip goes straight on, Play plays it."""
+        if self.session.pending is not action:
+            return
+        if index == 1:
+            self.minigame_played = action
+            self.session.start_minigame()
+            return
+        self._attempt(lambda: self.session.skip_minigame(True))
+
+    # -- shshd-runtime: Claire Hart's rounds (desktop_claire_round.py) ---------------------------------------------------------
+    CLAIRE_LEFT = (pygame.K_LEFT, pygame.K_q, pygame.K_a, pygame.K_PAGEUP)        # (a controller's L: PAGEUP, gamepad.py)
+    CLAIRE_RIGHT = (pygame.K_RIGHT, pygame.K_e, pygame.K_d, pygame.K_PAGEDOWN)    # (and its R: PAGEDOWN)
+
+    def _claire_ready(self):
+        action = self.session.pending
+        return (action is not None and action.name == 'claire_round' and not self.menu_open and not self.error
+                and self.host_prompt is None and self.claire_round_renderer.view is not None)
+
+    def _claire_sounds(self, renderer):
+        """Play the sounds the round's renderer queued (Classic's, from chcrounds)."""
+        due, renderer.sounds = renderer.sounds, []
+        if not self.sound_enabled:
+            return
+        library = self.session.resources.library
+        for name in dict.fromkeys(due):
+            resource = renderer.sound_resource(name)
+            if resource is None:
+                continue
+            try:
+                self._sound(('claire', name), lambda r=resource: library.addon_resource('chcrounds', r)).play()
+            except (ContentError, pygame.error, TypeError) as error:
+                logging.warning('Sound %s cannot be played: %s', name, error)
+
+    def _claire_point(self, pos):
+        """Window point `pos` on the round's canvas (the whole frame: fills_frame)."""
+        renderer, frame = self.claire_round_renderer, self.bg_viewport
+        width, height = renderer.canvas.get_size()
+        return (pos[0] - frame.x) * width / frame.width, (pos[1] - frame.y) * height / frame.height
+
+    def _claire_pointer(self, event):
+        """Taps, drags (panning once a press moves 5 points), the wheel (zoom), and the edge arrows (hovered with a mouse,
+        held with a finger) on a Claire Hart round."""
+        renderer, game = self.claire_round_renderer, self.session.engine.claire_round
+        if renderer.canvas is None or renderer.view is None or game is None:
+            return True
+        if event.type == pygame.MOUSEWHEEL:
+            x, y = self._claire_point(pygame.mouse.get_pos())
+            renderer.view.zoom_at(0.05 if event.y > 0 else -0.05, x, y)
+            return True
+        x, y = self._claire_point(event.pos)
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button != 1:
+                return True
+            meaning = renderer.hit(game, x, y)
+            if meaning and meaning[0] == 'arrow':
+                renderer.held, renderer.drag = meaning[1], None
+            else:
+                renderer.drag = ((x, y), (x, y), False)
+                renderer.pressed = 'continue' if meaning == ('continue',) else None
+            return True
+        if event.type == pygame.MOUSEMOTION:
+            if renderer.drag is not None and event.buttons[0]:
+                start, last, moving = renderer.drag
+                if moving or abs(x - start[0]) > 10 or abs(y - start[1]) > 10:
+                    renderer.view.pan(x - last[0], y - last[1])
+                    renderer.drag = (start, (x, y), True)
+                return True
+            if not event.buttons[0]:
+                over = [side for side, rect in zip((-1, 1), renderer.arrows()) if rect.collidepoint(x, y)]
+                renderer.held = over[0] if over else 0
+            return True
+        if event.button != 1:
+            return True
+        drag, renderer.drag, renderer.pressed = renderer.drag, None, None
+        renderer.held = 0
+        if drag is not None and drag[2]:
+            return True                                 # (a pan, not a tap)
+        meaning = renderer.hit(game, x, y)
+        if not meaning:
+            return True
+        kind = meaning[0]
+        if kind == 'scene':
+            self._attempt(lambda: self.session.claire_tap(meaning[1]))
+        elif kind == 'hint':
+            self._attempt(lambda: self.session.claire_use('hint'))
+        elif kind == 'powerup':
+            renderer.sounds.append(CLAIRE_BUTTON)
+            self._attempt(lambda: self.session.claire_use(meaning[1]))
+        elif kind == 'label' and game.locating:
+            self._attempt(lambda: self.session.claire_pick(meaning[1]))
+        elif kind == 'continue':
+            renderer.sounds.append(CLAIRE_BUTTON)
+            self._attempt(self.session.claire_continue)
+        elif kind == 'menu':
+            renderer.sounds.append(CLAIRE_BUTTON)
+            self.command(('menu',))
+        return True
+
+    def _claire_key(self, event):
+        """The arrows, Q / E (A / D) and a controller's L / R pan while held; OK goes on from the Level Summary."""
+        if not self._claire_ready():
+            return False
+        renderer, game = self.claire_round_renderer, self.session.engine.claire_round
+        if event.key in self.CLAIRE_LEFT:
+            renderer.held = -1
+            return True
+        if event.key in self.CLAIRE_RIGHT:
+            renderer.held = 1
+            return True
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE) and game is not None and game.over:
+            renderer.sounds.append(CLAIRE_BUTTON)
+            self._attempt(self.session.claire_continue)
+            return True
+        return False
+
+    def _claire_key_up(self, event):
+        renderer = getattr(self, 'claire_round_renderer', None)
+        if renderer is not None and event.key in self.CLAIRE_LEFT + self.CLAIRE_RIGHT:
+            renderer.held = 0
 
     def _resolve_x360_puzzle(self, action, index):
         """The jewel puzzle's skip prompt: Skip goes straight on, Play plays it."""
@@ -1851,7 +1978,7 @@ class Desktop:
                      getattr(self, 'shs11_memory_renderer', None), getattr(self, 'shs11_reflex_renderer', None),
                      getattr(self, 'x360_slot_renderer', None), getattr(self, 'x360_leash_renderer', None),
                      getattr(self, 'x360_puzzle_renderer', None), getattr(self, 'x360_diss_renderer', None),
-                     getattr(self, 'x360_battle_renderer', None)):
+                     getattr(self, 'x360_battle_renderer', None), getattr(self, 'claire_round_renderer', None)):
             if card is not None:
                 card.frame_units = (width, tall)        # drawn over the whole frame, its shape (desktop_title)
         scale = STORY_SCALE * FRAME_UNITS[0] / width
@@ -2122,14 +2249,15 @@ class Desktop:
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Cutscene rendering stopped: %s', error)
-        if (action and action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle', 'shs11_memory', 'shs11_reflex', 'brew_catch') and not ask and not closed
+        if (action and action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'claire_round') and not ask and not closed
                 and not self.error):
             try:
                 engine = self.session.engine
                 renderer = {'x360_leash': self.x360_leash_renderer, 'x360_puzzle': self.x360_puzzle_renderer,
                             'x360_slot': self.x360_slot_renderer, 'x360_diss': self.x360_diss_renderer,
                             'x360_battle': self.x360_battle_renderer, 'brew_catch': self.brew_catch_renderer,
-                            'shs11_memory': self.shs11_renderer(action), 'shs11_reflex': self.shs11_renderer(action)}[action.name]
+                            'shs11_memory': self.shs11_renderer(action), 'shs11_reflex': self.shs11_renderer(action),
+                            'claire_round': self.claire_round_renderer}[action.name]
                 if action.name in ('shs11_memory', 'shs11_reflex', 'x360_diss', 'x360_battle'):
                     self._warm_shs11_sounds(getattr(engine, action.name), action.name)
                 if action.name == 'x360_leash':
@@ -2149,6 +2277,14 @@ class Desktop:
                     self.story_lift = max(0., (tall - picture * (2 - screen / renderer.canvas.get_height())) / 2)
                 self.panel_alpha = renderer.alpha(getattr(engine, action.name))
                 # The Word Grid skin draws the whole frame, its background too: nothing goes under it.
+                if renderer is self.claire_round_renderer:
+                    # Claire Hart's round draws the whole frame, its own bottom bar too (menu button, list, wheel).
+                    self._claire_sounds(renderer)
+                    self.pending_background = self.edge_layer = None
+                    self.buttons = []
+                    self.scroll = self.max_scroll = 0
+                    self._present()
+                    return
                 self.pending_background = None if renderer is self.shs11_hd else self.dialogue_renderer.image(
                     action.details.get('background_id', engine.panel.background_id))     # (a grid names its own)
                 if self.pending_background is not None:
@@ -2517,6 +2653,7 @@ class Desktop:
         self._drop_portraits()
         self.dialogue_renderer.drop_translated_badges()
         self.brew_catch_renderer.drop_images()
+        self.claire_round_renderer.drop_images()
         self._frame_backdrop_cache = (None, {})          # both box colours' backdrops, as scaled so far
         self.badge_hd._tab_cache = None                  # a time badge on screen, with its icon
 
@@ -2540,6 +2677,7 @@ class Desktop:
         self._drop_portraits()
         self.dialogue_renderer.drop_translated_badges()
         self.brew_catch_renderer.drop_images()
+        self.claire_round_renderer.drop_images()
         self._frame_backdrop_cache = (None, {})
         self.badge_hd._tab_cache = None
 
@@ -4372,7 +4510,8 @@ class Desktop:
             event = self._portrait_game_event(event)
         if event.type == pygame.KEYUP:
             self._puzzle_key_up(event)
-        if event.type == pygame.KEYDOWN and (self._arena_key(event) or self._slot_key(event) or self._memory_key(event) or self._leash_key(event) or self._puzzle_key(event) or self._football_key(event) or self._grid_key(event)):
+            self._claire_key_up(event)
+        if event.type == pygame.KEYDOWN and (self._claire_key(event) or self._arena_key(event) or self._slot_key(event) or self._memory_key(event) or self._leash_key(event) or self._puzzle_key(event) or self._football_key(event) or self._grid_key(event)):
             return True
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             if self.menu_open:
@@ -4452,6 +4591,9 @@ class Desktop:
             if command is not None:
                 self.command(command)
             return True
+        if (action and action.name == 'claire_round' and not self.menu_open and not self.error and not asking
+                and event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL)):
+            return self._claire_pointer(event)
         if (action and action.name in ('x360_slot', 'x360_diss', 'x360_battle', 'brew_catch') and not self.menu_open and not self.error
                 and not asking and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
             x, y, height = self._game_point(event.pos, {'x360_slot': self.x360_slot_renderer,

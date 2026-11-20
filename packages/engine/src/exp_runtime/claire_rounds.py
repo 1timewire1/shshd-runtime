@@ -119,10 +119,12 @@ class ClaireRound:
     time_warp_can_end: bool = False
     over: bool = False
     finished: bool = False
+    title: str = ''                     # the scene's name on its plate ("Claire's Office"), as Classic's round names it
+    started: bool = False               # (the skip prompt is offered only before)
 
     # --- opening ----------------------------------------------------------------------------------------------------------
     @classmethod
-    def opened(cls, scene, names, story, random, powerups=ONCE_EACH):
+    def opened(cls, scene, names, story, random, powerups=ONCE_EACH, title=''):
         """A round of the scene whose objects are `names`, with the story objects `story` (their places in it) forced in:
         hogscene.selectObjectList, its shuffle drawn from the session's `random` so a reload picks the same."""
         count = len(names)
@@ -142,6 +144,7 @@ class ClaireRound:
                    else ONCE_EACH, sol, sol, slots=[NO_OBJECT] * min(AOL_SIZE, count), extra=[False] * min(AOL_SIZE, count))
         for _ in range(len(game.slots)):
             game._list_next()
+        game.title = title or scene
         return game
 
     def _list_next(self):
@@ -180,6 +183,8 @@ class ClaireRound:
         """`elapsed_ms` of play (none while the game is paused)."""
         if self.finished:
             return
+        if elapsed_ms > 0:
+            self.started = True
         if not self.over:
             self.elapsed_ms += elapsed_ms
         self.lock_ms = max(0, self.lock_ms - elapsed_ms)

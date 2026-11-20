@@ -38,7 +38,7 @@ class CreatorShs11(unittest.TestCase):
         # An SHSHD Runtime with the X360 games answers 201 but would stop at '11's services (219, 220) or the catch game's
         # (221): each asks its own (203, 204), as the translations do (owner, 2026-11-17).
         from exp_runtime.creator.compiler import MINIGAME_QUERIES
-        self.assertEqual(MINIGAME_QUERIES, {'': 201, 'x360_battle': 205, 'shs11': 203, 'brew_catch': 204})
+        self.assertEqual(MINIGAME_QUERIES, {'': 201, 'x360_battle': 205, 'shs11': 203, 'brew_catch': 204, 'claire_round': 207})
         program = compiled('shs11_memory')
         calls = [k for k, i in enumerate(program.instructions) if i.opcode == 0x1f and i.operand >> 8 == 70]
         self.assertEqual([program.instructions[k - 1].operand for k in calls], [203])

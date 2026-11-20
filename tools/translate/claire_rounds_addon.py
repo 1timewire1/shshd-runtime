@@ -157,7 +157,7 @@ def png(image):
 
 
 def rounds_table(mirror, scenes):
-    """{E-number: [[scene folder, [story object indices]], ...]} for every round, in order (claire_hart.Mirror.round_items:
+    """{E-number: [[scene folder, [story object indices], the scene's name], ...]} for every round, in order (claire_hart.Mirror.round_items:
     the story lists resolved, then to the scene's objects by their normal sprite)."""
     import claire_hart as ch
     table, unplaced = {}, []
@@ -180,7 +180,8 @@ def rounds_table(mirror, scenes):
                             unplaced.append((config['epid'], number, entry))
                     elif index not in story:
                         story.append(index)
-                rounds.append([folder, story])
+                name = config['hogConfig'][node['hogId']]['scene'].strip()
+                rounds.append([folder, story, ch.SCENE_NAMES.get(name, name)])     # (the plate's name, as Classic's)
             table[config['epid']] = rounds
     return table, unplaced
 
@@ -291,7 +292,7 @@ def build(mirror, out, *, only=None, workers=3, progress=print):
                     progress(f"{report['scenes']} scenes")
         spec['rounds'], unplaced = rounds_table(mirror, scenes)
         report['rounds'] = sum(len(r) for r in spec['rounds'].values())
-        report['story objects'] = sum(len(s) for r in spec['rounds'].values() for _, s in r)
+        report['story objects'] = sum(len(entry[1]) for r in spec['rounds'].values() for entry in r)
         report['story objects without a sprite'] = unplaced
         spec['balance'] = json.loads((mirror.root / GAMEBALANCE).read_text(encoding='utf-8'))
         rows = {}

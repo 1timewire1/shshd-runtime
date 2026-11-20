@@ -8,6 +8,7 @@ from .model import EMOTICONS, Node, ProjectError
 SHS_ONLY = frozenset(('football', 'grid', 'faceplace', 'faceplace_post', 'faceplace_link', 'tree', 'tree_node',
                       'tree_result', 'loading', 'survey', 'quest', 'journal_updated', 'start_calendar', 'calendar_back', 'schedule_event', 'cancel_event', 'set_clock', 'skip_ahead', 'run_due', 'call_scene', 'return_scene', 'nr_arena', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
                       'x360_battle', 'shs11_memory', 'shs11_reflex', 'brew_catch'))
+COD_ONLY = frozenset(('claire_round',))
 
 
 FIELDS = {
@@ -21,6 +22,7 @@ FIELDS = {
     'start_calendar': (), 'calendar_back': (), 'return_scene': (), 'nr_arena': ('character', 'next'),
     'word_game': ('text', 'character', 'next'), 'grid': ('next',), 'football': ('next',),
     'shs11_memory': ('character', 'next'), 'shs11_reflex': ('character', 'next'), 'brew_catch': ('next',),
+    'claire_round': ('next',),
     'flag': ('character', 'next'), 'speakers': ('next',), 'set_text': ('text', 'next'),
     'text_default': ('text', 'next'), 'expression_default': ('character', 'expression', 'next'),
     'character_art': ('character', 'asset', 'next'), 'character_name': ('character', 'text', 'next'),
@@ -133,6 +135,11 @@ NOTES = {
                     'its word (1 to 9 letters) on nine tiles to pick in order. Target above 0; result is 2 at 98% of it or '
                     'more, 1 above 75%, else 0. Drawn from the HD word game or the shs11 addon. The character is who it shows, '
                     'if anyone.',
+    'claire_round': "shshd-runtime only, Cause of Death only, behind minigames_available asking for \"claire_round\"; plays "
+                    "from the chcrounds add-on (optional: without it the query answers 0). Claire Hart Classic's hidden-object round "
+                    "params.round (its original episode's number x 10 + the round: E018's third is 183), as Classic plays it: 12 "
+                    "objects to find in its scene, the round's story objects among them, the hint and power-ups, then its Level "
+                    "Summary. Result: the round's total score (the story has one outcome).",
     'brew_catch': "shshd-runtime only, behind minigames_available; needs the shsbrew add-on. The BREW games' catch game: items fall "
                   '(kind angled: at `angle` degrees with `chance` percent of them; sideways: from the left with `chance` percent; '
                   'orbit: round a circle `spread` wide) every interval_ms at `speed`, and the player moves to catch them. Each item '
@@ -183,7 +190,7 @@ def value_schema(value):
 
 def node_schema(kind=None):
     if kind is None:
-        return dict(kinds=[dict(kind=k, title=v, games=['shs'] if k in SHS_ONLY else ['shs', 'cod'])
+        return dict(kinds=[dict(kind=k, title=v, games=['cod'] if k in COD_ONLY else ['shs'] if k in SHS_ONLY else ['shs', 'cod'])
                            for k, v in NAMES.items()],
                     languages=['en', 'fr', 'it', 'de', 'es'],
                     expressions='Integers, variables, + - * // %, comparisons, and/or/not; signed 16-bit arithmetic. '
@@ -234,7 +241,7 @@ def node_schema(kind=None):
         example['options'] = [dict(text='Help', target='help'), dict(text='Leave', target='end')]
     if kind == 'relationship': example['character'] = 'friend'
     if kind == 'background': example['asset'] = 26000
-    return dict(kind=kind, title=NAMES[kind], games=['shs'] if kind in SHS_ONLY else ['shs', 'cod'],
+    return dict(kind=kind, title=NAMES[kind], games=['cod'] if kind in COD_ONLY else ['shs'] if kind in SHS_ONLY else ['shs', 'cod'],
                 schema=dict(type='object', properties=properties, required=['id', 'kind'], additionalProperties=False),
                 notes=NOTES.get(kind, 'Uses the shared native compiler and host-service contract.'), example=example,
                 compatibility='native_format',

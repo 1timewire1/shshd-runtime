@@ -16,7 +16,7 @@ NAMES = dict(dialogue='Dialogue', choice='Choice', background='Background', set=
              cancel_event='Cancel event', set_clock='Set the clock', skip_ahead='Skip ahead', run_due='Run due events',
              call_scene='Run a scene and come back', return_scene='Return', nr_arena='New Rules minigame',
              minigames_available='Real minigames?', cutscene_available='Cutscenes?', cutscene='Storyboard cutscene', x360_slot='X360 slot machine', x360_leash='X360 leash game', x360_puzzle='X360 jewel puzzle', x360_diss='X360 Diss Practice', x360_battle='X360 Diss Battle', word_game='Timed word choices', football='Football (SHS)',
-             grid='Word / picture grid (SHS)', shs11_memory="Memory (SHS '11)", shs11_reflex="Reflex (SHS '11)", brew_catch='Catch game (BREW)', scene='Scene link',
+             grid='Word / picture grid (SHS)', shs11_memory="Memory (SHS '11)", shs11_reflex="Reflex (SHS '11)", brew_catch='Catch game (BREW)', claire_round='Hidden-object round (Claire Hart)', scene='Scene link',
              flag='Property flag', speakers='Player / narrator', set_text='Set text', text_default='Text default',
              expression_default='Default expression', character_art='Character art', character_name='Rename character',
              picker='Choose a look', vibrate='Vibrate',
@@ -100,6 +100,9 @@ DEFAULTS = {
     'brew_catch': {'kind': 'angled', 'target': 45, 'interval_ms': 520, 'speed': 330, 'spread': 50, 'chance': 65, 'angle': 40,
                    'player': 109, 'items': [{'value': 3, 'picture': 149, 'count': 25}, {'value': -3, 'picture': 156, 'count': 15}],
                    'sizes': {}, 'result': 'catch_score'},
+    # shshd-runtime: Claire Hart Classic's hidden-object round (ENGINE_ABI.md 5.6c), by its key: the original episode's number
+    # x 10 + the round, which the chcrounds add-on has (E001's first: 11). Its result is the round's score.
+    'claire_round': {'round': 11, 'result': 'round_score'},
     'scene': {},
     'flag': {'owner': 0, 'key': 400, 'bit': 0, 'value': True},
     'speakers': {'player': '', 'narrator': ''},
@@ -112,7 +115,7 @@ DEFAULTS = {
     'open_url': {'url': ''}, 'story_object': {'title': '', 'clear': False}, 'survey': {'poll_id': 1001, 'answers': ['rating'], 'results': []},
     'end': {}, 'native': {},
 }
-INPUT_GATES = frozenset(('dialogue', 'choice', 'input', 'title', 'message', 'word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'picker'))
+INPUT_GATES = frozenset(('dialogue', 'choice', 'input', 'title', 'message', 'word_game', 'football', 'grid', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'claire_round', 'picker'))
 
 
 def parameters(node):
