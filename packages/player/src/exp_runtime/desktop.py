@@ -55,7 +55,7 @@ from .x360_diss import (ROUND_BACKGROUNDS as X360_ROUND_BACKGROUNDS, ROUND_EPISO
                         SOUND_GOOD as X360_SOUND_GOOD, SOUND_REMIX as X360_SOUND_REMIX)
 from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, GRID_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
-from .desktop_pause_hd import (ASPECT_NAMES, CH_DIALOGUE_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE, LANGUAGE_NAMES,
+from .desktop_pause_hd import (ASPECT_NAMES, CH_DIALOGUE_NAMES, CLAIRE_POWERUPS_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE, LANGUAGE_NAMES,
                                focus_step, place_controls)
 from . import backdrop_fit, frame_shape
 from .desktop_hd_menu import HdMenuWindows
@@ -392,6 +392,7 @@ class Desktop:
     ch_backdrop = True              # ...and its "Backdrop", in place of SHS HD's collage (_window_backdrop)
     dim_backdrops = True            # Claire Hart's translations: the "Dim Backdrops" switch (backdrop_dim)
     _ch_dialogue = 'cases'          # Claire Hart Dialogue: Off, Claire Hart Cases or All Episodes (set_ch_dialogue)
+    _claire_powerups = 'once'       # Claire Hart's rounds' Power-Ups: Once Each Round, Unlimited or Off
     _arena_minigames = True         # translated episodes: the "Use Translated Mini-Games" switch (arena_minigames)
     x360_tutorial = None            # a tutorial taken in the X360 look: the game's music request it began under
     arena_skin = False              # ...drawn in the X360 prototype's look: the "Use X360 Arena Skin" switch (x360_arena_switch)
@@ -1544,6 +1545,28 @@ class Desktop:
             self.command(('menu',))
         return True
 
+    def claire_pinch_start(self, centre):
+        """Two fingers landing on a Claire Hart round (the Android host's pinch): (its zoom then, the scene point between
+        them), or None when no round is being played."""
+        if not self._claire_ready():
+            return None
+        view = self.claire_round_renderer.view
+        self.claire_round_renderer.drag = None
+        return view.zoom, view.to_scene(*self._claire_point(centre))
+
+    def claire_pinch(self, start, factor, centre):
+        """The fingers `factor` times as far apart as they began: touchdetector's 1x to 2x, the scene point that was between
+        them kept there."""
+        if not self._claire_ready() or start is None:
+            return
+        zoom, (sx, sy) = start
+        view = self.claire_round_renderer.view
+        view.zoom = max(1.0, min(2.0, zoom * factor))
+        x, y = self._claire_point(centre)
+        view.cx += sx - view.to_scene(x, y)[0]
+        view.cy += sy - view.to_scene(x, y)[1]
+        view.clamp()
+
     def _claire_key(self, event):
         """The arrows, Q / E (A / D) and a controller's L / R pan while held; OK goes on from the Level Summary."""
         if not self._claire_ready():
@@ -2577,6 +2600,32 @@ class Desktop:
         renderer = self.__dict__.get('dialogue_renderer')
         if renderer is not None:
             renderer.cached_key = renderer._rest_drawn = None
+
+    @property
+    def claire_powerups(self):
+        return self._claire_powerups
+
+    @claire_powerups.setter
+    def claire_powerups(self, value):
+        """The Power-Ups setting, kept by the library too (a round opened next takes it); a round being played takes it at
+        once."""
+        from .claire_rounds import POWERUP_MODES
+        self._claire_powerups = value if value in POWERUP_MODES else 'once'
+        session = self.__dict__.get('_session')
+        library = getattr(getattr(session, 'resources', None), 'library', None)
+        if library is not None:
+            library.claire_powerups = self._claire_powerups
+        engine = getattr(session, 'engine', None)
+        if engine is not None:
+            engine.claire_powerups = self._claire_powerups
+            if engine.claire_round is not None:
+                engine.claire_round.powerups = self._claire_powerups
+
+    def claire_powerups_switch(self):
+        """Whether this is a Claire Hart case and the library holds its rounds (chcrounds)."""
+        library = getattr(self.session.resources, 'library', None)
+        return (pack_setting(self.session.resources, 'TRANSLATED_MINIGAMES') is not None and game_id(self.session.resources) == 'cod'
+                and any(a.get('addon') == 'chcrounds' for a in getattr(library, 'addons', None) or ()))
 
     def ch_dialogue_switch(self):
         """Whether the game's add-on carries Claire Hart Dialogue (the profile's DIALOGUE_SKIN) in this library."""
@@ -3998,6 +4047,8 @@ class Desktop:
                     **(dict(ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop) if self.ch_switch() else {}),
                     **({'dim_backdrops': self.dim_backdrops} if self.dim_switch() else {}),
                     **({'ch_dialogue': CH_DIALOGUE_NAMES[self.ch_dialogue]} if self.ch_dialogue_switch() else {}),
+                    **({'claire_powerups': CLAIRE_POWERUPS_NAMES[self.claire_powerups]}
+                       if getattr(self, 'claire_powerups_switch', None) and self.claire_powerups_switch() else {}),
                     **({'arena_minigames': self.arena_minigames} if self.minigames_switch() else {}),
                     **({'arena_skin': self.arena_skin} if self.hires_switch() and self.x360_arena_switch() else {}))
 
@@ -4181,6 +4232,17 @@ class Desktop:
             if self.on_settings:
                 self.on_settings()
             self.pause_hd.back()
+            self._menu_sound()
+            return
+        if kind == 'pause_cycle' and command[1] == 'claire_powerups':
+            # Add-Ons' Power-Ups (Claire Hart's rounds), picked on its choice page (or stepped to the next); the app keeps it.
+            choices = list(CLAIRE_POWERUPS_NAMES)
+            self.claire_powerups = (command[2] if len(command) > 2
+                                    else choices[(choices.index(self.claire_powerups) + 1) % len(choices)])
+            if self.on_settings:
+                self.on_settings()
+            if len(command) > 2:
+                self.pause_hd.back()
             self._menu_sound()
             return
         if kind == 'pause_cycle' and command[1] == 'ch_dialogue':

@@ -62,6 +62,16 @@
   scenes' backdrops with each one's 3:4 slice (at Cause of Death's own cut of it, else centred), the 33 tracks as MP3, the
   645 story-object pictures, the Title Screen Look and jingle, and Claire Hart Dialogue, used by a case or not, beside
   chslim revision 1's pictures under their IDs. Review sheets: `reference/screenshots/verify/claire_hart/chc_rev1_*.png`.
+- **Claire Hart Classic's hidden-object rounds, played for real** (Claire Hart plan Stage 3; `claire-hart` branch;
+  [ENGINE_ABI.md](docs/ENGINE_ABI.md#56c-claire-harts-hidden-object-rounds-shshd-runtime-service-226)): with the optional
+  `chcrounds` add-on and Use Translated Mini-Games on, each case's rounds are Classic's own: 12 objects to find in the scene, six
+  names at a time, the clue items the next chapter reads among them, the combo, the misclick lock, the free hint and the four
+  power-ups, then the Level Summary, in Classic's own art, sounds and effects. The round fills the frame at any shape to 9:21;
+  drag, the edge arrows (hover or hold), the arrow keys, Q / E or a controller's L / R pan it, and the wheel or a pinch zooms it.
+  A new **Power-Ups** setting (Add-Ons' Per-Game Settings and the pause menu, CH tag): Once Each Round (the default),
+  Unlimited or Off. A save mid-round resumes it exactly; Ask to Skip offers Skip or Play. Without the add-on, the round is the
+  case's line naming the place searched, as before. `claire_hart.py rounds` builds the add-on (1.1 GB) from the player's own
+  Claire Hart files.
 - **Claire Hart Classic's cases as Cause of Death episodes** (Claire Hart plan Stage 2; `claire-hart` branch):
   `claire_hart.py build` turns each case into one translated episode (pack 31500, the case's place × 10, requiring
   `chc`): a title card per original episode over the scene its store picture shows, every line with its speaker's look

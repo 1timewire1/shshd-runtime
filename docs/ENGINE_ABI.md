@@ -704,6 +704,23 @@ A story asks **70 selector 206** (`STORY_OBJECT_QUERY`) first. Cause of Death's 
 exp-runtime and this player's SHS answer 0, and the story shows a message naming the item instead (the Creator's **Story object
 picture** node compiles both ways).
 
+## 5.6c Claire Hart's hidden-object rounds (shshd-runtime service 226)
+
+Service **226** (`key`) plays Claire Hart Classic's hidden-object round `key`: its original episode's number × 10 + the round
+(`claire_round_services.round_key`: E018's third is 183), from the optional `chcrounds` add-on, whose spec at 26000 names the
+round's scene, its objects and its story objects (the session's `claire_round_source`; reference/Other Games/docs/
+CLAIRE_HART_ROUNDS_PLAN.md). Its rules are build 157's (`claire_rounds.ClaireRound`: 12 objects to find, 6 listed at a time, the
+round's story objects among them and listed first, the combo, misclicks and the spam lock, the timer, the bonuses and stars, the
+free hint and the four power-ups under the **Power-Ups** setting). The player draws it over the whole frame
+(`desktop_claire_round.py`) and hands in what a tap hits; the round ends on its Level Summary, whose Continue completes the call
+with the round's total score (`Session.claire_continue`). The story reads no result: Ask to Skip's Skip completes it with 0. Saves
+keep the round whole, so a save mid-round resumes it exactly (save version 44). A key the add-on hasn't stops as an unhandled
+yield.
+
+A story asks **70 selector 207** (`CLAIRE_ROUNDS_QUERY`) first. Cause of Death's dispatcher answers 1 where `chcrounds` is in the
+library and Use Translated Mini-Games is on; native players, upstream exp-runtime and this player's SHS answer 0, and the story
+takes its other path (the translated cases' stand-in line naming the place searched and what was found).
+
 ## 5.7 The BREW packs' text and menus
 
 In the BREW translations (profile `TRANSLATED_ARTICLE_PACKS`, `TRANSLATED_BREW_MENU_PACKS`, `TRANSLATED_THREE_WORD_PACKS`), and

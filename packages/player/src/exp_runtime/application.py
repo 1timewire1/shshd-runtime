@@ -1287,6 +1287,18 @@ class Application:
         entry = getattr(GAMES.get(self.library.game_id), 'DIALOGUE_SKIN', None) if self.library else None
         return entry is not None and hasattr(self.library, 'addon_has') and self.library.addon_has(entry[0], entry[1])
 
+    @library_answer
+    def claire_powerups_offered(self):
+        """Whether the library holds Claire Hart's rounds (chcrounds), whose power-ups the Power-Ups setting rules."""
+        return self.library is not None and any(a.get('addon') == 'chcrounds' for a in getattr(self.library, 'addons', ()))
+
+    def apply_claire_powerups(self):
+        """The Power-Ups setting reaches the library (a round opened next) and a paused episode (its round now)."""
+        if self.library is not None:
+            self.library.claire_powerups = self.state.claire_powerups
+        if self.game:
+            self.game.claire_powerups = self.state.claire_powerups
+
     def apply_ch_dialogue(self):
         """Claire Hart Dialogue reaches the library (content.EpisodeResources.dialogue_skin) and a paused episode."""
         if self.library is not None:
@@ -1628,6 +1640,7 @@ class Application:
         library.hires_portraits = state.hires_portraits
         library.ms3_characters = state.ms3_characters
         library.ch_dialogue = getattr(state, 'ch_dialogue', 'cases')
+        library.claire_powerups = getattr(state, 'claire_powerups', 'once')
         library.java_look = state.java_look
         library.brew_08_backgrounds = state.brew_08_backgrounds
         library.hollywood_art = state.hollywood_art
@@ -2423,6 +2436,7 @@ class Application:
         self.game.ch_portraits, self.game.ch_backdrop = self.state.ch_portraits, self.state.ch_backdrop
         self.game.dim_backdrops = self.state.dim_backdrops
         self.game.ch_dialogue = self.state.ch_dialogue
+        self.game.claire_powerups = getattr(self.state, 'claire_powerups', 'once')
         self.game.arena_minigames = self.state.arena_minigames
         self.game.arena_skin = self.state.arena_skin
         # The app's lock (string 271: "complete Football Season") is Football Star's; another episode's own tree is never locked.
@@ -2545,6 +2559,7 @@ class Application:
         self.state.ch_portraits, self.state.ch_backdrop = self.game.ch_portraits, self.game.ch_backdrop
         self.state.dim_backdrops = self.game.dim_backdrops
         self.state.ch_dialogue = self.game.ch_dialogue
+        self.state.claire_powerups = getattr(self.game, 'claire_powerups', 'once')
         self.state.arena_minigames = self.game.arena_minigames
         self.state.arena_skin = self.game.arena_skin
         self.state.music_volume = round(self.game.music_volume * 100)

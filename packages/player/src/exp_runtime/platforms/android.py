@@ -437,6 +437,7 @@ class Host:
             self.pinch = None
             if not fingers:
                 self.pinching = self.pinch_tree = False
+                self.pinch_round = None
             if panels is not None:
                 panels.tree_pinching = False    # (the tree is painted in full again: SidePanels.draw_tree)
             return
@@ -452,6 +453,16 @@ class Host:
                                and panels.tree_rect.collidepoint(centre))
             if self.pinch_tree:
                 logging.info('Pinch on the story tree at %s', centre)
+            # shshd-runtime: else, on a Claire Hart round, the scene zooms (Desktop.claire_pinch_start).
+            self.pinch_round = (None if self.pinch_tree or game is None or not hasattr(game, 'claire_pinch_start')
+                                else game.claire_pinch_start(centre))
+        if getattr(self, 'pinch_round', None) is not None and not self.pinch_tree:
+            if self.pinch is None:
+                if span > 0:
+                    self.pinch = (span, None)
+                return
+            game.claire_pinch(self.pinch_round, span / self.pinch[0], centre)
+            return
         if not self.pinch_tree or panels is None or panels.tree_rect is None:
             return
         if self.pinch is None:

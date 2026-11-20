@@ -821,6 +821,8 @@ class Commands:
                 self.app.apply_dsi()
             if key == 'ch_dialogue':
                 self.app.apply_ch_dialogue()
+            if key == 'claire_powerups':
+                self.app.apply_claire_powerups()
             return dict(ok=True, key=key, value=getattr(state, key))
         if key == 'start_in':
             # General's Start In (settings.json, the app's own): auto, games, shs or cod.

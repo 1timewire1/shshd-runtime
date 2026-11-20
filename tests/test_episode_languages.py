@@ -148,7 +148,7 @@ class PlayerTests(unittest.TestCase):
                          ['off', 'off', 'it', 'off', 'off'])
         self.assertEqual((CHOICE_NAMES['preferred_language'], CHOICE_PARENTS['preferred_language']),
                          (LANGUAGE_NAMES, 'options:general'))
-        self.assertEqual(PER_GAME_CHOICES, ('ch_dialogue',))                    # DSi Backgrounds is Extras' now
+        self.assertEqual(PER_GAME_CHOICES, ('ch_dialogue', 'claire_powerups'))                    # DSi Backgrounds is Extras' now
 
 
 class TranslatorTests(unittest.TestCase):

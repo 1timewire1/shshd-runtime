@@ -362,6 +362,9 @@ class HdShell:
         if self.app.ch_dialogue_offered():
             from .desktop_pause_hd import CH_DIALOGUE_NAMES
             settings['ch_dialogue'] = CH_DIALOGUE_NAMES[state.ch_dialogue]
+        if self.app.claire_powerups_offered():
+            from .desktop_pause_hd import CLAIRE_POWERUPS_NAMES
+            settings['claire_powerups'] = CLAIRE_POWERUPS_NAMES[state.claire_powerups]
         if self.app.minigames_offered():
             settings['arena_minigames'] = state.arena_minigames
         settings['skip_ahead'] = state.skip_ahead
@@ -480,6 +483,10 @@ class HdShell:
             state.ch_dialogue = value
             self.app._attempt(state.persist)
             self.app.apply_ch_dialogue()
+        elif key == 'claire_powerups':
+            state.claire_powerups = value
+            self.app._attempt(state.persist)
+            self.app.apply_claire_powerups()
         elif key == 'title_look':
             state.title_look = value                    # (the menu's art follows it at once: HdUi.look_source)
             self.app._attempt(state.persist)

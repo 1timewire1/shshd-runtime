@@ -27,6 +27,10 @@ SEGMENT_SCALE = 0.576
 SEGMENTS = {cr.CLAIRVOYANCE: ('extraobjs', (690, 6)), cr.FOCUS: ('zoom', (755, 6)), cr.TIME_WARP: ('time', (662, 37)),
             cr.LOCATOR: ('clicks', (661, 91))}      # on the bottom bar, its top left
 ORB_CENTRE, ORB_DIAMETER = (749.5, 95.5), 87
+# Where each segment's uses left show, as fractions of its picture (UI-FULL's "10"s: by the eye, the frame, the stopwatch, the
+# crosshair).
+COUNT_AT = {cr.CLAIRVOYANCE: (0.22, 0.35), cr.FOCUS: (0.30, 0.22), cr.TIME_WARP: (0.22, 0.72), cr.LOCATOR: (0.18, 0.72)}
+ORB_TINT = (120, 255, 150, 255)             # the fill's pink smoke made Classic's green
 LIST_CENTRE = (382, 89)                    # the six names' node, from the bottom bar's top
 LABELS = ((-175, 5), (-175, -15), (0, 5), (0, -15), (175, 17), (175, -3))      # activeobjectlist.labelPositions (y up)
 FOUND_LINE = (287, 51)
@@ -194,7 +198,7 @@ class ClaireRoundRenderer:
     # -- geometry -------------------------------------------------------------------------------------------------------------
     def canvas_size(self):
         wide, tall = self.frame_units
-        return 768, max(1024, round(768 * tall / wide))
+        return 768, round(768 * tall / wide)        # (the frame's own shape: 3:4 to 9:21, a little wider on a desktop)
 
     @property
     def k(self):
@@ -228,10 +232,20 @@ class ClaireRoundRenderer:
         r = ORB_DIAMETER * self.k / 2
         return pygame.Rect(round(cx - r), round(cy - r), round(2 * r), round(2 * r))
 
+    def segment(self, name):
+        """A wheel segment's own picture: chcrounds holds each whole (Classic's 303 x 235 canvas, the segment inside it), and
+        SEGMENTS places what it shows."""
+        key = ('segment', name)
+        found = self._images.get(key)
+        if found is None:
+            whole = self.hud(name)
+            found = self._images[key] = whole.subsurface(whole.get_bounding_rect()).copy()
+        return found
+
     def segment_rects(self):
         out = {}
         for powerup, (name, (x, y)) in SEGMENTS.items():
-            piece = self.hud(name)
+            piece = self.segment(name)
             w, h = piece.get_width() * SEGMENT_SCALE * self.k, piece.get_height() * SEGMENT_SCALE * self.k
             px, py = self.design(x, y, bottom=True)
             out[powerup] = pygame.Rect(round(px), round(py), round(w), round(h))
@@ -401,7 +415,7 @@ class ClaireRoundRenderer:
         k = self.k
         for powerup, rect in self.segment_rects().items():
             name = SEGMENTS[powerup][0]
-            piece = self.scaled(self.hud(name), SEGMENT_SCALE * k)
+            piece = self.scaled(self.segment(name), SEGMENT_SCALE * k)
             usable = game.can_use(powerup)
             if not usable:
                 piece = piece.copy()
@@ -409,7 +423,9 @@ class ClaireRoundRenderer:
             self.canvas.blit(piece, rect.topleft)
             left = game.uses_left(powerup)
             if left:
-                self.text(str(left), True, 13, VALUE_TEXT, (rect.x + 14 * k, rect.bottom - 12 * k), outline=(60, 40, 0))
+                fx, fy = COUNT_AT[powerup]
+                self.text(str(left), True, 13, VALUE_TEXT, (rect.x + fx * rect.width, rect.y + fy * rect.height),
+                          outline=(60, 40, 0))
         orb = self.orb_rect()
         back = self.scaled(self.hud('hint_empty_back'), orb.width / 84)
         self.canvas.blit(back, back.get_rect(center=orb.center))
@@ -420,12 +436,21 @@ class ClaireRoundRenderer:
             fill_frame = round((1 - game.hint_refill_ms / cr.HINT_REFILL_MS) * (count - 1))
         else:
             fill_frame = 0
-        fill = self.frame('vfx_HintFill', fill_frame)
-        fill = self.scaled(fill, orb.width / 104)
+        fill = self.scaled(self.green_fill(fill_frame), orb.width / 104)
         self.canvas.blit(fill, fill.get_rect(center=orb.center))
         glass = self.scaled(self.hud('hint_glass_reflection'), orb.width / 84)
         self.canvas.blit(glass, glass.get_rect(center=orb.center))
         self.text('HINT', True, 22, (226, 255, 200) if game.hint_ready else (150, 170, 150), orb.center, outline=(20, 110, 40))
+
+    def green_fill(self, number):
+        """The orb's fill: vfx_HintFill's frames are pink smoke, which Classic tints green (its orb is green glass, UI-FULL)."""
+        key = ('green fill', number)
+        found = self._images.get(key)
+        if found is None:
+            found = self.frame('vfx_HintFill', number).copy()
+            found.fill(ORB_TINT, special_flags=pygame.BLEND_RGBA_MULT)
+            self._images[key] = found
+        return found
 
     def draw_arrows(self):
         for side, rect in enumerate(self.arrows()):
