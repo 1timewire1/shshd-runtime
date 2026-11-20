@@ -83,6 +83,29 @@ class SkinTabTests(unittest.TestCase):
         self.assertEqual((box.y, box.width), (300, 260))                # its top edge is in place from then on
         self.assertLess(box.height, 70)
 
+    def test_text_wraps_around_the_ring_on_either_side(self):
+        """Owner, 2026-11-20: the skin's ring is whole over the box, so each line clears its circle (a third line ran
+        under it with CoD's two fixed insets); a narrator's ring is smaller (SKIN_NARRATION_RING) and its text with it."""
+        import math
+        from exp_runtime import dialogue
+        from exp_runtime.fonts import TextStyle
+        style, rect = TextStyle(11, 10), Rect(37, 304, 246, 80)
+        x0, y0 = 37 - dialogue.COD_TYPING_PAD, 304 - dialogue.COD_TYPING_PAD + dialogue.COD_BASELINE_DROP
+        for mode, portrait in ((1, Rect(-7, 225, 128, 128)), (2, Rect(199, 225, 128, 128))):
+            insets = dialogue.skin_ring_insets(portrait, mode, rect, style, True)
+            cx, cy = portrait.x + 64, portrait.y + 64
+            for row, inset in enumerate(insets[:4]):
+                top, bottom = y0 + 21 * row, y0 + 21 * row + 11
+                # the line's end on the ring's side, against the circle at that row
+                edge = x0 + inset if mode == 1 else x0 + rect.width + inset
+                dy = 0 if top <= cy <= bottom else min(abs(top - cy), abs(bottom - cy))
+                reach = math.sqrt(max(0, 64 ** 2 - dy ** 2))
+                self.assertGreaterEqual(abs(edge - cx), reach if reach else 0, (mode, row))
+            self.assertNotEqual(insets[2], 0)                       # the third line clears the ring too
+            self.assertEqual(insets[4], 0)                          # below it, full width
+            narration = dialogue.skin_ring_insets(portrait, mode, rect, style, True, 64 * dialogue.SKIN_NARRATION_RING)
+            self.assertLess(abs(narration[2]), abs(insets[2]))
+
     def test_the_faces_are_romic_bold_and_narration_slanted(self):
         self.assertEqual((SKIN_BODY, SKIN_NAME, SKIN_NARRATION), ('CHRomicBold16', 'CHRomicBold18', 'CHRomicBoldItalic16'))
 

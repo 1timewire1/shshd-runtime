@@ -7,7 +7,7 @@ from .graphics import faded
 from . import graphics as pygame
 
 from .content import ContentError
-from .dialogue import BODY_FONT, DUET_RING_SCALE, NOTE_CODE
+from .dialogue import BODY_FONT, DUET_RING_SCALE, NOTE_CODE, SKIN_NARRATION_RING
 from .dialogue_animation import BOX_TRAVEL_MS
 
 REUSE_AT_REST = False                       # a phone keeps a settled line's layer (platforms/android.py): `_at_rest`
@@ -1490,6 +1490,8 @@ class DialogueRenderer:
         duet = session.dialogue_duet() if hasattr(session, 'dialogue_duet') else None
         theme = page.theme if page.theme is not None else details['theme']
         self.portrait_factor = DUET_RING_SCALE if duet is not None else 1
+        if self.skin is not None and self.skin.get('box') == 'narrator' and duet is None:
+            self.portrait_factor = SKIN_NARRATION_RING      # (Claire Hart Dialogue: a narrator's smaller ring)
         motion = session.engine.dialogue_animation
         if self._line is None or self._line[0] is not motion:
             self._leaving = self._line

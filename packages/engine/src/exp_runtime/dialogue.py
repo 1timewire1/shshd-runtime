@@ -80,6 +80,36 @@ STORY_OBJECT_ROOM = 270                 # the widest a narrator's box grows to h
 SKIN_BODY, SKIN_BOLD, SKIN_NAME = 'CHRomicBold16', 'CHRomicBold16', 'CHRomicBold18'
 # ...and narration slanted, as CoD's narration is italic (owner, 2026-11-19; Romic has no italic: vector_text.SKIN_SLANT).
 SKIN_NARRATION = 'CHRomicBoldItalic16'
+# The skin's ring is whole over the bubble (desktop_dialogue: no housing clip) and larger and darker than CoD's, so its
+# text wraps around the ring's own circle rather than CoD's two fixed insets: each line clears it by SKIN_RING_CLEAR
+# where the circle reaches into its row (owner, 2026-11-20: a third line ran under the ring).
+SKIN_RING_RADIUS = 64                   # the ring picture's 128 units, opaque to its edge, centred on the housing
+SKIN_RING_CLEAR = 4
+SKIN_RING_ROWS = 8
+# A narrator's ring is smaller, to tell narration from speech besides its missing name tab (owner, 2026-11-20); its
+# text wraps around it in turn, so narration keeps nearly CoD's own lines.
+SKIN_NARRATION_RING = 0.8
+
+
+def skin_ring_insets(portrait, mode, rect, style, cod, radius=SKIN_RING_RADIUS):
+    """Line insets (fonts.TextStyle.indents: positive from the left for a portrait on the left, mode 1; negative from the
+    right for one on the right) that keep each line of text laid at `rect` (layout 17's node 8, as CoD draws it: up and
+    left by COD_TYPING_PAD, down by COD_BASELINE_DROP) clear of a ring of SKIN_RING_RADIUS around the housing's centre."""
+    cx, cy = portrait.x + portrait.width / 2, portrait.y + portrait.height / 2
+    x0 = rect.x - (COD_TYPING_PAD if cod else 0)
+    y0 = rect.y - (COD_TYPING_PAD - COD_BASELINE_DROP if cod else 0)
+    pitch = int(style.height + style.gap) if cod else style.height + style.gap
+    insets = []
+    for row in range(SKIN_RING_ROWS):
+        top, bottom = y0 + row * pitch - 2, y0 + row * pitch + style.height + 4     # (its ink: caps to descenders)
+        dy = 0 if top <= cy <= bottom else min(abs(top - cy), abs(bottom - cy))
+        if dy >= radius:
+            insets.append(0)
+            continue
+        reach = math.sqrt(radius ** 2 - dy ** 2) + SKIN_RING_CLEAR
+        inset = cx + reach - x0 if mode == 1 else x0 + rect.width - (cx - reach)
+        insets.append(math.ceil(max(0, inset)) * (1 if mode == 1 else -1))
+    return tuple(insets)
 TITLE_JOINS = ('and', '&', ',')         # a two-speaker title's words that name no one ("Kay and Kel")
 
 
@@ -486,6 +516,10 @@ class DialogueLayout:
                 vector = getattr(font, 'source', None) is not None
                 insets = (80, 70, 0, 0) if cap_height is not None or vector else (85, 75, 0, 0)
                 body_style = replace(body_style, indents=insets if mode == 1 else tuple(-n for n in insets))
+                if skin:
+                    radius = SKIN_RING_RADIUS * (SKIN_NARRATION_RING if narration else 1)
+                    body_style = replace(body_style, indents=skin_ring_insets(portrait, mode, rect, body_style, cod,
+                                                                              radius))
             elif duet is not None:
                 # Both sides' insets: one indent narrows the line by both (fonts.layout_text takes one side), and the
                 # lines move back by the right one once laid out (_shift_lines).

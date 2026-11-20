@@ -52,7 +52,9 @@
   Review sheet: `reference/screenshots/verify/claire_hart/dialogue_skin_stand_in.png`. A new speaker's tab now comes in
   with the box's strip, ahead of the name (which had shown over the backdrop until the box finished growing), and the
   ring stays whole over the box instead of being cut square at its corner as the box finished opening (owner,
-  2026-11-20; `dialogue_entrance_before_after.png`).
+  2026-11-20; `dialogue_entrance_before_after.png`). The text wraps around the ring's own circle, so no line runs
+  under it, and a narrator's ring is 80% as large, telling narration from speech besides its missing tab (owner,
+  2026-11-20; `ring_options.png`, `ring_wrap_final.png`): about 5% more pages in the Claire Hart cases.
 - **Claire Hart Classic's reader and `chc` revision 1** (Claire Hart plan Stage 1; `claire-hart` branch):
   `tools/translate/claire_hart.py` reads Classic's cases (`report`; `ids` writes the E-number table) and writes the story
   add-on (`addon`, 454 MB): all 835 portraits folded into 185 looks of CoD's five expressions (the spec's look banks), the 787
