@@ -185,6 +185,20 @@ class ConverterTests(unittest.TestCase):
         self.assertEqual(claire_hart.round_line('Driveway', ['Broom', 'Car Keys', 'Map']),
                          'I searched the Driveway and found the Broom, the Car Keys and the Map.')   # the player's voice
         self.assertEqual(claire_hart.round_line('Driveway', []), 'I searched the Driveway.')
+        # the player's own place is theirs (owner, 2026-11-20); someone else's keeps its name
+        self.assertEqual(claire_hart.round_line("Claire's Office", [], 'Claire'), 'I searched my office.')
+        self.assertEqual(claire_hart.place("Troy's Apartment", 'Troy'), 'my apartment')
+        self.assertEqual(claire_hart.place("Troy's Apartment", 'Claire'), "Troy's Apartment")
+        self.assertEqual(claire_hart.place("Claire and Claudia's Room Night", 'Claire'), 'our room')
+        self.assertEqual(claire_hart.place("Farmer's Market 2"), "the Farmer's Market")     # a role's place takes "the"
+        self.assertEqual(claire_hart.place("Athletes' Village"), "the Athletes' Village")
+        self.assertEqual(claire_hart.place("Santa's Village"), "Santa's Village")
+        self.assertEqual(claire_hart.first_name('TroyHarris'), 'Troy')
+        self.assertEqual(claire_hart.first_name('Harper'), 'Harper')
+        # a one-word header of joined names gets its space; a two-word one keeps its "Mc"
+        self.assertEqual(claire_hart.plate_name('JillianGish'), 'Jillian Gish')
+        self.assertEqual(claire_hart.plate_name('Donald McAllister'), 'Donald McAllister')
+        self.assertEqual(claire_hart.plate_name('Troy'), 'Troy')
         self.assertEqual(claire_hart.item_title('Push_Broom_SO'), 'Push Broom')
         self.assertEqual(claire_hart.item_title('CarKeysSO'), 'Car Keys')
 
@@ -292,6 +306,52 @@ class ConverterTests(unittest.TestCase):
         self.assertEqual(slices, {26000: 224, 26001: 224})
         archive = ExpArchive(claire_hart.compiled(project, slices))
         self.assertEqual(decode(archive.read(RESOURCE)), slices)
+
+    def test_a_part_someone_else_plays_narrates_as_them(self):
+        """Owner, 2026-11-20 (Case 45): Troy's `..._Event` lines are narration with no name plate, the part's own
+        narration shows Troy (not Claire), a round in his apartment is "my apartment", and 'JillianGish' gets a space."""
+        import claire_hart
+        troy = {'default': f'{CH}TroyHarris/Avatar_Troy_Normal', 'Avatar_Troy_Event': f'{CH}TroyHarris/Avatar_Troy_Normal'}
+        gish = {'default': f'{CH}JillianGish/Avatar_JillianGish_Normal'}
+        chapter = {'backgrounds': {'Office': {'type': 'texture', 'resource': 'references/backgrounds/Office/hd/template'},
+                                   'HIDDEN OBJECT GAME 1': {'type': 'hogScene', 'scene': "Troy's Apartment",
+                                                            'storyobject': ['Nothing']}},
+                   'characters': {'Troy Harris': {'expressions': troy}, 'JillianGish': {'expressions': gish}},
+                   'music': {}, 'dialog objects': {}, 'textColors': {}, 'sounds': {}}
+
+        def line(header, body, expression=''):
+            return {'type': 'dialogText', 'header': header, 'body': body, 'expression': expression}
+        sequences = {
+            'main': {'nodes': [{'type': 'playSequence', 'sequenceId': 'SCENE 1_1'},
+                               {'type': 'playHOG', 'hogId': 'HIDDEN OBJECT GAME 1'},
+                               {'type': 'playSequence', 'sequenceId': 'SCENE 1_2'}]},
+            'SCENE 1_1': {'nodes': [{'type': 'stageBlockIntro', 'ref': 'Office'},
+                                    line('Troy Harris', "I'm Troy Harris, and I'm an investigator for the SFPD.",
+                                         'Avatar_Troy_Event'),
+                                    line('JillianGish', 'Detectives?'), line('Troy Harris', 'Nothing yet.')]},
+            'SCENE 1_2': {'nodes': [{'type': 'stageBlockIntro', 'ref': 'Office'}, line('', 'Where is Fleur?')]}}
+        config = dict(epid='E143', title='Into Thin Air', hogConfig={'HIDDEN OBJECT GAME 1': {'scene': "Troy's Apartment"}},
+                      sceneRefs={'SCENE 1_1': chapter, 'SCENE 1_2': dict(chapter, characters={})})
+        portraits = [f'{CH}ClaireHart/Avatar_Claire_Normal', f'{CH}TroyHarris/Avatar_Troy_Normal',
+                     f'{CH}JillianGish/Avatar_JillianGish_Normal']
+        root = mirror_at(self.temporary.name, portraits=portraits,
+                         cases={'case45': ({'case': 'CASE 45', 'index': 1, 'title': ''}, [(config, sequences)])},
+                         scenes={'Office': (1024, 768, []), 'TroysApartment': (1024, 768, [])})
+        cache = Path(self.temporary.name) / 'store.json'
+        cache.write_text(json.dumps({'E143': 'Office'}))
+        mirror = claire_hart.Mirror(root)
+        art = claire_hart.converter_art(mirror, cache)
+        (_, case, parts), = mirror.cases()
+        project, _, report = claire_hart.convert(mirror, art, case, parts)
+        names = {c.id: c.name for c in project.characters}
+        lines = [(names.get(n.character, ''), n.text) for n in project.nodes if n.kind == 'dialogue']
+        self.assertEqual(lines, [('', "I'm Troy Harris, and I'm an investigator for the SFPD."),
+                                 ('Jillian Gish', 'Detectives?'), ('Troy Harris', 'Nothing yet.'),
+                                 ('', 'I searched my apartment.'), ('', 'Where is Fleur?')])
+        narrators = [names[n.params['narrator']] for n in project.nodes if n.kind == 'speakers' and n.params['narrator']]
+        self.assertEqual(set(narrators), {'Troy'})                  # never Claire, in Troy's part
+        self.assertEqual(report['speaker lines as narration (Event looks)'], 1)
+        self.assertEqual(report['narration shown as the player'], 1)
 
 
 if __name__ == '__main__':

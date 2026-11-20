@@ -64,7 +64,10 @@
   check of Classic's decompiled story player. A new episode record, **backdrop slices** (resource 7,
   [SCHEMA.md](docs/SCHEMA.md#backdrop-slices-extension-shshd-runtime)), and the cod profile's `BACKDROP_SLICES` show a
   4:3 scene as its 3:4 slice filling the frame, the episode's own slice first, so moving one needs no new add-on.
-  Pilot: Case 1, Case 6, Case 45 and Christmas Special II, matching Classic line for line.
+  Pilot: Case 1, Case 6, Case 45 and Christmas Special II, matching Classic line for line. From the owner's play of it
+  (2026-11-20): the part's player (Claire, or Troy in his cases) is on the left and narrates, with their own portrait
+  and no name plate; a round line is in their voice ("I searched my office and found the Belt."); later parts drop the
+  repeated introduction, episodes their store sign-off; joined names get their space (Jillian Gish, Will Yu).
 - **Test channel: Sync Devices by command** (owner, 2026-11-19): `sync receive`, `sync send [shs|cod|both]
   [nobackup]`, `sync devices`, `sync choose`, `sync answer yes|no`, `sync wait`, `sync status`, `sync ok` and
   `sync stop` run a sync without taps or screenshots ([RUNTIME.md](docs/RUNTIME.md#test-channel-this-fork)).

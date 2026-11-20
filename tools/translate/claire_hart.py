@@ -368,7 +368,13 @@ PROPER_PLACES = frozenset((
 # Round scene names as the data spells them that a line would show oddly (joined words, a stray digit), as said.
 SCENE_NAMES = {'CafeBakery': 'Cafe Bakery', 'CasualRestaurant': 'Casual Restaurant', 'NyeNightClub': 'NYE Night Club',
                'NyeDinnerNyeEvent': 'NYE Dinner', 'Nye Ballroom': 'NYE Ballroom', 'Poolside2': 'Poolside',
-               'Busstop': 'Bus Stop', 'Tower Of London': 'Tower of London'}
+               'Busstop': 'Bus Stop', 'Tower Of London': 'Tower of London', "Farmer's Market 2": "Farmer's Market",
+               "Claire and Claudia's Room Night": "Claire and Claudia's Room"}
+# Possessives whose owner is a role, a group or a day, not a person: they take "the" ("the Farmer's Market", "the
+# Director's Office", "the New Year's Party"); a person's place doesn't ("Troy's Apartment", "Santa's Village").
+COMMON_OWNERS = frozenset(('Architect', 'Athletes', 'Director', 'Farmer', 'Foreman', 'Instructor', 'Keeper', 'Kid',
+                           'Magician', 'Maid', 'New Year', 'Pharaoh', 'Professor', 'Publisher', 'Queen', 'Sheriff',
+                           'St. Patrick', 'Valentine', 'Women', 'Writer'))
 
 
 def story_text(body):
@@ -379,10 +385,20 @@ def story_text(body):
     return re.sub(r''' ([.,;:'"?!])(?= |$)''', r'\1', text)
 
 
-def place(scene):
-    """A round scene's name as a round line says it: 'Driveway' -> 'the Driveway'. A possessive ("Claire's Office"), a name
-    that starts with 'The', or one of PROPER_PLACES keeps its own."""
+def place(scene, player=None):
+    """A round scene's name as a round line says it: 'Driveway' -> 'the Driveway'. The `player`'s own place is theirs
+    ("Claire's Office" -> 'my office', "Claire and Claudia's Room" -> 'our room' as Claire; owner, 2026-11-20); another
+    possessive, a name that starts with 'The', or one of PROPER_PLACES keeps its own."""
     name = SCENE_NAMES.get(scene.strip(), scene.strip())
+    if player:
+        if name.startswith(f"{player}'s "):
+            return 'my ' + name[len(player) + 3:].lower()
+        shared = re.match(rf"{re.escape(player)} and \w+'s (.+)$", name)
+        if shared:
+            return 'our ' + shared.group(1).lower()
+    owner = re.match(r"(.+?)'s? ", name)               # "Farmer's Market" -> Farmer, "Athletes' Village" -> Athletes
+    if owner and owner.group(1) in COMMON_OWNERS:
+        return 'the ' + name
     if "'s " in name or name.endswith("'s") or "s' " in name or name.startswith('The ') or name in PROPER_PLACES:
         return name
     return 'the ' + name
@@ -394,12 +410,24 @@ def listed(things):
     return things[0] if len(things) == 1 else ', '.join(things[:-1]) + ' and ' + things[-1]
 
 
-def round_line(scene, items):
+def round_line(scene, items, player=None):
     """Decision G: a round, with the real rounds off, as one narration line, in the player's own voice as the story's
-    narration is (owner, 2026-11-20: first person, past tense)."""
+    narration is (owner, 2026-11-20: first person, past tense); `player` is their first name (place)."""
     if items:
-        return f'I searched {place(scene)} and found {listed(items)}.'
-    return f'I searched {place(scene)}.'
+        return f'I searched {place(scene, player)} and found {listed(items)}.'
+    return f'I searched {place(scene, player)}.'
+
+
+def first_name(folder):
+    """A portrait folder's person's first name: 'TroyHarris' -> 'Troy', 'Harper' -> 'Harper'."""
+    return re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', folder).split()[0]
+
+
+def plate_name(header):
+    """A speaker's name plate: the header, but a one-word header of joined names gets its space (the data's
+    'JillianGish', 'WillYu', 'LihwaLo'...: Classic showed them joined; owner, 2026-11-20). 'Donald McAllister' keeps its
+    own."""
+    return header if ' ' in header.strip() else re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', header)
 
 
 # An episode opens with its player introducing themselves ("My name is Claire Hart. I have the ability to...", "I'm Troy
@@ -430,6 +458,7 @@ UPSELL = re.compile(r"Claire Hart Classic|Claire Hart: Soul Searcher|Club Pogo|n
 # questions ("but just what was Ethan's message?"), asides and season's greetings stay (owner, 2026-11-20).
 TEASER = re.compile(r"^(Want to|Curious|Wonder|Find out|Check out|Join Claire|Be sure)|\byour help\b", re.I)
 ABBREVIATION = re.compile(r'\b(Dr|Mr|Mrs|Ms|St|Jr|Sr)\. ')
+EVENT = re.compile(r'(^|_)Event(_|$)')     # characterutil's narration looks: 'Avatar_Troy_Event', 'Avatar_Event_Purple'
 # The next chapter tells the search itself (owner, 2026-11-20: then the round's stand-in line is redundant).
 SEARCH_TOLD = re.compile(r"\b(found|find|finds|searched|searching|discovered|turned up|came across|uncovered|located|"
                          r"spotted|noticed|picked up|followed my feelings|drawn to|caught my eye)\b", re.I)
@@ -540,7 +569,7 @@ class CaseBuilder:
         if key not in self.characters:
             cid = f'c{len(self.characters)}'
             base = self.bank(look)
-            self.characters[key] = self.Character(cid, header, base, 1, [base + i for i in range(5)])
+            self.characters[key] = self.Character(cid, plate_name(header), base, 1, [base + i for i in range(5)])
             self.looks[cid] = look
             # No CoD relationship badge: Claire Hart has none (property 629 = 1 hides it; the X360 stories' way).
             self.add('relationship', character=cid, params={'operation': 'add', 'value': 0, 'romantic': False,
@@ -643,9 +672,24 @@ class CaseBuilder:
                 if node['header'] == '':
                     ref = refs.get('Claire') or refs.get('claire')
                     expressions = (ref or {'expressions': NARRATOR_DEFAULT})['expressions']
-                    slot = self.narrate(self.portrait('Claire', expressions, expression))
+                    if ref is None and expression not in expressions and self.player_folder != 'ClaireHart':
+                        # Narration with no look of its own shows Claire (NARRATOR_DEFAULT) even in a part someone else
+                        # plays; it is theirs (owner, 2026-11-20: E144's closing line showed Claire in Troy's case).
+                        self.narrate_as_player()
+                        self.add(text=text, expression=0)
+                        self.report['narration shown as the player'] += 1
+                    else:
+                        slot = self.narrate(self.portrait('Claire', expressions, expression))
+                        self.add(text=text, expression=slot)
+                    self.report['narration'] += 1
+                elif EVENT.search(expression):
+                    # A speaker line with an `..._Event` look is the player narrating (Troy's 23, in his own parts), which
+                    # Classic showed under his name plate: narration, with no plate (owner, 2026-11-20).
+                    ref = refs.get(node['header']) or refs.get(node['header'].lower())
+                    slot = self.narrate(self.portrait(node['header'], ref['expressions'], expression))
                     self.add(text=text, expression=slot)
                     self.report['narration'] += 1
+                    self.report['speaker lines as narration (Event looks)'] += 1
                 else:
                     ref = refs.get(node['header']) or refs.get(node['header'].lower())
                     cid, slot = self.speaker(node['header'],
@@ -699,7 +743,7 @@ class CaseBuilder:
             elif node.get('eventtype') == 'showStoryObject':
                 shown.append(item_title(node['id']))
         told = round_told(lines, items + shown, shown=bool(shown))
-        line = round_line(hog['scene'], items)
+        line = round_line(hog['scene'], items, first_name(self.player_folder))
         self.reviews['rounds'].append((config['epid'], number, hog['scene'], ', '.join(items), told or 'stand-in', line,
                                        ' / '.join(lines)[:220]))
         self.report['rounds'] += 1
