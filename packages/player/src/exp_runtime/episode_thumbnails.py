@@ -133,6 +133,12 @@ def capture_title_card(library, record):
         return None
     if borrowed is not None:
         session.pending.details['subtitle'] = subtitle
+    from .games import GAMES
+    if record.get('pack_id') in getattr(GAMES.get(getattr(library, 'game_id', None)), 'PREVIEW_CASE_TITLE', ()):
+        # shshd-runtime: a translated pack whose cards show the part's title over the case's (Claire Hart) has its preview
+        # the other way up, the case's title over its first part's, as the picker lists cases (owner, 2026-11-20).
+        details = session.pending.details
+        details['title'], details['subtitle'] = details.get('subtitle', ''), details.get('title', '')
     window = pygame.Surface(FRAME).convert()
     view = Desktop(session, audio=False, window=window, capture=True)
     for _ in range(300):

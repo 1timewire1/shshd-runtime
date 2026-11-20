@@ -65,6 +65,9 @@ LOOK_BANKS = {31500: ('chc', 26998, 30000)}
 # pack -> (the add-on, its spec resource, whose `scenes` give each slice), the episode's own resource 7 first
 # (content.EpisodeResources.backdrop_slice, backdrop_slices.py).
 BACKDROP_SLICES = {31500: ('chc', 26998)}
+# shshd-runtime: translated packs whose title cards show a part's title over its case's, so the picker's preview, a photo of
+# the first card, swaps them back: the case on top (Claire Hart; episode_thumbnails.capture_title_card).
+PREVIEW_CASE_TITLE = (31500,)
 # shshd-runtime: a translated pack's own picture for the whole frame, under its backdrops (desktop._frame_backdrop): Claire
 # Hart's 4:3 scenes leave bands in CoD's 3:4 frame, which take chslim's green backdrop (28001, kept in chc).
 TRANSLATED_FRAME_BACKDROP = {31500: 28001}

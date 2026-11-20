@@ -470,7 +470,7 @@ python tools/translate/claire_hart.py places --mirror CLAIRE_HART_DIR --out clai
 
 | Resources | What |
 | --- | --- |
-| 26000–26786 | The 787 scenes' backdrops (`template`), in the scene folders' sorted order: Classic's own PNGs (paletted; full brightness, dimmed at draw time) |
+| 26000–26786 | The 787 scenes' clean pictures (each layout's base layer, without the hidden objects), in the scene folders' sorted order: Classic's own PNGs (paletted; full brightness, dimmed at draw time) |
 | 26800 | An extra scene for a title card: the sequel's Van der Walt Den without its objects, which E265's store picture shows (from the sequel's mirror, `--sequel`) |
 | 26900–26932 | The 33 tracks, MP3 128 kb/s |
 | 26960–26962, 26990 | The Title Screen Look (its spec, Classic's Play Now forest, its logo) and Title Screen Music (the main jingle) |

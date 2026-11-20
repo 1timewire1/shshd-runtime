@@ -182,9 +182,9 @@ class ConverterTests(unittest.TestCase):
         self.assertEqual(claire_hart.place('Driveway'), 'the Driveway')
         self.assertEqual(claire_hart.place("Claire's Office"), "Claire's Office")
         self.assertEqual(claire_hart.place('The Aquatic Center'), 'The Aquatic Center')
-        self.assertEqual(claire_hart.round_line('Troy', 'Driveway', ['Broom', 'Car Keys', 'Map']),
-                         'Troy searches the Driveway and finds the Broom, the Car Keys and the Map.')
-        self.assertEqual(claire_hart.round_line('Claire', 'Driveway', []), 'Claire searches the Driveway.')
+        self.assertEqual(claire_hart.round_line('Driveway', ['Broom', 'Car Keys', 'Map']),
+                         'I searched the Driveway and found the Broom, the Car Keys and the Map.')   # the player's voice
+        self.assertEqual(claire_hart.round_line('Driveway', []), 'I searched the Driveway.')
         self.assertEqual(claire_hart.item_title('Push_Broom_SO'), 'Push Broom')
         self.assertEqual(claire_hart.item_title('CarKeysSO'), 'Car Keys')
 
@@ -203,6 +203,28 @@ class ConverterTests(unittest.TestCase):
                               'Claire Hart Classic!'), 'Is it too late to help the spirit of Mrs. Gray?')   # "Mrs." mid-sentence
         self.assertEqual(trim('Troy smiled at me.'), 'Troy smiled at me.')       # no sign-off: as it is
 
+    def test_a_later_parts_introduction_goes_and_its_story_stays(self):
+        import claire_hart
+        trim = claire_hart.trim_intro
+        self.assertEqual(trim("My name is Claire Hart. I have the ability to get feelings off objects. I just found out "
+                              "Ethan was engaged."), 'I just found out Ethan was engaged.')
+        self.assertEqual(trim("I'm Troy Harris, and I'm an investigator for the SFPD. My partner and I had a case."),
+                         'My partner and I had a case.')
+        self.assertEqual(trim("I'm Claire Hart. I'm single, thirty, and I have the unique ability of sensing memories."),
+                         '')
+        self.assertEqual(trim("I'm in the penthouse of Mindy Miles."), "I'm in the penthouse of Mindy Miles.")   # no name
+
+    def test_the_player_is_who_introduces_themselves(self):
+        import claire_hart
+        troy = {'default': f'{CH}TroyHarris/Avatar_Troy_Normal'}
+        refs = {'SCENE 1_1': {'backgrounds': {}, 'characters': {'Troy Harris': {'expressions': troy}}, 'music': {}}}
+        sequences = {'main': {'nodes': [{'type': 'playSequence', 'sequenceId': 'SCENE 1_1'}]},
+                     'SCENE 1_1': {'nodes': [{'type': 'dialogText', 'header': 'Troy Harris', 'expression': '',
+                                              'body': "I'm Troy Harris, and I'm an investigator for the SFPD."}]}}
+        self.assertEqual(claire_hart.playing({'sceneRefs': refs}, sequences), 'TroyHarris')
+        sequences['SCENE 1_1']['nodes'][0].update(header='', body='The rain had not stopped all week.')
+        self.assertEqual(claire_hart.playing({'sceneRefs': refs}, sequences), 'ClaireHart')   # whom narration shows
+
     def test_a_round_the_next_chapter_tells_keeps_no_stand_in(self):
         import claire_hart
         told = claire_hart.round_told
@@ -210,6 +232,10 @@ class ConverterTests(unittest.TestCase):
         self.assertEqual(told(['I searched the car.'], []), 'tells the search ("searched")')
         self.assertIsNone(told(['We drove back during the storm.', 'Hi.'], ['Ring']))   # "during" isn't a ring
         self.assertIsNone(told(['Troy waved.'], ['Broom']))
+        coins = ['I followed my feelings to a bunch of coins by the trains.']
+        self.assertEqual(told(coins, ['Quarter', 'Dime']), 'tells the search ("followed my feelings")')
+        self.assertIsNone(told(['I handed Troy the bag.'], ['Quarter']))         # handling counts only with objects shown
+        self.assertEqual(told(['I handed Troy the bag.'], ['Quarter'], shown=True), 'tells the search ("handed")')
 
     def test_a_case_becomes_one_cod_episode(self):
         import claire_hart
@@ -239,7 +265,7 @@ class ConverterTests(unittest.TestCase):
         lines = [(names.get(c, c), t, e) for k, t, c, e in seen if k == 'dialogue']
         self.assertEqual(lines, [('', 'Hello there, friend...', 0), ('Ann', 'Hi!', 2), ('Ann', 'Still me.', 0),
                                  ('Ann', 'Typo.', 0),
-                                 ('Ann', 'New dress.', 0), ('', 'Claire searches the Shed and finds the Broom.', 0),
+                                 ('Ann', 'New dress.', 0), ('', 'I searched the Shed and found the Broom.', 0),
                                  ('', 'Troy here.', 0)])
         kinds = [k for k, *_ in seen]
         # the track restarts in chapter 2 from chapter 1's map; Ann's outfit is a look change; no relationship badge

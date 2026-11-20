@@ -253,7 +253,18 @@ class Mirror:
         return out
 
     def backdrop(self, folder):
-        return (self.scenes_dir / folder / 'hd' / 'template.png').read_bytes()
+        """A scene's picture for the story: its clean base (the layout's `default` layer, 1026 x 770, the scene without
+        the round's hidden objects; owner, 2026-11-20), else `background.png`, else the `template` (objects drawn in)."""
+        hd = self.scenes_dir / folder / 'hd'
+        layout = self._load(hd / f'{folder}.json')
+        for group in layout['textures']:
+            if group['id'] == 'default':
+                for texture in group['textures']:
+                    path = hd / f"{texture['id']}.png"
+                    if texture['width'] >= 1000 and path.exists():
+                        return path.read_bytes()
+        path = hd / 'background.png'
+        return (path if path.exists() else hd / 'template.png').read_bytes()
 
     # --- music and story objects ---------------------------------------------------------------------------------------
     def tracks(self):
@@ -383,11 +394,31 @@ def listed(things):
     return things[0] if len(things) == 1 else ', '.join(things[:-1]) + ' and ' + things[-1]
 
 
-def round_line(narrator, scene, items):
-    """Decision G (owner, 2026-11-19): a round, with the real rounds off, as one narration line."""
+def round_line(scene, items):
+    """Decision G: a round, with the real rounds off, as one narration line, in the player's own voice as the story's
+    narration is (owner, 2026-11-20: first person, past tense)."""
     if items:
-        return f'{narrator} searches {place(scene)} and finds {listed(items)}.'
-    return f'{narrator} searches {place(scene)}.'
+        return f'I searched {place(scene)} and found {listed(items)}.'
+    return f'I searched {place(scene)}.'
+
+
+# An episode opens with its player introducing themselves ("My name is Claire Hart. I have the ability to...", "I'm Troy
+# Harris, and I'm an investigator for the SFPD."): the name's sentence, then any about who they are.
+INTRO = re.compile(r"^(My name is|My name's|I'm|I am)\s+[A-Z][a-z]+")
+INTRO_MORE = re.compile(r"^(I|And I)\b.*\b(abilit(y|ies)|gift|talent|single, thirty|make my living|investigator for)\b")
+
+
+def trim_intro(text):
+    """A later part's first line without the player's introduction (owner, 2026-11-20: shown once a case); its story,
+    the recap or what happens next, stays. '' when nothing else is left; a line that opens otherwise comes back as is."""
+    marked = ABBREVIATION.sub(lambda match: match.group(1) + '.\0', text)
+    sentences = [sentence.replace('\0', ' ') for sentence in re.split(r'(?<=[.!?])\s+', marked)]
+    if not INTRO.match(sentences[0]):
+        return text
+    rest = sentences[1:]
+    while rest and INTRO_MORE.search(rest[0]):
+        rest = rest[1:]
+    return ' '.join(rest).strip()
 
 
 # The store's sign-off at an episode's end (owner, 2026-11-20: it breaks the story's flow): a sentence naming the game,
@@ -400,8 +431,11 @@ UPSELL = re.compile(r"Claire Hart Classic|Claire Hart: Soul Searcher|Club Pogo|n
 TEASER = re.compile(r"^(Want to|Curious|Wonder|Find out|Check out|Join Claire|Be sure)|\byour help\b", re.I)
 ABBREVIATION = re.compile(r'\b(Dr|Mr|Mrs|Ms|St|Jr|Sr)\. ')
 # The next chapter tells the search itself (owner, 2026-11-20: then the round's stand-in line is redundant).
-SEARCH_TOLD = re.compile(r"\b(found|find|finds|searched|searching|discovered|turned up|came across|uncovered|located)\b",
-                         re.I)
+SEARCH_TOLD = re.compile(r"\b(found|find|finds|searched|searching|discovered|turned up|came across|uncovered|located|"
+                         r"spotted|noticed|picked up|followed my feelings|drawn to|caught my eye)\b", re.I)
+# ...and, when the chapter opens with the round's finds as story objects, the narrator handling or looking at one (E019's
+# "I followed my feelings to a bunch of coins": quarter, dime and penny).
+HANDLED = re.compile(r"\b(handed|grabbed|touched|looked over at|studied|held up|showed|pulled|took)\b", re.I)
 
 
 def trim_outro(text):
@@ -428,15 +462,16 @@ def stem(word):
     return word[:-1] if len(word) > 3 and word.endswith('s') and not word.endswith('ss') else word
 
 
-def round_told(lines, finds):
+def round_told(lines, finds, shown=False):
     """Why a round's stand-in line isn't needed: the next chapter's first two lines (`lines`) name one of its finds (an
-    item the round's list resolves to, or a story object the chapter opens with), or tell a search; else None."""
+    item the round's list resolves to, or a story object the chapter opens with), or tell a search, or, when it opens
+    showing story objects (`shown`), handle one; else None."""
     text = ' '.join(lines)
     for find in finds:
         words = re.findall(r'[A-Za-z]+', find)
         if words and re.search(rf'\b{re.escape(stem(words[-1]))}(s|es)?\b', text, re.I):
             return f'names the {find}'
-    found = SEARCH_TOLD.search(text)
+    found = SEARCH_TOLD.search(text) or (HANDLED.search(text) if shown else None)
     return f'tells the search ("{found.group(0)}")' if found else None
 
 
@@ -462,7 +497,7 @@ class CaseBuilder:
         self.player_folder = 'ClaireHart'   # ...the portrait folder whose speaker that is
         self.folders = {}               # speaker character id -> its portrait folder
         self.cast = (None, None)        # the (player, narrator) the last `speakers` node set
-        self.reviews = dict(rounds=[], outros=[])
+        self.reviews = dict(rounds=[], outros=[], intros=[])
         self.track = None
         self.music = {}                 # every chapter's music map so far: audioplayer's, kept for the session
         self.faces = {}                 # speaker key -> the face showing, this chapter
@@ -529,15 +564,31 @@ class CaseBuilder:
             self.cast = (self.player, self.narrator)
 
     def play_as(self, folder):
-        """A part's player: the speaker with the portrait folder its narration shows most (narrating)."""
+        """A part's player: the speaker with portrait folder `folder` (playing)."""
         self.player_folder = folder
         self.player = next((cid for cid, held in reversed(list(self.folders.items())) if held == folder), None)
         self.cast_now()
 
     def narrate(self, path):
-        """The narrator character showing `path`'s look (a character of its own, so the same person's speaker lines
-        keep their name plate: engine.py takes any line of the narrator character as narration)."""
+        """The narrator character showing `path`'s look (narrate_look)."""
         look, slot = self.face(path)
+        self.narrate_look(look)
+        return slot
+
+    def narrate_as_player(self):
+        """The narrator turned to the player's look, for a line in their voice (a round's): the player's speaker as they
+        look now, else their folder's first look."""
+        if self.player is not None:
+            look = self.looks[self.player]
+        else:
+            look = next((look for path, (look, slot) in self.art['faces'].items()
+                         if path.split('/')[2] == self.player_folder and slot == 0), None)
+        if look is not None:
+            self.narrate_look(look)
+
+    def narrate_look(self, look):
+        """The narrator character showing look `look` (a character of its own, so the same person's speaker lines keep
+        their name plate: engine.py takes any line of the narrator character as narration)."""
         key = ('narrator', look)
         if key not in self.characters:
             base = self.bank(look)
@@ -547,7 +598,6 @@ class CaseBuilder:
         self.narrator = character.id
         self.cast_now()
         self.narrator_name = character.name
-        return slot
 
     def portrait(self, key, expressions, expression):
         """The picture a line shows: its expression's; none asked shows `default` (character.slide asks setExpression for
@@ -563,15 +613,25 @@ class CaseBuilder:
         self.faces[key] = path
         return path
 
-    def chapter(self, config, sequence, refs, last=False):
+    def chapter(self, config, sequence, refs, last=False, reintroduced=False):
         """A chapter's nodes, in order (CLAIRE_HART_ENGINE.md section 4). In an episode's `last` chapter, its sign-off
-        goes (trim_outro; owner, 2026-11-20)."""
+        goes (trim_outro); when the player was `reintroduced` (a later part of the case), its first line's introduction
+        goes (trim_intro; owner, 2026-11-20)."""
         self.faces = {}                 # each chapter reloads the scene, its characters with it
         self.music.update(refs.get('music') or {})
         for node in sequence['nodes']:
             kind = node['type'] if node['type'] != 'event' else node['eventtype']
             if kind == 'dialogText':
                 text = story_text(node['body'])
+                if reintroduced:
+                    reintroduced = False
+                    kept = trim_intro(text)
+                    if kept != text:
+                        self.reviews['intros'].append((config['epid'], text, kept))
+                        self.report['introductions trimmed' if kept else 'introduction lines dropped'] += 1
+                        if not kept:
+                            continue
+                        text = kept
                 if last and UPSELL.search(text):
                     kept = trim_outro(text)
                     self.reviews['outros'].append((config['epid'], text, kept))
@@ -638,8 +698,8 @@ class CaseBuilder:
                     break
             elif node.get('eventtype') == 'showStoryObject':
                 shown.append(item_title(node['id']))
-        told = round_told(lines, items + shown)
-        line = round_line(self.narrator_name, hog['scene'], items)
+        told = round_told(lines, items + shown, shown=bool(shown))
+        line = round_line(hog['scene'], items)
         self.reviews['rounds'].append((config['epid'], number, hog['scene'], ', '.join(items), told or 'stand-in', line,
                                        ' / '.join(lines)[:220]))
         self.report['rounds'] += 1
@@ -647,7 +707,8 @@ class CaseBuilder:
             self.report['rounds told by the next chapter'] += 1
             return
         self.add('background', asset=self.scene(folder_of(hog['scene'])))
-        self.add(text=line)
+        self.narrate_as_player()
+        self.add(text=line, expression=0)
         self.report['round lines'] += 1
         self.report['round items'] += len(items)
 
@@ -685,13 +746,15 @@ def convert(mirror, art, case, parts):
         # 2026-11-20, as the SHS '07 translations do).
         builder.add('title', text=story_text(listed_episode['name']), params={
             'subtitle': title, 'background': builder.scene(art['store'][config['epid']]), 'flag': 0})
-        builder.play_as(narrating(config, sequences))
+        player = playing(config, sequences)
+        again = player == builder.player_folder and number > 1     # the same player as the part before
+        builder.play_as(player)
         chapters = [node['sequenceId'] for node in sequences['main']['nodes'] if node['type'] == 'playSequence']
         for node in sequences['main']['nodes']:
             if node['type'] == 'playSequence':
                 chapter = node['sequenceId']
                 builder.chapter(config, sequences[chapter], refs_for(config['sceneRefs'][chapter]),
-                                last=chapter == chapters[-1])
+                                last=chapter == chapters[-1], reintroduced=again and chapter == chapters[0])
             elif node['type'] == 'playHOG':
                 n = int(node['hogId'].rsplit(' ', 1)[1])
                 builder.round(config, n, config['sceneRefs'][f'SCENE 1_{n}'], sequences[f'SCENE 1_{n + 1}']['nodes'])
@@ -707,6 +770,20 @@ def convert(mirror, art, case, parts):
     builder.report['parts'] = len(parts)
     builder.report.reviews = builder.reviews
     return project, builder.slices, builder.report
+
+
+def playing(config, sequences):
+    """The portrait folder of an episode's player: who introduces themselves in its first line ("I'm Troy Harris, and
+    I'm an investigator..."; owner, 2026-11-20), as that line shows them; else whom its narration shows most."""
+    chapter = next(node['sequenceId'] for node in sequences['main']['nodes'] if node['type'] == 'playSequence')
+    refs = refs_for(config['sceneRefs'][chapter])
+    first = next((node for node in sequences[chapter]['nodes'] if node['type'] == 'dialogText'), None)
+    if first is not None and INTRO.match(story_text(first['body'])):
+        ref = refs.get(first['header'] or 'Claire') or refs.get((first['header'] or 'Claire').lower())
+        expressions = (ref or {'expressions': NARRATOR_DEFAULT})['expressions']
+        path = expressions.get(first.get('expression') or '') or expressions['default']
+        return path.split('/')[2]
+    return narrating(config, sequences)
 
 
 def narrating(config, sequences):
@@ -740,7 +817,8 @@ def write_reviews(folder, reviews):
     folder = Path(folder)
     for name, headers in (('rounds', ('epid', 'round', 'place', 'finds', 'decision', 'stand-in line',
                                        'next chapter opens')),
-                          ('outros', ('epid', 'line', 'kept (empty: the line goes)'))):
+                          ('outros', ('epid', 'line', 'kept (empty: the line goes)')),
+                          ('intros', ('epid', 'line', 'kept (empty: the line goes)'))):
         with open(folder / f'{name}.tsv', 'w', encoding='utf-8', newline='\n') as file:
             file.write('\t'.join(headers) + '\n')
             for row in reviews[name]:
@@ -757,6 +835,12 @@ def write_reviews(folder, reviews):
                    f'player just before it); the story, its questions and season\'s greetings stay. '
                    f'{sum(1 for row in outros if not row[2])} of {len(outros)} lines go whole.',
                    ('Episode', 'Line', 'Kept (blank: the line goes)'), outros)
+    intros = reviews.get('intros', [])
+    markdown_table(folder / 'intros.md', "Claire Hart Classic: later parts' introductions",
+                   'A case\'s later parts open with the player introducing themselves again; that introduction goes (the '
+                   'first part keeps it), and the line\'s story stays. '
+                   f'{sum(1 for row in intros if not row[2])} of {len(intros)} lines go whole.',
+                   ('Episode', 'Line', 'Kept (blank: the line goes)'), intros)
 
 
 def compiled(project, slices):
@@ -861,13 +945,14 @@ def main(argv=None):
         wanted = set(args.episodes.split(',')) if args.episodes else None
         art = converter_art(mirror, args.cache)
         args.out.mkdir(parents=True, exist_ok=True)
-        reviews = dict(rounds=[], outros=[])
+        reviews = dict(rounds=[], outros=[], intros=[])
         for _, case, parts in mirror.cases():
             if wanted is not None and not wanted & {config['epid'] for _, config, _ in parts}:
                 continue
             project, slices, report = convert(mirror, art, case, parts)
             reviews['rounds'] += report.reviews['rounds']
             reviews['outros'] += report.reviews['outros']
+            reviews['intros'] += report.reviews['intros']
             name = f"CHC_{case['index']:03d}.exp"
             (args.out / name).write_bytes(compiled(project, slices))
             print(f'{name}: {project.title!r}, {len(project.nodes)} nodes, {dict(report)}')
