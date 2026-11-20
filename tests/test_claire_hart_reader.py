@@ -231,7 +231,13 @@ class ConverterTests(unittest.TestCase):
         so = next(n for n in project.nodes if n.kind == 'story_object')
         self.assertEqual((so.text, so.asset), ('Push Broom', 27000))
         self.assertEqual(report['faces kept (a key the speaker lacks)'], 1)     # none asked shows default
-        self.assertEqual(report['music ids from an earlier chapter'], 1)
+        self.assertEqual(report['music ids from an earlier chapter or case'], 1)
+        self.assertEqual(art['music_before'], {1: {}})          # the first case starts with no maps loaded
+        art['music_before'] = {1: {'Lobby': 'Theme.mp3'}}       # a later case: an id only an earlier case maps
+        parts[0][2]['SCENE 1_1']['nodes'].insert(0, {'type': 'event', 'eventtype': 'playMusic', 'id': 'Lobby'})
+        project, _, report = claire_hart.convert(mirror, art, case, parts)
+        self.assertEqual([n.params['resource'] for n in project.nodes if n.kind == 'music'], [26900] * 3)
+        self.assertEqual(report['music ids from an earlier chapter or case'], 2)
         self.assertEqual(slices, {26000: 224, 26001: 224})
         archive = ExpArchive(claire_hart.compiled(project, slices))
         self.assertEqual(decode(archive.read(RESOURCE)), slices)
