@@ -110,7 +110,7 @@ class AppAspectTests(unittest.TestCase):
                     'device_vibration_enabled', 'choice_hints', 'skip_minigames', 'skip_ad_intros', 'autoplay',
                     'disable_choice_timer', 'hd_backdrop', 'hires_portraits', 'ms3_characters', 'java_look',
                     'brew_08_backgrounds', 'hollywood_art', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'skip_ahead', 'undo',
-                    'ch_portraits', 'ch_backdrop', 'arena_minigames', 'arena_skin', 'dsi_backgrounds'):
+                    'ch_portraits', 'ch_backdrop', 'dim_backdrops', 'arena_minigames', 'arena_skin', 'dsi_backgrounds'):
             setattr(game, key, False)
         game.dsi_pixels, game.dsi_language = 'sharp', 'off'
         game.music_volume = game.sound_volume = .5

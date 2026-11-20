@@ -384,6 +384,7 @@ class Desktop:
     _word_grid_skin = False         # ...their minigames in the HD word game's look: the "Use Word Grid Skin" switch
     ch_portraits = True             # CoD with its portrait addon: the CH "HD Portraits in CoD" switch (set_ch_portraits)
     ch_backdrop = True              # ...and its "Backdrop", in place of SHS HD's collage (_window_backdrop)
+    dim_backdrops = True            # Claire Hart's translations: the "Dim Backdrops" switch (backdrop_dim)
     _arena_minigames = True         # translated episodes: the "Use Translated Mini-Games" switch (arena_minigames)
     x360_tutorial = None            # a tutorial taken in the X360 look: the game's music request it began under
     arena_skin = False              # ...drawn in the X360 prototype's look: the "Use X360 Arena Skin" switch (x360_arena_switch)
@@ -2418,6 +2419,32 @@ class Desktop:
         addon = getattr(GAMES.get(game_id(self.session.resources)), 'PORTRAIT_ADDON', None)
         return addon is not None and hasattr(library, 'addon') and library.addon(addon[0]) is not None
 
+    def dim_switch(self):
+        """shshd-runtime: whether this episode's backdrops are darkened by the "Dim Backdrops" switch (the game profile's
+        TRANSLATED_BACKDROP_DIM: Claire Hart's translations)."""
+        return pack_setting(self.session.resources, 'TRANSLATED_BACKDROP_DIM') is not None
+
+    def backdrop_dim(self):
+        """The level this episode's backdrops are darkened to (0-255), or None to draw them as they are."""
+        resources = getattr(self.__dict__.get('_session'), 'resources', None)      # (none before a story opens)
+        return pack_setting(resources, 'TRANSLATED_BACKDROP_DIM') if self.dim_backdrops and resources is not None else None
+
+    def _dimmed(self, background):
+        """`background` darkened to backdrop_dim() (Claire Hart's backdrop node colour, a multiply), made once a picture and
+        kept while it is in use; the picture itself when it isn't dimmed."""
+        level = self.backdrop_dim()
+        if level is None or level >= 255:
+            return background
+        cache = self.__dict__.setdefault('_dimmed_art', {})
+        found = cache.get(id(background))
+        if found is None or found[0] is not background or found[1] != level:
+            if len(cache) >= 4:
+                cache.clear()
+            dark = background.copy()
+            dark.fill((level, level, level), special_flags=pygame.BLEND_RGB_MULT)
+            found = cache[id(background)] = (background, level, dark)
+        return found[2]
+
     def minigames_switch(self):
         """shshd-runtime: whether this episode has minigames the "Use Translated Mini-Games" switch changes (the game
         profile's TRANSLATED_MINIGAMES)."""
@@ -3399,6 +3426,7 @@ class Desktop:
         """Draw `background` laid over `placement` (see _background_placement), clipped to the frame. Where the
         picture does not reach the frame's edge (Cause of Death's art is exactly its screen wide, so the frame's side
         margins can reach past it), the art keeps its scale and the rest stays uncovered."""
+        background = self._dimmed(background)     # (Claire Hart's translations: Dim Backdrops)
         bw, bh = background.get_size()
         x, y, w, h = placement
         tw, th = target_size
@@ -3770,6 +3798,7 @@ class Desktop:
                     **({'word_grid_skin': self.word_grid_skin} if self.smartphone_switch() and self.word_grid_switch() else {}),
                     **({'grids_as_memory': self.grids_as_memory} if self.memory_grid_switch() else {}),
                     **(dict(ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop) if self.ch_switch() else {}),
+                    **({'dim_backdrops': self.dim_backdrops} if self.dim_switch() else {}),
                     **({'arena_minigames': self.arena_minigames} if self.minigames_switch() else {}),
                     **({'arena_skin': self.arena_skin} if self.hires_switch() and self.x360_arena_switch() else {}))
 
@@ -4049,6 +4078,8 @@ class Desktop:
                 self.set_ch_portraits(not self.ch_portraits)
             elif command[1] == 'ch_backdrop':
                 self.ch_backdrop = not self.ch_backdrop
+            elif command[1] == 'dim_backdrops':
+                self.dim_backdrops = not self.dim_backdrops
             elif command[1] == 'arena_minigames':
                 self.arena_minigames = not self.arena_minigames
             elif command[1] == 'arena_skin':

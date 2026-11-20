@@ -25,6 +25,11 @@
   70 selector 206); other players show a message naming the item. The Creator's **Story object picture** node makes
   both ([ENGINE_ABI.md](docs/ENGINE_ABI.md#56b-story-object-pictures-shshd-runtime-service-225)). Saves are version 43.
   Stand-in review sheet: `reference/screenshots/verify/claire_hart/story_objects_stand_in.png`.
+- **Dim Backdrops** (Claire Hart plan Stage 0, F; `claire-hart` branch): Claire Hart's translated cases darken their
+  backdrops as the game drew them, to 110/255 (pack 31500, `TRANSLATED_BACKDROP_DIM`), at draw time, so the add-on keeps
+  full-brightness art. A shared Add-Ons switch with the CH tag, on by default, offered once the library has a case and in
+  their pause menu; it changes the picture at once. Stand-in sheet:
+  `reference/screenshots/verify/claire_hart/backdrop_dim_stand_in.png`.
 - **Test channel: Sync Devices by command** (owner, 2026-11-19): `sync receive`, `sync send [shs|cod|both]
   [nobackup]`, `sync devices`, `sync choose`, `sync answer yes|no`, `sync wait`, `sync status`, `sync ok` and
   `sync stop` run a sync without taps or screenshots ([RUNTIME.md](docs/RUNTIME.md#test-channel-this-fork)).

@@ -357,6 +357,8 @@ class HdShell:
             settings['smartphone_music'] = state.smartphone_music
         if self.app.portrait_addon_offered():
             settings.update(ch_portraits=state.ch_portraits, ch_backdrop=state.ch_backdrop)
+        if self.app.dim_backdrops_offered():
+            settings['dim_backdrops'] = state.dim_backdrops
         if self.app.minigames_offered():
             settings['arena_minigames'] = state.arena_minigames
         settings['skip_ahead'] = state.skip_ahead

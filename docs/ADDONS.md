@@ -465,6 +465,10 @@ the title look and the music.
 
 Importing it removes chslim, and an episode or switch asking for chslim gets `chc` (it stands in for chslim's revision 2).
 
+Its backdrops stay at full brightness, as the rounds need them. The player darkens them as it draws a case's story, to 110/255 as
+Classic did (its backdrop node's colour; the cod profile's `TRANSLATED_BACKDROP_DIM`), while the shared **Dim Backdrops** switch is
+on (CH tag, on by default, offered once the library has a case).
+
 The tool reads the real hashes from the CoD library, since a catalogue's copies are re-encoded, and stops with an error if a mapped
 picture isn't found.
 
@@ -491,6 +495,7 @@ tag is New Rules', since it changes New Rules' episodes, and its label names X36
 | Smartphone Music | SHS11 | SHS '11 episodes |
 | Use Word Grid Skin | SHS11 | SHS '11 episodes, with HD's word game art |
 | HD Portraits in CoD, Backdrop | CH | CoD with `chslim` imported |
+| Dim Backdrops | CH | Claire Hart's translated cases (pack 31500); on by default |
 | Use SHW Art in Preview | '07 | The Surviving Hollywood Preview, with `shshw` imported |
 | Use X360 Arena Skin | NR | New Rules episodes with `shsx360` imported; in play, also Use Translated Mini-Games on |
 

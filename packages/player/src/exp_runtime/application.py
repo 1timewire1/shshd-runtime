@@ -1275,6 +1275,13 @@ class Application:
         return any(record.get('pack_id') in packs for record in self.library.episodes) if packs else False
 
     @library_answer
+    def dim_backdrops_offered(self):
+        """Whether the library has an episode whose backdrops the "Dim Backdrops" switch darkens (the game profile's
+        TRANSLATED_BACKDROP_DIM: Claire Hart's translations)."""
+        packs = getattr(GAMES.get(self.library.game_id), 'TRANSLATED_BACKDROP_DIM', {}) if self.library else {}
+        return bool(packs) and bool(set(packs) & self.library.feature_packs())
+
+    @library_answer
     def portrait_addon_offered(self):
         """Whether the library has the game's optional portrait addon (the profile's PORTRAIT_ADDON), so its switches
         change something."""
@@ -2400,6 +2407,7 @@ class Application:
         self.game.undo = self.state.undo
         self.game.shs11_seen_this_run = self.__dict__.setdefault('shs11_seen_this_run', set())     # (for as long as the app runs)
         self.game.ch_portraits, self.game.ch_backdrop = self.state.ch_portraits, self.state.ch_backdrop
+        self.game.dim_backdrops = self.state.dim_backdrops
         self.game.arena_minigames = self.state.arena_minigames
         self.game.arena_skin = self.state.arena_skin
         # The app's lock (string 271: "complete Football Season") is Football Star's; another episode's own tree is never locked.
@@ -2520,6 +2528,7 @@ class Application:
         self.state.skip_ahead = self.game.skip_ahead
         self.state.undo = self.game.undo
         self.state.ch_portraits, self.state.ch_backdrop = self.game.ch_portraits, self.game.ch_backdrop
+        self.state.dim_backdrops = self.game.dim_backdrops
         self.state.arena_minigames = self.game.arena_minigames
         self.state.arena_skin = self.game.arena_skin
         self.state.music_volume = round(self.game.music_volume * 100)
@@ -2784,7 +2793,7 @@ class Application:
                 if key not in ('music', 'sound', 'vibration', 'device_vibration', 'choice_hints', 'skip_minigames',
                                'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
                                'hires_portraits', 'ms3_characters', 'java_look', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'skip_ahead', 'undo', 'ch_portraits', 'ch_backdrop',
-                               'arena_minigames', 'brew_08_backgrounds', 'hollywood_art', 'dsi_backgrounds',
+                               'dim_backdrops', 'arena_minigames', 'brew_08_backgrounds', 'hollywood_art', 'dsi_backgrounds',
                                'arena_skin'):
                     raise ValueError('Unknown preference')
                 previous = getattr(self.state, key)
