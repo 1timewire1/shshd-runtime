@@ -192,13 +192,15 @@ class ConverterTests(unittest.TestCase):
         import claire_hart
         trim = claire_hart.trim_outro
         self.assertEqual(trim('A new case begins in the next episode of Claire Hart Classic!'), '')
+        # the story's own question stays; the sign-off and a call to the player just before it go (owner, 2026-11-20)
         self.assertEqual(trim("We had the ring, we had the girl... but just what was Ethan's message? Find out in "
                               'Episode 3! And remember, Club POGO members get a discount on the next episode!'),
-                         'We had the ring, we had the girl...')
-        self.assertEqual(trim('Is it too late to help the spirit of Mrs. Gray? Find out in the next episode of Claire '
-                              'Hart Classic.'), '')                              # "Mrs." doesn't end a sentence
-        line = 'Troy smiled. Looks like Claire did it! Happy Holidays! Come back for the next episode.'
-        self.assertEqual(trim(line, narration=True), 'Troy smiled.')             # the game's own voice goes too
+                         "We had the ring, we had the girl... but just what was Ethan's message?")
+        self.assertEqual(trim('Want to find out what happens next? See the next part of the case now!'), '')
+        self.assertEqual(trim("Happy Mother's Day! Thanks for playing! Don't forget Club Pogo members get a discount."),
+                         "Happy Mother's Day!")                           # the season's greeting stays
+        self.assertEqual(trim('Is it too late to help the spirit of Mrs. Gray? Find out more in the next episode of '
+                              'Claire Hart Classic!'), 'Is it too late to help the spirit of Mrs. Gray?')   # "Mrs." mid-sentence
         self.assertEqual(trim('Troy smiled at me.'), 'Troy smiled at me.')       # no sign-off: as it is
 
     def test_a_round_the_next_chapter_tells_keeps_no_stand_in(self):

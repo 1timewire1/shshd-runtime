@@ -395,28 +395,32 @@ def round_line(narrator, scene, items):
 UPSELL = re.compile(r"Claire Hart Classic|Claire Hart: Soul Searcher|Club Pogo|next episode|new episode|Episode \d|"
                     r"come back for|next case|her new case|Look for the start|more episodes|next part|second part|"
                     r"Thanks for playing|stay tuned|future storyline", re.I)
-# ...and the teaser just before it: a question, a call to the player...
-TEASER = re.compile(r"(\?!?|!\?)$|^(Looks like|Want to|Curious|Wonder|Find out|Check out|Join Claire)|\byour? (help|own)\b",
-                    re.I)
-# ...and, in narration (Claire's "I"), the game's own voice: Claire in the third person, or a season's greeting.
-ASIDE = re.compile(r"\bClaire('s)?\b|^Happy\b|\bstoryline\b")
+# ...and a call to the player just before one ("Want to find out...?", "Curious where this leads?"). The story's own
+# questions ("but just what was Ethan's message?"), asides and season's greetings stay (owner, 2026-11-20).
+TEASER = re.compile(r"^(Want to|Curious|Wonder|Find out|Check out|Join Claire|Be sure)|\byour help\b", re.I)
 ABBREVIATION = re.compile(r'\b(Dr|Mr|Mrs|Ms|St|Jr|Sr)\. ')
 # The next chapter tells the search itself (owner, 2026-11-20: then the round's stand-in line is redundant).
 SEARCH_TOLD = re.compile(r"\b(found|find|finds|searched|searching|discovered|turned up|came across|uncovered|located)\b",
                          re.I)
 
 
-def trim_outro(text, narration=False):
-    """An episode-end line without its sign-off: the sentences from the first UPSELL one on, and the TEASER ones just
-    before it (in `narration`, ASIDE ones too); '' when nothing of the story is left. A line without one comes back as
-    it is. "Dr. Lubbock" is one sentence."""
+def trim_outro(text):
+    """An episode-end line without its sign-off: each UPSELL sentence, and a TEASER one just before one; '' when nothing
+    of the story is left. A line without one comes back as it is. "Dr. Lubbock" is one sentence."""
     if not UPSELL.search(text):
         return text
-    sentences = [s.replace('\0', ' ') for s in re.split(r'(?<=[.!?])\s+', ABBREVIATION.sub(r'\1.\0', text))]
-    cut = next(i for i, sentence in enumerate(sentences) if UPSELL.search(sentence))
-    while cut > 0 and (TEASER.search(sentences[cut - 1].strip()) or narration and ASIDE.search(sentences[cut - 1])):
-        cut -= 1
-    return ' '.join(sentences[:cut]).strip()
+    marked = ABBREVIATION.sub(lambda match: match.group(1) + '.\0', text)
+    sentences = [sentence.replace('\0', ' ') for sentence in re.split(r'(?<=[.!?])\s+', marked)]
+    kept, before_sign_off = [], False
+    for sentence in reversed(sentences):
+        if UPSELL.search(sentence):
+            before_sign_off = True
+            continue
+        if before_sign_off and TEASER.search(sentence.strip()):
+            continue                    # (a call to the player just before a sign-off)
+        before_sign_off = False
+        kept.append(sentence)
+    return ' '.join(reversed(kept)).strip()
 
 
 def stem(word):
@@ -569,7 +573,7 @@ class CaseBuilder:
             if kind == 'dialogText':
                 text = story_text(node['body'])
                 if last and UPSELL.search(text):
-                    kept = trim_outro(text, narration=node['header'] == '')
+                    kept = trim_outro(text)
                     self.reviews['outros'].append((config['epid'], text, kept))
                     self.report['sign-offs trimmed' if kept else 'sign-off lines dropped'] += 1
                     if not kept:
@@ -719,17 +723,40 @@ def narrating(config, sequences):
     return folders.most_common(1)[0][0] if folders else 'ClaireHart'
 
 
+def markdown_table(path, title, intro, headers, rows):
+    """A review list as a Markdown table, for the owner to read (a cell's own | escaped)."""
+    def cell(value):
+        return str(value).replace('|', r'\|').replace('\n', ' ')
+    with open(path, 'w', encoding='utf-8', newline='\n') as file:
+        file.write(f'# {title}\n\n{intro}\n\n')
+        file.write('| ' + ' | '.join(headers) + ' |\n|' + '---|' * len(headers) + '\n')
+        for row in rows:
+            file.write('| ' + ' | '.join(cell(value) for value in row) + ' |\n')
+
+
 def write_reviews(folder, reviews):
     """The owner's lists (2026-11-20): every round, whether it keeps its stand-in line or the next chapter tells it
-    (rounds.tsv), and every episode-end sign-off trimmed (outros.tsv)."""
-    with open(Path(folder) / 'rounds.tsv', 'w', encoding='utf-8', newline='\n') as file:
-        file.write('epid\tround\tplace\tfinds\tdecision\tstand-in line\tnext chapter opens\n')
-        for row in reviews['rounds']:
-            file.write('\t'.join(str(v) for v in row) + '\n')
-    with open(Path(folder) / 'outros.tsv', 'w', encoding='utf-8', newline='\n') as file:
-        file.write('epid\tline\tkept (empty: the line goes)\n')
-        for row in reviews['outros']:
-            file.write('\t'.join(row) + '\n')
+    (rounds.md), and every episode-end sign-off trimmed (outros.md); their TSVs beside them for scripts."""
+    folder = Path(folder)
+    for name, headers in (('rounds', ('epid', 'round', 'place', 'finds', 'decision', 'stand-in line',
+                                       'next chapter opens')),
+                          ('outros', ('epid', 'line', 'kept (empty: the line goes)'))):
+        with open(folder / f'{name}.tsv', 'w', encoding='utf-8', newline='\n') as file:
+            file.write('\t'.join(headers) + '\n')
+            for row in reviews[name]:
+                file.write('\t'.join(str(value) for value in row) + '\n')
+    rounds = reviews['rounds']
+    markdown_table(folder / 'rounds.md', 'Claire Hart Classic: rounds as lines',
+                   f'With the real rounds off, a round is one stand-in line, unless the next chapter\'s first two lines '
+                   f'already tell the search (they name a find, or say "I found..." / "I searched..."). '
+                   f'{sum(1 for row in rounds if row[4] == "stand-in")} of {len(rounds)} keep their line.',
+                   ('Episode', 'Round', 'Place', 'Finds', 'Decision', 'Stand-in line', 'Next chapter opens'), rounds)
+    outros = reviews['outros']
+    markdown_table(folder / 'outros.md', "Claire Hart Classic: episode-end sign-offs",
+                   f'The store\'s sign-off at an episode\'s end goes (the next episode, Club Pogo, and a call to the '
+                   f'player just before it); the story, its questions and season\'s greetings stay. '
+                   f'{sum(1 for row in outros if not row[2])} of {len(outros)} lines go whole.',
+                   ('Episode', 'Line', 'Kept (blank: the line goes)'), outros)
 
 
 def compiled(project, slices):
@@ -810,7 +837,7 @@ def main(argv=None):
         command = commands.add_parser(name)
         command.add_argument('--mirror', type=Path, required=True)
         if name in ('ids', 'build', 'places'):
-            command.add_argument('--out', type=Path, required=True)
+            command.add_argument('--out', type=Path, required=True, help='(places: a .md file)')
         if name == 'build':
             command.add_argument('--episodes', help='only the cases holding these E-numbers (E001,E018,...)')
             command.add_argument('--cache', type=Path, help='the store scenes matched (made on first use)')
@@ -848,11 +875,10 @@ def main(argv=None):
     elif args.command == 'places':
         scenes = sorted({hog['scene'] for _, _, parts in mirror.cases() for _, config, _ in parts
                          for hog in config['hogConfig'].values()})
-        with open(args.out, 'w', encoding='utf-8', newline='\n') as file:
-            file.write('# Round scenes as a round line names them (claire_hart.place). Proper names that should take no\n'
-                       '# "the" go in PROPER_PLACES.\n')
-            for scene in scenes:
-                file.write(f'{scene}\t{place(scene)}\n')
+        markdown_table(args.out, 'Claire Hart Classic: round scenes as the lines name them',
+                       'A round line says "Claire searches <place>." Proper names that should take no "the" go in '
+                       'PROPER_PLACES; data spellings that read oddly, in SCENE_NAMES.',
+                       ('Scene (as the data spells it)', 'Said as'), [(scene, place(scene)) for scene in scenes])
         print(f'{len(scenes)} round scenes -> {args.out}')
     elif args.command == 'report':
         cases = mirror.cases()
