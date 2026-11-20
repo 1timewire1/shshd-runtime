@@ -465,6 +465,12 @@ the title look and the music.
 
 Importing it removes chslim, and an episode or switch asking for chslim gets `chc` (it stands in for chslim's revision 2).
 
+**Pack 31500's episodes** (tagged `(CHC)`: the Claire Hart category, CH badge) require it. They draw its green backdrop (28001)
+under their scenes (the cod profile's `TRANSLATED_FRAME_BACKDROP`), and name their looks through **look banks**
+(`LOOK_BANKS`): CoD draws a look as 5 consecutive IDs, but chc holds each picture once, so ID 30000 + 5 × look + expression is
+the picture its spec at 26998 (from Stage 1: JSON, `looks`, each look's 5 picture IDs) names there
+(`EpisodeResources._look_bank`). An episode's own resource at such an ID wins.
+
 Its backdrops stay at full brightness, as the rounds need them. The player darkens them as it draws a case's story, to 110/255 as
 Classic did (its backdrop node's colour; the cod profile's `TRANSLATED_BACKDROP_DIM`), while the shared **Dim Backdrops** switch is
 on (CH tag, on by default, offered once the library has a case).

@@ -1945,7 +1945,44 @@ class EpisodeResources:
             if found is not None and alias[1] in found[1].entries:
                 return found[1], alias[1]
             return None, resource_id
+        banked = self._look_bank(resource_id)
+        if banked is not None:
+            return banked
         return next((archive for archive in self._addons() if resource_id in archive.entries), None), resource_id
+
+    def _look_bank(self, resource_id):
+        """shshd-runtime (Claire Hart plan, look banks): CoD draws a look as 5 consecutive IDs, one an expression, but Claire
+        Hart's add-on holds each picture once, shared between looks. For a pack in the game profile's LOOK_BANKS, (add-on,
+        spec, base), the ID base + 5 x look + expression is the picture its spec's `looks` names there: (that add-on's archive,
+        the picture), or None (another ID, no such look or picture, or no add-on)."""
+        bank = pack_setting(self, 'LOOK_BANKS')
+        if bank is None or resource_id < bank[2]:
+            return None
+        addon_id, spec, base = bank
+        found = self.library.addon(addon_id) if hasattr(self.library, 'addon') else None
+        if found is None:
+            return None
+        looks = self._look_banks(found[1], spec)
+        look, expression = divmod(resource_id - base, 5)
+        picture = looks[look][expression] if look < len(looks) and len(looks[look]) == 5 else None
+        if type(picture) is not int or picture not in found[1].entries:
+            return None
+        return found[1], picture
+
+    def _look_banks(self, archive, spec):
+        """The `looks` of an add-on's spec (JSON at `spec`: a list of each look's 5 picture IDs), read once; [] without one."""
+        kept = self.__dict__.get('_looks')
+        if kept is None or kept[0] is not archive:
+            looks = []
+            if spec in archive.entries:
+                try:
+                    looks = json.loads(archive.read(spec)).get('looks', [])
+                except (ValueError, AttributeError, ContentError) as error:
+                    logging.warning('The look banks in resource %s are unreadable: %s', spec, error)
+                if not isinstance(looks, list):
+                    looks = []
+            kept = self._looks = (archive, looks)
+        return kept[1]
 
     # New Rules loads its minigame library (25200) beside whichever story runs: a linked segment (VM_SPEC.md §2.3).
     LINKED_SCRIPT = 25200

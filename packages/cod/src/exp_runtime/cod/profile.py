@@ -54,6 +54,13 @@ TRANSLATED_NARRATION_PORTRAITS = {31500: True}
 # Backdrops switch is on: Claire Hart Classic's 110 (its backdrop node's colour; the sequel's 102 comes with pack 31900).
 # The add-on keeps them at full brightness (CLAIRE_HART_PLAN.md, decision F).
 TRANSLATED_BACKDROP_DIM = {31500: 110}
+# shshd-runtime: a translated pack's looks (CoD draws one as 5 consecutive IDs, an expression each) taken from an add-on that
+# holds each picture once: pack -> (the add-on, its spec resource, the first ID). Look n's expression e is ID first + 5n + e,
+# the picture the spec's `looks`[n][e] names (content.EpisodeResources._look_bank; CLAIRE_HART_PLAN.md, look banks (a)).
+LOOK_BANKS = {31500: ('chc', 26998, 30000)}
+# shshd-runtime: a translated pack's own picture for the whole frame, under its backdrops (desktop._frame_backdrop): Claire
+# Hart's 4:3 scenes leave bands in CoD's 3:4 frame, which take chslim's green backdrop (28001, kept in chc).
+TRANSLATED_FRAME_BACKDROP = {31500: 28001}
 UI_SHIFTS = {PAID_PROFILE: 0, FREE_PROFILE: 1, LOCALIZED_FREE_PROFILE: 5}
 PROFILES = dict.fromkeys(UI_SHIFTS, 'ipa')
 # Reference UI members. Character/background/audio banks retain their IDs.

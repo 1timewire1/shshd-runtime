@@ -30,6 +30,11 @@
   full-brightness art. A shared Add-Ons switch with the CH tag, on by default, offered once the library has a case and in
   their pause menu; it changes the picture at once. Stand-in sheet:
   `reference/screenshots/verify/claire_hart/backdrop_dim_stand_in.png`.
+- **Claire Hart's pack 31500 registered** (Claire Hart plan Stage 0; `claire-hart` branch): its cases (titles tagged `(CHC)`)
+  are filed under Claire Hart with the CH badge; they take chc's green backdrop under their 4:3 scenes and reach chc's
+  portraits through look banks (look n's expression e at 30000 + 5n + e, from chc's spec at 26998;
+  [ADDONS.md](docs/ADDONS.md#chc-claire-hart-classic-in-progress-on-the-claire-hart-branch)). Probe sheet:
+  `reference/screenshots/verify/claire_hart/pack_31500_probe.png`.
 - **Test channel: Sync Devices by command** (owner, 2026-11-19): `sync receive`, `sync send [shs|cod|both]
   [nobackup]`, `sync devices`, `sync choose`, `sync answer yes|no`, `sync wait`, `sync status`, `sync ok` and
   `sync stop` run a sync without taps or screenshots ([RUNTIME.md](docs/RUNTIME.md#test-channel-this-fork)).
