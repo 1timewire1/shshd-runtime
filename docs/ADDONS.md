@@ -476,6 +476,7 @@ the picture its spec at 26998 (from Stage 1: JSON, `looks`, each look's 5 pictur
 **Claire Hart Dialogue** (Add-Ons, CH tag; owner, 2026-11-19): CoD's dialogue in Claire Hart's speech bubbles with CoD's
 attached portrait ring, for **Off**, **Claire Hart Cases** (the default: pack 31500) or **All Episodes**. The text and names are
 Romic Bold (28005; Romic, 28004, lacks `/`, `&` and most accented letters) in Claire Hart's dark red, emphasis in its gold;
+narration is Romic Bold slanted by the player (Classic ships no italic, and Romic is a commercial ITC face);
 the name sits in the bubble's tab beside the ring; no tail; Continue is the Play Now button. Narration takes the narrator box,
 with the ring when the narrator has a portrait. The CoD profile's `DIALOGUE_SKIN`; `content.EpisodeResources.dialogue_skin`.
 Choices, message panels and title cards keep CoD's look for now (ROADMAP 4.1a).

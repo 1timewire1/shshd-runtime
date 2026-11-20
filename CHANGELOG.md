@@ -45,7 +45,8 @@
   Claire Hart Cases / All Episodes, that draws CoD's dialogue in Claire Hart's own speech bubbles and Romic Bold, in its dark
   red, with a new portrait ring in the bubble's style attached as CoD's is: the name in the bubble's tab beside the ring, no
   tail, Claire Hart's narrator box for narration (with the ring when the narrator has a portrait), its Play Now button as
-  Continue, and its story-object squares. CoD's emphasis takes Claire Hart's gold. A glyph a font lacks now draws nothing
+  Continue, and its story-object squares. Narration is Romic Bold slanted by the player (Romic has no italic; owner,
+  2026-11-19), as CoD's narration is italic. CoD's emphasis takes Claire Hart's gold. A glyph a font lacks now draws nothing
   instead of the face's box (`vector_text.ttf_covered`). Art in `chc` 29100 on (`tools/translate/ch_dialogue_skin.py`).
   Review sheet: `reference/screenshots/verify/claire_hart/dialogue_skin_stand_in.png`.
 - **Test channel: Sync Devices by command** (owner, 2026-11-19): `sync receive`, `sync send [shs|cod|both]

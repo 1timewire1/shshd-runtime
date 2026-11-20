@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import unittest
 
 from exp_runtime.content import EpisodeResources
-from exp_runtime.dialogue import SKIN_BODY, SKIN_NAME, DialogueLayout
+from exp_runtime.dialogue import SKIN_BODY, SKIN_NAME, SKIN_NARRATION, DialogueLayout
 from exp_runtime.ui_assets import Rect
 
 SPEC = {'version': 1, 'density': 4, 'text': [112, 45, 25], 'emphasis': [166, 132, 22], 'fonts': {'body': 28004, 'bold': 28005},
@@ -64,8 +64,23 @@ class SkinTabTests(unittest.TestCase):
         tab, _ = DialogueLayout.skin_tab(SPEC, box, Rect(0, 230, 128, 128), 1, self.name(240))
         self.assertLessEqual(tab.x + tab.width, box.x + box.width + 10 - 4)
 
-    def test_the_faces_are_romic_bold(self):
-        self.assertEqual((SKIN_BODY, SKIN_NAME), ('CHRomicBold16', 'CHRomicBold18'))
+    def test_the_faces_are_romic_bold_and_narration_slanted(self):
+        self.assertEqual((SKIN_BODY, SKIN_NAME, SKIN_NARRATION), ('CHRomicBold16', 'CHRomicBold18', 'CHRomicBoldItalic16'))
+
+
+class SlantTests(unittest.TestCase):
+    def test_a_slanted_glyph_leans_right_above_its_baseline(self):
+        import pygame
+        from exp_runtime.vector_text import _slanted
+        pygame.init()
+        glyph = pygame.Surface((4, 10), pygame.SRCALPHA)
+        glyph.fill((0, 0, 0, 0))
+        glyph.fill((255, 0, 0, 255), (0, 0, 1, 10))                     # a vertical stroke at x 0
+        out, shift = _slanted(glyph, 0.5, 8)                              # baseline at row 8
+        lit = lambda y: next(x for x in range(out.get_width()) if out.get_at((x, y))[3])   # noqa: E731
+        self.assertEqual(lit(0) - lit(8), 4)                              # 8 rows above: 4 pixels right
+        self.assertLess(shift, 0)                                         # the rows below lean left of the pen
+        self.assertEqual(out.get_height(), 10)
 
 
 class CoveredGlyphTests(unittest.TestCase):

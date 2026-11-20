@@ -78,6 +78,8 @@ STORY_OBJECT_ROOM = 270                 # the widest a narrator's box grows to h
 # Claire Hart's text is Romic Bold, as its names are (its Romic lacks '/', '&', '#' and most accented letters); CoD's emphasis
 # takes the skin's `emphasis` colour (one of Claire Hart's text colours), not a font.
 SKIN_BODY, SKIN_BOLD, SKIN_NAME = 'CHRomicBold16', 'CHRomicBold16', 'CHRomicBold18'
+# ...and narration slanted, as CoD's narration is italic (owner, 2026-11-19; Romic has no italic: vector_text.SKIN_SLANT).
+SKIN_NARRATION = 'CHRomicBoldItalic16'
 TITLE_JOINS = ('and', '&', ',')         # a two-speaker title's words that name no one ("Kay and Kel")
 
 
@@ -337,7 +339,8 @@ class DialogueLayout:
         # text and without a name plate (owner, 2026-11-19).
         narration = bool(details.get('narration')) and mode in (1, 2)
         skin = self.skin() if duet is None else None
-        font = self.font(SKIN_BODY if skin else NARRATOR_FONT if mode == 4 or narration else BODY_FONT)
+        skin_body = SKIN_NARRATION if mode == 4 or narration else SKIN_BODY
+        font = self.font(skin_body if skin else NARRATOR_FONT if mode == 4 or narration else BODY_FONT)
         cap_height = getattr(font, 'cap_height', None)
         name_font, name_style, body_font, body_style = dialogue_styles(
             theme, narrator=mode == 4 or narration, emphasis_theme=details['emphasis_theme'],
@@ -346,7 +349,7 @@ class DialogueLayout:
             # Claire Hart's one colour for the text and every name (CoD has none per character), emphasis in Romic Bold.
             colour = tuple(skin['text'])
             name_font, name_style = SKIN_NAME, TextStyle(18, 0, colour)
-            body_font, body_style = SKIN_BODY, TextStyle(14, 7, colour, (('`', tuple(skin.get('emphasis', colour))),))
+            body_font, body_style = skin_body, TextStyle(14, 7, colour, (('`', tuple(skin.get('emphasis', colour))),))
         switch_fonts = note_frame = None
         text = details['text'][start:]
         sizing_text = details['text']  # Page turns keep the original box size.

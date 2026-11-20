@@ -171,6 +171,9 @@ class VectorFont(BitmapFont):
     # That stroke's own colour when it is not the fill's (`CSFont::setStroke`'s second argument: the quiz score's
     # white TrebuchetMS-Bold has a 0.6-point 0xffb4b4b4 edge). Drawn over the fill (fill-then-stroke).
     embolden_color: tuple | None = None
+    # shshd-runtime: a slant (horizontal shift per unit of height) for a face with no italic of its own: Claire Hart
+    # Dialogue's narration in Romic Bold (owner, 2026-11-19). Each row of the glyph moves by its height above the baseline.
+    slant: float = 0
 
     def render_glyph(self, code: int, color, scale: float):
         """(surface, dx, dy): the glyph at `scale` device pixels per logical
@@ -215,6 +218,9 @@ class VectorFont(BitmapFont):
             else:
                 layer.blit(glyph, (pad, pad))
             glyph = layer
+        if self.slant:
+            glyph, shift = _slanted(glyph, self.slant, ascent + pad)
+            return glyph, left - pad + shift, -ascent - pad
         return glyph, left - pad, -ascent - pad
 
     def _stroked_glyph(self, code, fill, px):
@@ -488,6 +494,19 @@ HD_ONLY_FONTS = {'PajamaHip24': 'PajamaHip26'}
 
 
 SKIN_FONT = 'CHRomic'           # Claire Hart Dialogue's faces: CHRomic16, CHRomicBold18... (dialogue.SKIN_BODY and its kin)
+SKIN_SLANT = 0.2                # ...CHRomicBoldItalic16, Romic Bold slanted for narration (Romic has no italic)
+
+
+def _slanted(glyph, slant, baseline):
+    """(the glyph sheared, the pen shift): each row moved right by `slant` times its height above row `baseline` (left
+    below it), copied row by row so every backend draws it the same."""
+    width, height = glyph.get_size()
+    low, high = slant * (baseline - height), slant * baseline         # the bottom row's shift, the top row's
+    out = pygame.Surface((width + math.ceil(high - low) + 1, height), pygame.SRCALPHA)
+    out.fill((0, 0, 0, 0))
+    for y in range(height):
+        out.blit(glyph, (round(slant * (baseline - y) - low), y), (0, y, width, 1))
+    return out, round(low)
 
 
 def ttf_covered(data: bytes):
@@ -534,7 +553,9 @@ def skin_font(library, name: str) -> BitmapFont:
     cache = library.__dict__.setdefault('_text_fonts', {}) if hasattr(library, '__dict__') else {}
     if name not in cache:
         bold = name.startswith(SKIN_FONT + 'Bold')
-        size = float(name[len(SKIN_FONT + ('Bold' if bold else '')):])
+        style = SKIN_FONT + ('Bold' if bold else '')
+        italic = name[len(style):].startswith('Italic')
+        size = float(name[len(style) + (6 if italic else 0):])
         base = load_font(library, 'ArialRoundedMTBold16')
         data = None
         from .games import GAMES
@@ -551,6 +572,8 @@ def skin_font(library, name: str) -> BitmapFont:
         try:
             cache[name] = (vector_font(base, FaceSource(data=data, label='Romic'), size, covered=ttf_covered(data))
                            if data else base)
+            if italic and data:
+                cache[name] = replace(cache[name], slant=SKIN_SLANT)
         except (pygame.error, OSError):
             cache[name] = base
     return cache[name]
