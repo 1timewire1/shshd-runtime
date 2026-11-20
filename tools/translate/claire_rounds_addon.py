@@ -8,7 +8,7 @@ Every scene's base picture, and its objects' sprites (each object's "normal" one
 which flies to the list) as Classic's own PNG files, one pack a scene (the add-on's IDs are 16 bits; the sprites number 78,577:
 claire_rounds.encode_sprite_pack); a spec saying where each sprite goes in the scene (build 157's layout: centres, y from the
 bottom), each object's name and hint offset, and each round's scene and story objects; Classic's 13 round sound effects (as WAV),
-its particle systems and fonts. The round's HUD art joins in step 3, with the screen. (Atlas pages were tried first: repacked as
+its particle systems and fonts, and the round screen's HUD art (hud_resources). (Atlas pages were tried first: repacked as
 true-colour pages, Classic's paletted sprites more than doubled, 2.4 GB.)
 
 The archive is written as it is made (write_exp), so its 1.1 GB never sits in memory at once.
@@ -26,7 +26,12 @@ ROUNDS_ID, ROUNDS_TITLE, ROUNDS_REVISION = 'chcrounds', 'Claire Hart Classic: Ro
 PACK_ID = 31500
 SPEC = 26000
 BASE_FIRST = 26001                      # the scenes' bases, in the scene folders' sorted order (chc's own order)
-HUD_FIRST = 26800                       # (step 3)
+HUD_FIRST = 26800                       # the round's HUD: its pieces, then each animation as a sprite pack (hud_resources)
+# The packs holding the round screen's pieces (HogPTSDcomboScene's own, the menus' and the modals'): every frame of them, cut
+# whole (original size, trimmed margins restored); and the animations it plays, each frame in order, as one sprite pack.
+HUD_PACKS = ('0f/0f14b4a7e.json', '0b/0b3869fa8.json', '03/03492ab2a.json')
+HUD_ANIMATIONS = ('vfx_HintFill', 'vfx_explosion', 'vfx_hint_starburst', 'vfx_hint_tail', 'vfx_sparkles', 'vfx_smoke')
+HUD_TEXTURES = {'powerup_Hint': 'textures/SD/HOGscene/powerup_Hint'}     # (a texture of its own: the orb's sparkle ring)
 SOUND_FIRST = 26900
 PARTICLE_FIRST = 26930                  # plist, then its picture
 FONT_FIRST = 26960
@@ -186,6 +191,35 @@ def wav(ogg, folder):
     return out.read_bytes()
 
 
+def hud_resources(mirror_root, rows, first=HUD_FIRST):
+    """[(resource, bytes)] and the spec's `hud` {name: resource} (an animation's: [resource, frame count])."""
+    import re
+    import cocos_frames as cf
+    from exp_runtime.claire_rounds import encode_sprite_pack
+    cache, out, hud = {}, [], {}
+    resource = first
+    pieces = cf.frames(mirror_root, HUD_PACKS)
+    for name in sorted(pieces):
+        out.append((resource, png(cf.cut(mirror_root, pieces[name][0], cache=cache))))
+        hud[name] = resource
+        resource += 1
+    for name, path in HUD_TEXTURES.items():
+        row = next(r for r in rows[path] if r['ext'] == '.png')
+        out.append((resource, (Path(mirror_root) / row['local_path']).read_bytes()))
+        hud[name] = resource
+        resource += 1
+    every = cf.frames(mirror_root)
+    for animation in HUD_ANIMATIONS:
+        names = sorted(n for n in every if re.fullmatch(re.escape(animation) + r'\d+', n))
+        files = [png(cf.cut(mirror_root, every[n][0], cache=cache)) for n in names]
+        out.append((resource, encode_sprite_pack(files)))
+        hud[animation] = [resource, len(files)]
+        resource += 1
+    if resource > SOUND_FIRST:
+        raise ValueError('the HUD art runs past its range')
+    return out, hud
+
+
 def below_normal():
     """This process (and the workers it starts after) at below-normal priority, on Windows."""
     import sys
@@ -287,6 +321,10 @@ def build(mirror, out, *, only=None, workers=3, progress=print):
         for i, path in enumerate(fonts):
             put(FONT_FIRST + i, (mirror.root / next(r for r in rows[path] if r['ext'] == '.ttf')['local_path']).read_bytes())
             spec['fonts'][path.rsplit('/', 1)[1]] = FONT_FIRST + i
+        hud, spec['hud'] = hud_resources(mirror.root, rows)
+        for resource, data in hud:
+            put(resource, data)
+        report['hud pieces'] = len(hud)
         put(SPEC, json.dumps(spec, separators=(',', ':')).encode('utf-8'))
         put(ADDON_RECORD, provides_bytes(ROUNDS_ID, ROUNDS_TITLE, ROUNDS_REVISION))
         put(1, Metadata(PACK_ID, 0, (ROUNDS_TITLE + ' (addon)',) * 5).to_bytes())

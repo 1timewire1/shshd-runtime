@@ -1,0 +1,121 @@
+"""The Claire Hart round on screen (Claire Hart plan Stage 3, step 3; desktop_claire_round.py), on a small made-up add-on:
+the view (fit to the frame's height, zoom 1-2x, panning), the hit test (HUD pieces, the edge arrows, the scene's sprites by
+their alpha), a new mark brought into view, and whole frames drawn at 3:4 and 9:21."""
+import io
+import json
+import os
+from types import SimpleNamespace
+import unittest
+
+os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+import pygame
+
+from exp_runtime import claire_rounds as cr
+from exp_runtime.randomness import Random48
+
+HUD = ('cmp_UIbar_top', 'cmp_UIbar_bottom', 'icn_star', 'icn_menu', 'ui-top-combobar', 'ui-top-combobarfrozen', 'extraobjs',
+       'zoom', 'time', 'clicks', 'hint_empty_back', 'hint_glass_reflection', 'panel_background', 'panel_summary', 'STAR')
+
+
+def png(size, colour):
+    surface = pygame.Surface(size, pygame.SRCALPHA)
+    surface.fill(colour)
+    out = io.BytesIO()
+    pygame.image.save(surface, out, 'piece.png')
+    return out.getvalue()
+
+
+def an_addon(objects=8):
+    """chcrounds and chc as {addon: {resource: bytes}}: a 1026 x 770 scene with `objects` 20 x 20 opaque sprites in a row."""
+    resources = {26001: png((1026, 770), (40, 60, 80, 255))}
+    sprites, entries = [], []
+    for i in range(objects):
+        sprites += [png((20, 20), (200, 10 * i, 0, 255)), png((40, 40), (255, 255, 0, 255))]
+        entries.append([f'Thing {i}', [2 * i, 20, 20, 100 + 100 * i, 300], [2 * i + 1, 40, 40, 90 + 100 * i, 290], [0, 0]])
+    resources[27001] = cr.encode_sprite_pack(sprites)
+    hud, resource = {}, 26800
+    sizes = {'cmp_UIbar_top': (800, 41), 'cmp_UIbar_bottom': (800, 131), 'panel_summary': (372, 310)}
+    for name in HUD:
+        resources[resource] = png(sizes.get(name, (60, 60)), (0, 120, 120, 255))
+        hud[name] = resource
+        resource += 1
+    for animation in ('vfx_HintFill', 'vfx_hint_starburst'):
+        resources[resource] = cr.encode_sprite_pack([png((40, 40), (0, 255, 0, 255))] * 3)
+        hud[animation] = [resource, 3]
+        resource += 1
+    resources[26000] = json.dumps({'version': 1, 'hud': hud, 'scenes': {'Office': {
+        'base': 26001, 'sprites': 27001, 'size': [1026, 770], 'objects': entries}}}).encode()
+    path = pygame.font.get_default_font()
+    with open(path if os.path.exists(path) else os.path.join(os.path.dirname(pygame.__file__), path), 'rb') as file:
+        font = file.read()
+    chc = {28004: font, 28005: font, 29106: png((209, 57), (0, 160, 0, 255)), 29107: png((209, 57), (0, 120, 0, 255))}
+    return {'chcrounds': resources, 'chc': chc}, [e[0] for e in entries]
+
+
+class RendererTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        pygame.init()
+        pygame.display.set_mode((1, 1))
+
+    def setUp(self):
+        from exp_runtime.desktop_claire_round import ClaireRoundRenderer
+        archives, self.names = an_addon()
+        library = SimpleNamespace(addon_resource=lambda addon, resource: archives[addon].get(resource))
+        self.renderer = ClaireRoundRenderer(SimpleNamespace(library=library))
+        self.game = cr.ClaireRound.opened('Office', self.names, [], Random48(1))
+
+    def test_the_scene_fits_the_frames_height_and_pans(self):
+        from exp_runtime.desktop_claire_round import RoundView
+        view = RoundView((1026, 770), (768, 1024))
+        view.clamp()
+        self.assertAlmostEqual(view.scale, 1024 / 770)
+        self.assertEqual(view.to_scene(384, 512), (513, 385))             # centred
+        view.pan(-10000, 0)                                                # as far right as it goes
+        left, _, width, _ = view.source()
+        self.assertAlmostEqual(left + width, 1026)
+        view.zoom_at(5, 0, 0)
+        self.assertEqual(view.zoom, 2.0)                                   # 1x to 2x
+        x, y = view.to_canvas(*view.to_scene(100, 200))
+        self.assertAlmostEqual(x, 100)
+        self.assertAlmostEqual(y, 200)
+
+    def test_a_tap_hits_hud_pieces_arrows_and_sprites(self):
+        r, game = self.renderer, self.game
+        r.draw_game(game)
+        self.assertEqual(r.hit(game, *r.orb_rect().center), ('hint',))
+        self.assertEqual(r.hit(game, *r.segment_rects()[cr.CLAIRVOYANCE].center), ('powerup', cr.CLAIRVOYANCE))
+        self.assertEqual(r.hit(game, *r.label_rect(2).center), ('label', 2))
+        self.assertEqual(r.hit(game, *r.arrows()[1].center), ('arrow', 1))
+        r.view.centre_on(310, 310)
+        r.draw_game(game)
+        x, y = r.view.to_canvas(310, 310)                                  # object 2's sprite
+        self.assertEqual(r.hit(game, x, y), ('scene', [2]))
+        bare = r.view.to_canvas(370, 200)
+        self.assertEqual(r.hit(game, *bare), ('scene', []))
+
+    def test_a_new_mark_comes_into_view(self):
+        r, game = self.renderer, self.game
+        r.draw_game(game)
+        r.view.pan(-10000, 0)                                              # scrolled to the far right
+        game.slots[0] = 0
+        game.hint_target = 0                                               # object 0, at the far left
+        r.draw_game(game)
+        x, _ = r.view.to_canvas(*r.mark_centre(game, 0))
+        self.assertTrue(0 <= x <= 768)
+
+    def test_whole_frames_draw_at_3_4_and_9_21(self):
+        r, game = self.renderer, self.game
+        for units in ((384, 512), (384, 896)):
+            r.frame_units = units
+            r.draw_game(game, 16)
+            self.assertEqual(r.canvas.get_size(), (768, 1024 if units[1] == 512 else 1792))
+        game.tap([game.listed[0]])
+        r.draw_game(game, 100)                                             # a find popping
+        game.over = True
+        r.draw_game(game, 16)                                              # the Level Summary
+        self.assertEqual(r.hit(game, *r.summary_rects()[2].center), ('continue',))
+
+
+if __name__ == '__main__':
+    unittest.main()

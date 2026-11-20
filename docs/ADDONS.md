@@ -516,7 +516,7 @@ Optional, for the translated cases (pack 31500): Classic's hidden-object rounds 
 (Other Games/docs/CLAIRE_HART_ROUNDS_PLAN.md). Without it, or with Use Translated Mini-Games off, a round is the case's
 narrated stand-in line. `tools/translate/claire_rounds_addon.py` writes it (via `claire_hart.py rounds`), streaming the archive
 to disk as it goes (`write_exp`); `tools/translate/claire_rounds_check.py` redraws every scene from it and compares each with
-Classic's own `template.png`. Revision 1 until it goes to testers. The round's HUD art joins it in Stage 3's step 3.
+Classic's own `template.png`. Revision 1 until it goes to testers.
 
 ```sh
 python tools/translate/claire_hart.py rounds --mirror CLAIRE_HART_DIR --out OUT_DIR [--scenes A,B] [--workers 3]   # FFmpeg on PATH
@@ -527,7 +527,7 @@ python tools/translate/claire_rounds_check.py OUT_DIR/CH_Classic_Rounds.exp CLAI
 | --- | --- |
 | 26000 | The spec, JSON (version 1): `scenes` (folder → `base`, `sprites`, `size` and its `objects`, each `[name, normal, found, hint offset]`, a sprite being `[number in the pack, width, height, left, top]`: its top left in the base's pixels), `rounds` (E-number → its rounds in order, each `[scene, [story object indices]]`), `balance` (Classic's gamebalance.json), `sounds`, `particles`, `fonts` |
 | 26001–26787 | The 787 scenes' bases (1026 × 770; EstateBedroom's bg with its shadow), in the scene folders' sorted order, as chc's backdrops: Classic's own PNGs |
-| 26800–26899 | (Stage 3 step 3: the round's HUD) |
+| 26800–26865 | The round screen's HUD (`hud_resources`, from the mirror's packed sprite frames by `cocos_frames.py`): every frame of the round scene's, the menus' and the modals' packs, cut whole (the bars, the wheel's segments, the hint orb's back and glass, the combo bar and its frozen look, stars, the summary and pop-up panels...), the orb's sparkle ring, and six animations as sprite packs (the orb's 120-frame fill, the explosion, the hint's starburst and tail, sparkles, smoke); the spec's `hud` names them |
 | 26900–26912 | Classic's 13 round sound effects, as WAV (the jingle is chc's 26990) |
 | 26930– | Its particle systems: each `.plist`, then its picture |
 | 26960– | The Roboto, Roboto Condensed and Roboto Slab faces |
