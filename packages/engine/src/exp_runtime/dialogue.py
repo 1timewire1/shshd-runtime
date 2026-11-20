@@ -73,6 +73,11 @@ STORY_OBJECT_SLOT = 36                  # a square's side, in units, when the ro
 STORY_OBJECT_GAP = 3                    # between squares
 STORY_OBJECT_MARGIN = 6                 # from the box's right and bottom edges, and above the row
 STORY_OBJECT_ROOM = 270                 # the widest a narrator's box grows to hold its row
+# shshd-runtime: Add-Ons' Claire Hart Dialogue (content.EpisodeResources.dialogue_skin; owner, 2026-11-19): Claire Hart's Romic
+# (vector_text.skin_font: the add-on's own faces) for the text, its bold for emphasis and the name, which goes in the tab.
+# Claire Hart's text is Romic Bold, as its names are (its Romic lacks '/', '&', '#' and most accented letters); CoD's emphasis
+# takes the skin's `emphasis` colour (one of Claire Hart's text colours), not a font.
+SKIN_BODY, SKIN_BOLD, SKIN_NAME = 'CHRomicBold16', 'CHRomicBold16', 'CHRomicBold18'
 TITLE_JOINS = ('and', '&', ',')         # a two-speaker title's words that name no one ("Kay and Kel")
 
 
@@ -183,6 +188,9 @@ class DialoguePage:
     lift: float = 0
     # shshd-runtime: the story-object pictures shown with the line, (picture, its square) each (story_object_slots).
     story_objects: tuple = ()
+    # shshd-runtime (Claire Hart Dialogue): the skin's spec with `box` ('speaker' or 'narrator'), and the name's tab, or None.
+    skin: dict | None = None
+    tab: Rect | None = None
 
 
 def story_object_slots(box, pictures, *, widen=False):
@@ -209,6 +217,12 @@ class DialogueLayout:
     def __init__(self, resources):
         self.resources = resources
         self.bank = LayoutBank.parse(read_ui(resources, 14))
+
+    def skin(self):
+        """Add-Ons' Claire Hart Dialogue's spec for this episode (content.EpisodeResources.dialogue_skin), or None. Asked
+        each page: the player may change it while the line is up."""
+        found = getattr(self.resources, 'dialogue_skin', None)
+        return found() if found is not None else None
 
     @lru_cache(maxsize=8)
     def font(self, name):
@@ -322,11 +336,17 @@ class DialogueLayout:
         # shshd-runtime (narration_portrait): a narrator's line in a speaker's box beside the portrait, in narration's
         # text and without a name plate (owner, 2026-11-19).
         narration = bool(details.get('narration')) and mode in (1, 2)
-        font = self.font(NARRATOR_FONT if mode == 4 or narration else BODY_FONT)
+        skin = self.skin() if duet is None else None
+        font = self.font(SKIN_BODY if skin else NARRATOR_FONT if mode == 4 or narration else BODY_FONT)
         cap_height = getattr(font, 'cap_height', None)
         name_font, name_style, body_font, body_style = dialogue_styles(
             theme, narrator=mode == 4 or narration, emphasis_theme=details['emphasis_theme'],
             game=game_id(self.resources), outline=cap_height is not None)
+        if skin:
+            # Claire Hart's one colour for the text and every name (CoD has none per character), emphasis in Romic Bold.
+            colour = tuple(skin['text'])
+            name_font, name_style = SKIN_NAME, TextStyle(18, 0, colour)
+            body_font, body_style = SKIN_BODY, TextStyle(14, 7, colour, (('`', tuple(skin.get('emphasis', colour))),))
         switch_fonts = note_frame = None
         text = details['text'][start:]
         sizing_text = details['text']  # Page turns keep the original box size.
@@ -378,7 +398,7 @@ class DialogueLayout:
             measured = layout_text(font, sizing_text, 220, body_style)
             # Narration switches to +0xfa74 on '`': the same face with a 0.6-point edge (cod/profile.py).
             emphasis = GAMES['cod'].NARRATION_EMPHASIS_FONT
-            switch_fonts = {'`': (emphasis, self.font(emphasis))}
+            switch_fonts = None if skin else {'`': (emphasis, self.font(emphasis))}
             width = max(120, (int(measured.width) + 2) // 2 * 2)
             height = (int(measured.height) + 5) // 2 * 2
             box = Rect(25, top - 5, width + 10, height + 10)
@@ -415,6 +435,10 @@ class DialogueLayout:
         else:
             if narration:
                 name, name_origin, name_scale, extra = layout_text(self.font(name_font), '', 1, name_style), (0, 0), .9, 0
+            elif skin:
+                # The name goes in the skin's tab (skin_tab, below), on one line, at its own size.
+                name = layout_text(self.font(name_font), details['speaker'], 10000, name_style)
+                name_origin, name_scale, extra = (0, 0), 1, 8
             else:
                 hd_label = self.hd_label(details, between_rings=duet is not None)
                 label = hd_label or preview_speaker(
@@ -428,7 +452,9 @@ class DialogueLayout:
                 # iPhone branch below, not SHS HD's photo-fitted one.
                 from .vector_text import cap_height as vector_cap_height
                 cap_height = vector_cap_height(font)
-            if narration and cap_height is not None:
+            if skin and cap_height is not None:
+                body_style = replace(body_style, height=cap_height, gap=10)       # (emphasis by colour: no switch font)
+            elif narration and cap_height is not None:
                 # Narration's own emphasis face (cod/profile.py, shs/profile.py NARRATION_EMPHASIS_FONT).
                 emphasis = GAMES[game_id(self.resources)].NARRATION_EMPHASIS_FONT
                 switch_fonts = {'`': (emphasis, self.font(emphasis))}
@@ -547,7 +573,7 @@ class DialogueLayout:
                            switch_fonts=switch_fonts)
         if duet is not None:
             body = _shift_lines(body, [-n / 2 for n in body_style.indents])
-        if mode != 4 and not narration:     # (narration has no name to place)
+        if mode != 4 and not narration and not skin:     # (narration has no name to place; the skin's goes in its tab)
             # Allow for any glyph becoming the first line on a later page.
             # The whole dialogue supplies one stable name position; neither
             # the native body box nor its byte offsets change for this fit.
@@ -584,6 +610,9 @@ class DialogueLayout:
                 name_origin = (middle - (ink[0] + ink[1]) / 2 * name_scale, name_origin[1])
                 if colors is not None:
                     name = _speaker_colors(name, partner_name or '', *colors)
+        tab = None
+        if skin and mode != 4 and not narration and details['speaker']:
+            tab, name_origin = self.skin_tab(skin, box, portrait, mode, name)
         pictures = tuple(details.get('story_objects') or ())
         story_objects = ()
         if pictures:
@@ -595,7 +624,7 @@ class DialogueLayout:
         up = dialogue_offset[1]
         if up:
             # Centred in a taller frame, as far as the bubble's top (its box, its title, its portrait) has room.
-            tops = [box.y] + [r.y for r in (portrait, name_bounds) if r is not None]
+            tops = [box.y] + [r.y for r in (portrait, name_bounds, tab) if r is not None]
             lift += max(0., min(up, min(tops) - lift - DIALOGUE_TOP_ROOM))
         if lift:
             box = replace(box, y=box.y - lift)
@@ -604,7 +633,32 @@ class DialogueLayout:
             portrait = None if portrait is None else replace(portrait, y=portrait.y - lift)
             name_bounds = None if name_bounds is None else replace(name_bounds, y=name_bounds.y - lift)
             story_objects = tuple((picture, replace(r, y=r.y - lift)) for picture, r in story_objects)
+            tab = None if tab is None else replace(tab, y=tab.y - lift)
         return DialoguePage(box, drawn_origin, body_font, body, portrait, name_font,
                             name, name_origin, name_scale, start, start + end, name_bounds, note_frame, note_tint,
                             note_pack=note_pack, theme=details['theme'] if duet is not None or narration_theme else None, lift=lift,
-                            story_objects=story_objects)
+                            story_objects=story_objects,
+                            skin=dict(skin, box='narrator' if mode == 4 or narration else 'speaker') if skin else None, tab=tab)
+
+    @staticmethod
+    def skin_tab(skin, box, portrait, mode, name):
+        """(the tab's rectangle, the name's origin) for Claire Hart Dialogue: the tab as wide as the name and its insets, its
+        base on the bubble's outer top, beside the ring (to its right for a left speaker, its left for a right one; at the
+        bubble's left without a portrait), the name centred in the tab's band."""
+        k, tab = skin['density'], skin['tab']
+        width = max((tab['caps'][0] + tab['caps'][1]) / k, name.width + 2 * tab['inset'] / k)
+        height = tab['size'][1] / k
+        outset = skin['speaker']['outset']
+        left, right = box.x - outset[0], box.x + box.width + outset[2]
+        if portrait is not None and mode == 1:
+            x = portrait.x + portrait.width - 6
+        elif portrait is not None and mode == 2:
+            x = portrait.x + 6 - width
+        else:
+            x = left + 12
+        x = max(left + 4, min(x, right - 4 - width))
+        top = box.y - outset[1] - tab['base'] / k
+        rect = Rect(x, top, width, height)
+        x0, y0, x1, y1 = name.ink_bounds
+        middle = top + (tab['name'][0] + tab['name'][1]) / 2 / k
+        return rect, (x + (width - (x1 - x0)) / 2 - x0, middle - (y1 - y0) / 2 - y0)

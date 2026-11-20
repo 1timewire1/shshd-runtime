@@ -1969,6 +1969,28 @@ class EpisodeResources:
             return None
         return found[1], picture
 
+    def dialogue_skin(self):
+        """shshd-runtime (Add-Ons' Claire Hart Dialogue, the game profile's DIALOGUE_SKIN): the skin's spec (its art's numbers
+        in its add-on, `addon`, its text colour and fonts) when the player's choice (`library.ch_dialogue`: 'off', 'cases' for
+        the profile's packs, 'all') puts this episode in it and the library has the add-on with its spec; else None."""
+        entry = getattr(GAMES.get(game_id(self)), 'DIALOGUE_SKIN', None)
+        choice = getattr(self.library, 'ch_dialogue', 'cases')
+        if entry is None or choice == 'off' or choice != 'all' and feature_pack(self) not in entry[2]:
+            return None
+        kept = self.__dict__.get('_skin')
+        if kept is None:
+            data = self.library.addon_resource(entry[0], entry[1]) if hasattr(self.library, 'addon_resource') else None
+            spec = {}
+            if data is not None:
+                try:
+                    spec = json.loads(data)
+                except ValueError as error:
+                    logging.warning('The dialogue skin in %s %s is unreadable: %s', entry[0], entry[1], error)
+                if not isinstance(spec, dict) or spec.get('version') != 1:
+                    spec = {}
+            kept = self._skin = dict(spec, addon=entry[0]) if spec else {}
+        return kept or None
+
     def _look_banks(self, archive, spec):
         """The `looks` of an add-on's spec (JSON at `spec`: a list of each look's 5 picture IDs), read once; [] without one."""
         kept = self.__dict__.get('_looks')

@@ -462,6 +462,8 @@ the title look and the music.
 | Resources | What |
 | --- | --- |
 | 28000–28005, 28010 on, 29000–29001 | chslim revision 1's, kept (the map, the backdrop, the speech bubbles, the Romic fonts, the portraits, CoD's two edits) |
+| 29100 | Claire Hart Dialogue's spec, JSON (`tools/translate/ch_dialogue_skin.py`): its density, text and emphasis colours, fonts, and where each picture is cut |
+| 29101–29108 | Its art: the speaker body (the tail side mirrored away), the name tab, the narrator box, the new portrait ring and disc, the Play Now button (Continue, at rest and pressed) and the story-object square |
 
 Importing it removes chslim, and an episode or switch asking for chslim gets `chc` (it stands in for chslim's revision 2).
 
@@ -470,6 +472,13 @@ under their scenes (the cod profile's `TRANSLATED_FRAME_BACKDROP`), and name the
 (`LOOK_BANKS`): CoD draws a look as 5 consecutive IDs, but chc holds each picture once, so ID 30000 + 5 × look + expression is
 the picture its spec at 26998 (from Stage 1: JSON, `looks`, each look's 5 picture IDs) names there
 (`EpisodeResources._look_bank`). An episode's own resource at such an ID wins.
+
+**Claire Hart Dialogue** (Add-Ons, CH tag; owner, 2026-11-19): CoD's dialogue in Claire Hart's speech bubbles with CoD's
+attached portrait ring, for **Off**, **Claire Hart Cases** (the default: pack 31500) or **All Episodes**. The text and names are
+Romic Bold (28005; Romic, 28004, lacks `/`, `&` and most accented letters) in Claire Hart's dark red, emphasis in its gold;
+the name sits in the bubble's tab beside the ring; no tail; Continue is the Play Now button. Narration takes the narrator box,
+with the ring when the narrator has a portrait. The CoD profile's `DIALOGUE_SKIN`; `content.EpisodeResources.dialogue_skin`.
+Choices, message panels and title cards keep CoD's look for now (ROADMAP 4.1a).
 
 Its backdrops stay at full brightness, as the rounds need them. The player darkens them as it draws a case's story, to 110/255 as
 Classic did (its backdrop node's colour; the cod profile's `TRANSLATED_BACKDROP_DIM`), while the shared **Dim Backdrops** switch is

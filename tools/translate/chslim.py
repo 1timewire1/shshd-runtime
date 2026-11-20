@@ -186,6 +186,9 @@ def build(mirror, pairs, catalog, sources, extras, *, chc=False):
         resources[resource] = files[path].read_bytes()
     resources[SPEC] = json.dumps(spec, separators=(',', ':')).encode('utf-8')
     if chc:
+        # Claire Hart Dialogue's art and spec, 29100 on (ch_dialogue_skin.py; owner, 2026-11-19).
+        from ch_dialogue_skin import build as dialogue_skin
+        resources.update(dialogue_skin(mirror))
         resources[ADDON_RECORD] = provides_bytes(CHC_ID, CHC_TITLE, CHC_REVISION, supersedes=((ADDON_ID, ADDON_REVISION),))
     else:
         resources[ADDON_RECORD] = provides_bytes(ADDON_ID, ADDON_TITLE, ADDON_REVISION)

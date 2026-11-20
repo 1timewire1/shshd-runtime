@@ -359,6 +359,9 @@ class HdShell:
             settings.update(ch_portraits=state.ch_portraits, ch_backdrop=state.ch_backdrop)
         if self.app.dim_backdrops_offered():
             settings['dim_backdrops'] = state.dim_backdrops
+        if self.app.ch_dialogue_offered():
+            from .desktop_pause_hd import CH_DIALOGUE_NAMES
+            settings['ch_dialogue'] = CH_DIALOGUE_NAMES[state.ch_dialogue]
         if self.app.minigames_offered():
             settings['arena_minigames'] = state.arena_minigames
         settings['skip_ahead'] = state.skip_ahead
@@ -473,6 +476,10 @@ class HdShell:
             state.title_music = value
             self.app._attempt(state.persist)
             self.app.play_menu_music()                  # the new tune at once, from its start
+        elif key == 'ch_dialogue':
+            state.ch_dialogue = value
+            self.app._attempt(state.persist)
+            self.app.apply_ch_dialogue()
         elif key == 'title_look':
             state.title_look = value                    # (the menu's art follows it at once: HdUi.look_source)
             self.app._attempt(state.persist)

@@ -88,6 +88,16 @@ class SharedSettingsTests(unittest.TestCase):
         self.assertEqual((cod.warp_unlocked, cod.names), (False, {}))       # the other game's progress and names
         self.assertEqual(json.loads((shs.library.directory / 'player.json').read_text())['autoplay'], True)
 
+    def test_claire_hart_dialogue_starts_on_its_cases_and_is_kept(self):
+        settings = AppSettings(self.root / 'settings.json')
+        cod = MenuState(library(self.root, 'cod'), shared=settings)
+        self.assertEqual(cod.ch_dialogue, 'cases')
+        cod.ch_dialogue = 'all'
+        cod.persist()
+        self.assertEqual(MenuState(library(self.root / 'again', 'cod'), shared=settings).ch_dialogue, 'all')   # (shared)
+        settings.preferences['ch_dialogue'] = 'sometimes'                   # not one of its values: the default
+        self.assertEqual(MenuState(library(self.root / 'other', 'cod'), shared=settings).ch_dialogue, 'cases')
+
     def test_a_damaged_shared_value_is_ignored(self):
         settings = AppSettings(self.root / 'settings.json')
         settings.preferences = dict(music_volume=400, autoplay='yes', order='random', sound=False)
@@ -154,7 +164,7 @@ class UnlockWarpingTests(unittest.TestCase):
             grids_as_memory=False, memory_grid_switch=lambda: False, skip_ahead=False, undo=False, _undo_ready=lambda: False,
             vibration_enabled=False, music_enabled=True, sound_enabled=True, music_volume=1, sound_volume=1,
             panels_open=False, choice_hints=False, skip_minigames=False, autoplay=False, disable_choice_timer=False,
-            backdrop_switch=lambda: False, hires_switch=lambda: False, ms3_switch=lambda: False, java_look_switch=lambda: False, brew_08_switch=lambda: False, hollywood_switch=lambda: False, dim_switch=lambda: False, dsi_switch=lambda: False, ch_switch=lambda: False,
+            backdrop_switch=lambda: False, hires_switch=lambda: False, ms3_switch=lambda: False, java_look_switch=lambda: False, brew_08_switch=lambda: False, hollywood_switch=lambda: False, dim_switch=lambda: False, ch_dialogue_switch=lambda: False, dsi_switch=lambda: False, ch_switch=lambda: False,
         minigames_switch=lambda: False, smartphone_switch=lambda: False,
             preferred_language_switch=lambda: False, word_grid_switch=lambda: False, x360_arena_switch=lambda: False,
             session=None)))         # (the pause menu's Quest Journal row reads the story: none here)

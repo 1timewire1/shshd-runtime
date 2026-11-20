@@ -70,6 +70,10 @@ TITLE_LOOK_PACKS = {31500: 'chc'}
 # (playsoundonload.js: `Main_Jingle`, loop false), as an MP3 at chc's 26990, played once in place of MENU_MUSIC.
 TITLE_MUSIC = {'chc': ('chc', 26990)}
 TITLE_MUSIC_PACKS = {31500: 'chc'}
+# shshd-runtime: Add-Ons' Claire Hart Dialogue (owner, 2026-11-19; CLAIRE_HART_PLAN.md Stage 0): CoD's dialogue in Claire Hart's
+# speech bubbles and Romic with CoD's attached ring: (the add-on, its skin spec, the packs it's on for with "Claire Hart Cases").
+# The spec and its art: tools/translate/ch_dialogue_skin.py.
+DIALOGUE_SKIN = ('chc', 29100, (31500,))
 UI_SHIFTS = {PAID_PROFILE: 0, FREE_PROFILE: 1, LOCALIZED_FREE_PROFILE: 5}
 PROFILES = dict.fromkeys(UI_SHIFTS, 'ipa')
 # Reference UI members. Character/background/audio banks retain their IDs.

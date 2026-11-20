@@ -87,6 +87,9 @@ WORD_GRID_SKIN_LABEL = 'Use Word Grid Skin'     # ...their minigames in the HD w
 CH_PORTRAITS_LABEL = 'HD Portraits in CoD'      # CoD with its portrait addon: Claire Hart's sharper originals
 CH_BACKDROP_LABEL = 'Backdrop'                  # ...and Claire Hart's green backdrop, in place of SHS HD's collage
 DIM_BACKDROPS_LABEL = 'Dim Backdrops'           # Claire Hart's translations: backdrops darkened as the game drew them
+# Claire Hart Dialogue (owner, 2026-11-19): CoD's dialogue in Claire Hart's speech bubbles and Romic, with CoD's ring.
+CH_DIALOGUE_LABEL = 'Claire Hart Dialogue'
+CH_DIALOGUE_NAMES = {'off': 'Off', 'cases': 'Claire Hart Cases', 'all': 'All Episodes'}
 ARENA_MINIGAMES_LABEL = 'Use Translated Mini-Games'      # translated episodes' real minigames, else timed choices
 ARENA_SKIN_LABEL = 'Use X360 Arena Skin'        # ...New Rules' arena in the X360 prototype's look (its addon imported)
 # A switch that only concerns one legacy game's translated episodes shows that game's tag before its label (owner,
@@ -94,7 +97,7 @@ ARENA_SKIN_LABEL = 'Use X360 Arena Skin'        # ...New Rules' arena in the X36
 # are there (application.hires_portraits_offered, Desktop.hires_switch). Use Translated Mini-Games concerns several.
 SWITCH_BADGES = {'hires_portraits': 'SHSNR', 'ms3_characters': 'SHSX360', 'java_look': 'SHS08', 'brew_08_backgrounds': 'SHS07', 'hollywood_art': 'SHS07', 'dsi_backgrounds': 'SHSDSI', 'smartphone_music': 'SHS11', 'word_grid_skin': 'SHS11', 'arena_skin': 'SHSNR',
                  'ch_portraits': 'CHC',
-                 'ch_backdrop': 'CHC', 'dim_backdrops': 'CHC'}
+                 'ch_backdrop': 'CHC', 'dim_backdrops': 'CHC', 'ch_dialogue': 'CHC'}
 # The skin concerns New Rules' episodes, so it wears their tag; the other game it comes from is named in that game's
 # colour (owner, 2026-11-02). key -> the tag whose name in the label is coloured.
 LABEL_TINTS = {'arena_skin': 'SHSX360', 'hollywood_art': 'SHW'}
@@ -184,15 +187,17 @@ PAGE_PARENTS = {'options:per_game': 'options:addons'}
 CHOICE_NAMES = {'aspect_ratio': ASPECT_NAMES, 'preferred_language': LANGUAGE_NAMES, 'start_in': START_IN_NAMES,
                 'controller_confirm': CONFIRM_NAMES,
                 'grid_controls': GRID_CONTROLS_NAMES, 'title_music': TITLE_MUSIC_NAMES, 'title_look': TITLE_LOOK_NAMES,
-                'dsi_backgrounds': DSI_BACKGROUNDS_NAMES}
+                'dsi_backgrounds': DSI_BACKGROUNDS_NAMES, 'ch_dialogue': CH_DIALOGUE_NAMES}
 CHOICE_LABELS = {'aspect_ratio': ASPECT_LABEL, 'preferred_language': PREFERRED_LANGUAGE_LABEL, 'start_in': START_IN_LABEL,
                  'controller_confirm': CONFIRM_BUTTON_LABEL, 'grid_controls': GRID_CONTROLS_LABEL,
-                 'title_music': TITLE_MUSIC_LABEL, 'title_look': TITLE_LOOK_LABEL, 'dsi_backgrounds': DSI_BACKGROUNDS_LABEL}
+                 'title_music': TITLE_MUSIC_LABEL, 'title_look': TITLE_LOOK_LABEL, 'dsi_backgrounds': DSI_BACKGROUNDS_LABEL,
+                 'ch_dialogue': CH_DIALOGUE_LABEL}
 CHOICE_PARENTS = {'aspect_ratio': 'options:general', 'preferred_language': 'options:general', 'start_in': 'options:general',
                   'controller_confirm': 'options:controller', 'grid_controls': 'options:controller',
-                  'title_music': 'options:addons', 'title_look': 'options:addons', 'dsi_backgrounds': 'options:extras'}
+                  'title_music': 'options:addons', 'title_look': 'options:addons', 'dsi_backgrounds': 'options:extras',
+                  'ch_dialogue': 'options:per_game'}
 # Add-on choices the main menu keeps on Per-Game Settings rather than Add-Ons: their page's way back goes there.
-PER_GAME_CHOICES = ()
+PER_GAME_CHOICES = ('ch_dialogue',)
 VALUE_PX, VALUE_GAP, VALUE_ALPHA = 19, 3, 150
 # Data Management (owner, 2026-10-29) lists Add Content, its pages, then Add-Ons and Reset Settings; each page's rows are
 # the actions the main menu offers (`settings` has the key). A row is (key, label); a page is (screen, title, rows).
@@ -978,7 +983,7 @@ class HdPauseMenu:
 
     @staticmethod
     def addon_choices(settings):
-        """The add-on options that are one of a few values, after the switches (none since DSi Backgrounds moved to Extras)."""
+        """The add-on options that are one of a few values, after the switches (Claire Hart Dialogue)."""
         return [('choice', CHOICE_LABELS[key], key) for key in PER_GAME_CHOICES if key in settings]
 
     def check(self, layer, right, middle):

@@ -52,7 +52,7 @@ from .x360_diss import (ROUND_BACKGROUNDS as X360_ROUND_BACKGROUNDS, ROUND_EPISO
                         SOUND_GOOD as X360_SOUND_GOOD, SOUND_REMIX as X360_SOUND_REMIX)
 from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, GRID_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
-from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE, LANGUAGE_NAMES,
+from .desktop_pause_hd import (ASPECT_NAMES, CH_DIALOGUE_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE, LANGUAGE_NAMES,
                                focus_step, place_controls)
 from . import backdrop_fit, frame_shape
 from .desktop_hd_menu import HdMenuWindows
@@ -385,6 +385,7 @@ class Desktop:
     ch_portraits = True             # CoD with its portrait addon: the CH "HD Portraits in CoD" switch (set_ch_portraits)
     ch_backdrop = True              # ...and its "Backdrop", in place of SHS HD's collage (_window_backdrop)
     dim_backdrops = True            # Claire Hart's translations: the "Dim Backdrops" switch (backdrop_dim)
+    _ch_dialogue = 'cases'          # Claire Hart Dialogue: Off, Claire Hart Cases or All Episodes (set_ch_dialogue)
     _arena_minigames = True         # translated episodes: the "Use Translated Mini-Games" switch (arena_minigames)
     x360_tutorial = None            # a tutorial taken in the X360 look: the game's music request it began under
     arena_skin = False              # ...drawn in the X360 prototype's look: the "Use X360 Arena Skin" switch (x360_arena_switch)
@@ -2419,6 +2420,28 @@ class Desktop:
         addon = getattr(GAMES.get(game_id(self.session.resources)), 'PORTRAIT_ADDON', None)
         return addon is not None and hasattr(library, 'addon') and library.addon(addon[0]) is not None
 
+    @property
+    def ch_dialogue(self):
+        return self._ch_dialogue
+
+    @ch_dialogue.setter
+    def ch_dialogue(self, value):
+        """Claire Hart Dialogue's choice, kept by the library too (content.EpisodeResources.dialogue_skin); the line on screen
+        takes it at once (its page is laid out again)."""
+        self._ch_dialogue = value if value in CH_DIALOGUE_NAMES else 'cases'
+        library = getattr(getattr(self.__dict__.get('_session'), 'resources', None), 'library', None)
+        if library is not None:
+            library.ch_dialogue = self._ch_dialogue
+        renderer = self.__dict__.get('dialogue_renderer')
+        if renderer is not None:
+            renderer.cached_key = renderer._rest_drawn = None
+
+    def ch_dialogue_switch(self):
+        """Whether the game's add-on carries Claire Hart Dialogue (the profile's DIALOGUE_SKIN) in this library."""
+        entry = getattr(GAMES.get(game_id(self.session.resources)), 'DIALOGUE_SKIN', None)
+        library = getattr(self.session.resources, 'library', None)
+        return entry is not None and hasattr(library, 'addon_has') and library.addon_has(entry[0], entry[1])
+
     def dim_switch(self):
         """shshd-runtime: whether this episode's backdrops are darkened by the "Dim Backdrops" switch (the game profile's
         TRANSLATED_BACKDROP_DIM: Claire Hart's translations)."""
@@ -2641,7 +2664,7 @@ class Desktop:
 
     def _drop_portraits(self):
         self.images.clear()
-        cached = [DialogueRenderer.portrait, DialogueRenderer.hd_portrait, DialogueRenderer.portrait_parts,
+        cached = [DialogueRenderer.portrait, DialogueRenderer.hd_portrait, DialogueRenderer._portrait_parts,
                   CharacterPickerRenderer.portrait, HdCharacterPickerRenderer.portrait]
         if HdWordRenderer is not None:
             cached.append(HdWordRenderer.portrait_image)
@@ -3799,6 +3822,7 @@ class Desktop:
                     **({'grids_as_memory': self.grids_as_memory} if self.memory_grid_switch() else {}),
                     **(dict(ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop) if self.ch_switch() else {}),
                     **({'dim_backdrops': self.dim_backdrops} if self.dim_switch() else {}),
+                    **({'ch_dialogue': CH_DIALOGUE_NAMES[self.ch_dialogue]} if self.ch_dialogue_switch() else {}),
                     **({'arena_minigames': self.arena_minigames} if self.minigames_switch() else {}),
                     **({'arena_skin': self.arena_skin} if self.hires_switch() and self.x360_arena_switch() else {}))
 
@@ -3982,6 +4006,16 @@ class Desktop:
             if self.on_settings:
                 self.on_settings()
             self.pause_hd.back()
+            self._menu_sound()
+            return
+        if kind == 'pause_cycle' and command[1] == 'ch_dialogue':
+            # Add-Ons' Claire Hart Dialogue, picked on its choice page (or stepped to the next); the app keeps it.
+            choices = list(CH_DIALOGUE_NAMES)
+            self.ch_dialogue = command[2] if len(command) > 2 else choices[(choices.index(self.ch_dialogue) + 1) % len(choices)]
+            if self.on_settings:
+                self.on_settings()
+            if len(command) > 2:
+                self.pause_hd.back()
             self._menu_sound()
             return
         if kind == 'pause_cycle' and command[1] == 'dsi_backgrounds':

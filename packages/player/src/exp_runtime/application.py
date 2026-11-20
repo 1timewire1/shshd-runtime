@@ -1282,6 +1282,19 @@ class Application:
         return bool(packs) and bool(set(packs) & self.library.feature_packs())
 
     @library_answer
+    def ch_dialogue_offered(self):
+        """Whether the library's add-on carries Claire Hart Dialogue's skin (the game profile's DIALOGUE_SKIN)."""
+        entry = getattr(GAMES.get(self.library.game_id), 'DIALOGUE_SKIN', None) if self.library else None
+        return entry is not None and hasattr(self.library, 'addon_has') and self.library.addon_has(entry[0], entry[1])
+
+    def apply_ch_dialogue(self):
+        """Claire Hart Dialogue reaches the library (content.EpisodeResources.dialogue_skin) and a paused episode."""
+        if self.library is not None:
+            self.library.ch_dialogue = self.state.ch_dialogue
+        if self.game:
+            self.game.ch_dialogue = self.state.ch_dialogue
+
+    @library_answer
     def portrait_addon_offered(self):
         """Whether the library has the game's optional portrait addon (the profile's PORTRAIT_ADDON), so its switches
         change something."""
@@ -1614,6 +1627,7 @@ class Application:
             library.hd_art_mode = state.hd_art          # the player's choice (player.json), unless the environment sets it
         library.hires_portraits = state.hires_portraits
         library.ms3_characters = state.ms3_characters
+        library.ch_dialogue = getattr(state, 'ch_dialogue', 'cases')
         library.java_look = state.java_look
         library.brew_08_backgrounds = state.brew_08_backgrounds
         library.hollywood_art = state.hollywood_art
@@ -2408,6 +2422,7 @@ class Application:
         self.game.shs11_seen_this_run = self.__dict__.setdefault('shs11_seen_this_run', set())     # (for as long as the app runs)
         self.game.ch_portraits, self.game.ch_backdrop = self.state.ch_portraits, self.state.ch_backdrop
         self.game.dim_backdrops = self.state.dim_backdrops
+        self.game.ch_dialogue = self.state.ch_dialogue
         self.game.arena_minigames = self.state.arena_minigames
         self.game.arena_skin = self.state.arena_skin
         # The app's lock (string 271: "complete Football Season") is Football Star's; another episode's own tree is never locked.
@@ -2529,6 +2544,7 @@ class Application:
         self.state.undo = self.game.undo
         self.state.ch_portraits, self.state.ch_backdrop = self.game.ch_portraits, self.game.ch_backdrop
         self.state.dim_backdrops = self.game.dim_backdrops
+        self.state.ch_dialogue = self.game.ch_dialogue
         self.state.arena_minigames = self.game.arena_minigames
         self.state.arena_skin = self.game.arena_skin
         self.state.music_volume = round(self.game.music_volume * 100)

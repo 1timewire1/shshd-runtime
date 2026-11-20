@@ -1195,7 +1195,7 @@ class DesktopTests(unittest.TestCase):
             saved = []
             ui.on_settings = lambda: saved.append(ui.hires_portraits)
             ui.images[26200] = None
-            caches = [DialogueRenderer.portrait, DialogueRenderer.hd_portrait, DialogueRenderer.portrait_parts,
+            caches = [DialogueRenderer.portrait, DialogueRenderer.hd_portrait, DialogueRenderer._portrait_parts,
                       CharacterPickerRenderer.portrait, HdCharacterPickerRenderer.portrait]
             with contextlib.ExitStack() as stack:
                 cleared = [stack.enter_context(mock.patch.object(cache, 'cache_clear')) for cache in caches]
