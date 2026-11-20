@@ -537,7 +537,7 @@ About 1.1 GB, built in under a minute.
 
 A group with no normal sprite is no object (KeepersCottage's Handbell). Story objects are resolved as `chc`'s round lines are
 (`Mirror.round_items`), then to the scene's object by its normal sprite: 983 in all; E014's Flyer and E125's Snowman Toy have no
-sprite in their scenes (`names.json` entries without an object), so those rounds play as Classic picked them.
+sprite in their scenes (`names.json` entries without an object), so those rounds play as Classic picked them. Classic writes five names in lowercase ("love", "flute", "lemon", "microphone", "fleur-de-lis"); they take a capital here.
 
 ## Settings
 

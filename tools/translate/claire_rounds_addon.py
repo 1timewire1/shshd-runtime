@@ -75,7 +75,7 @@ class SceneData:
             if not normal or not found:
                 continue
             entry = by_normal.get(normal[0]['image'].lower(), {})
-            name = (entry.get('name') or '').strip() or fallback_name(normal[0]['image'])
+            name = capitalized((entry.get('name') or '').strip()) or fallback_name(normal[0]['image'])
             self.objects.append((name, normal[0], found[0], list(entry.get('hintOffset') or (0, 0))))
         background = next((t for t in self.base_layers if t['image'].lower() in ('bg', 'background')), None) \
             or max(self.base_layers, key=lambda t: t['width'] * t['height'])
@@ -113,12 +113,18 @@ class SceneData:
         return png(self.base())
 
 
+def capitalized(name):
+    """A name as the list shows it: Classic writes five in lowercase (ArtStudio's "love", MasterSuite's "flute",
+    RetreatLobby's "lemon", SecurityOffice's "microphone", StatueGarden's "fleur-de-lis") and showed them so; here they
+    take a capital as every other name has (owner, 2026-11-20)."""
+    return name[:1].upper() + name[1:]
+
+
 def fallback_name(image):
-    """activeobjectlist.mapName's own fallback for a sprite names.json doesn't name: its second word (5 objects: ArtStudio's
-    'love', MasterSuite's 'flute'...), capitalized as every other name in the list is (Classic showed it as it is)."""
+    """activeobjectlist.mapName's own fallback for a sprite names.json doesn't name: its second word, capitalized. (Every
+    object of the 787 scenes has a name: this is for a scene that might not.)"""
     words = image.split('_')
-    word = words[1] if len(words) > 1 else image
-    return word[:1].upper() + word[1:]
+    return capitalized(words[1] if len(words) > 1 else image)
 
 
 def scene_job(path):

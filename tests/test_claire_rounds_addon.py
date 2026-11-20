@@ -54,11 +54,13 @@ class SceneTests(unittest.TestCase):
         self.assertEqual(scene.place(broom), (100 - 20, 770 - 700 - 10))      # centre (100, 700 from the bottom), 40 x 20
         self.assertEqual(scene.objects[1][3], [1, -1])                          # its hint offset
 
-    def test_an_object_names_json_lacks_takes_its_sprites_word(self):
-        """activeobjectlist.mapName's fallback (5 objects: ArtStudio's 'love'...), capitalized."""
+    def test_a_lowercase_name_is_capitalized_and_a_missing_one_takes_its_sprites_word(self):
+        """Classic's five lowercase names ("love", "fleur-de-lis") take a capital (owner, 2026-11-20); activeobjectlist's
+        fallback for a sprite names.json doesn't name is its second word."""
         import claire_rounds_addon as ra
-        self.assertEqual(ra.fallback_name('artstudio_love_normal'), 'Love')
-        self.assertEqual(ra.fallback_name('statuegarden_fleur-de-lis_normal'), 'Fleur-de-lis')
+        self.assertEqual(ra.capitalized('fleur-de-lis'), 'Fleur-de-lis')
+        self.assertEqual(ra.capitalized('Wall Calendar'), 'Wall Calendar')
+        self.assertEqual(ra.fallback_name('artstudio_wordlove_normal'), 'Wordlove')
 
     def test_a_group_without_a_normal_sprite_is_no_object(self):
         """KeepersCottage's Handbell: two found sprites, no normal one."""
