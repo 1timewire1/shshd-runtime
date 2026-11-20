@@ -310,6 +310,11 @@ class EngineState:
         no string (including the usual name 'Event') identifies narration.
         """
         if character == self.ui_defaults.get(75, -1):
+            # shshd-runtime (presentation narration_portrait, Claire Hart's narration): the narrator's portrait beside the
+            # narration box, when the episode wants it and the narrator has art for this expression.
+            variants = self.character_art_variants.get(character, ())
+            if self.narration_portrait and character >= 0 and variants and variants[expression % len(variants)] >= 0:
+                return 1, character, 0     # a speaker's layout, as narration (present_dialogue marks it)
             return 4, -1, -1
         variants = self.character_art_variants.get(character, ())
         if character < 0 or not variants or variants[expression % len(variants)] < 0:
@@ -325,11 +330,17 @@ class EngineState:
         old = self.dialogue_animation.portrait if self.dialogue_animation else None
         initial_expression = self.dialogue_history.expressions.get(character, 0) if (
             old is not None and old.character_id == character) else 0
+        narration = False
         if speaker is None:
             presentation, visible, theme = self.dialogue_presentation(character, expression)
             if presentation in (1, 2) and self.dialogue_presentation(character, initial_expression)[0] == 3:
                 presentation, visible, theme = 3, -1, -1
-            if presentation in (1, 2):
+            # shshd-runtime (narration_portrait): the narrator with a portrait speaks in a speaker's layout, the box
+            # attached to the portrait, but as narration: its text, no name plate, no relationship (owner, 2026-11-19).
+            narration = presentation in (1, 2) and character == self.ui_defaults.get(75, -1)
+            if narration:
+                self.panel.speaker = ''
+            elif presentation in (1, 2):
                 self.panel.speaker = self.substitute(self.character_names.get(character, ''))
         elif speaker in self.object_portraits:
             # shshd-runtime: a named thing the pack shows with a picture elsewhere (BREW's Phone and TV, owner 2026-11-18):
@@ -367,9 +378,11 @@ class EngineState:
             except ValueError:
                 relationship = None
         else:
-            relationship = self.prepare_relationship(visible if presentation in (1, 2) else -1,
+            relationship = self.prepare_relationship(visible if presentation in (1, 2) and not narration else -1,
                                                      settled=settled_relationship)
         extra = dict(status_icons=True) if status_icons is not None else {}
+        if narration:
+            extra['narration'] = True
         return dict(**extra, text=text, raw_text=raw_text, character_id=character,
                     visible_character_id=visible, speaker=speaker, expression=expression,
                     initial_expression=initial_expression,
@@ -477,6 +490,7 @@ class EngineState:
     # shshd-runtime: {name: picture bank} for a pack's named things that have a picture where a story gives them one (the
     # profile's TRANSLATED_OBJECT_PORTRAITS; Session sets it); a named line under that name shows it.
     object_portraits = {}
+    narration_portrait = False      # shshd-runtime: narrator lines show the narrator's portrait (presentation narration_portrait)
 
     def name_key(self, key: str) -> str:
         """The names table's key for a name the story calls `key` (name_keys), and that key's first value: the name the

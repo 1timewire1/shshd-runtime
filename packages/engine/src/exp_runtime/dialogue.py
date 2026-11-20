@@ -291,10 +291,13 @@ class DialogueLayout:
         else:
             duet = None
         mode, theme = details['presentation_mode'], details['theme']
-        font = self.font(NARRATOR_FONT if mode == 4 else BODY_FONT)
+        # shshd-runtime (narration_portrait): a narrator's line in a speaker's box beside the portrait, in narration's
+        # text and without a name plate (owner, 2026-11-19).
+        narration = bool(details.get('narration')) and mode in (1, 2)
+        font = self.font(NARRATOR_FONT if mode == 4 or narration else BODY_FONT)
         cap_height = getattr(font, 'cap_height', None)
         name_font, name_style, body_font, body_style = dialogue_styles(
-            theme, narrator=mode == 4, emphasis_theme=details['emphasis_theme'],
+            theme, narrator=mode == 4 or narration, emphasis_theme=details['emphasis_theme'],
             game=game_id(self.resources), outline=cap_height is not None)
         switch_fonts = note_frame = None
         text = details['text'][start:]
@@ -305,7 +308,7 @@ class DialogueLayout:
         cod = game_id(self.resources) == 'cod'
         note_tint = None
         note_pack, note_metrics = 155, (NOTE_SIZE, NOTE_OFFSET, NOTE_ADVANCE)
-        colored = mode != 4 and theme in IPHONE_NOTE_FRAMES
+        colored = mode != 4 and not narration and theme in IPHONE_NOTE_FRAMES
         if cod:
             # CoD's own notes (IPHONE_NOTE_FRAMES), in every font configuration (installed faces or vector text): only
             # the colored sets have them, so narration and default-theme lines keep a plain '{', as on the iPhone.
@@ -382,11 +385,14 @@ class DialogueLayout:
                 box = Rect(-6 + right, 96, math.ceil(measured.width) + 6, round(8.6 + 20.9 * lines))
                 origin = (right, HD_NARRATOR_TOP)
         else:
-            hd_label = self.hd_label(details, between_rings=duet is not None)
-            label = hd_label or preview_speaker(
-                details, self.bank, self.font, names,
-                previous_glyph=text_history.initial('dialogue_name') if text_history else -1)
-            name, name_origin, name_scale, extra = label.layout, label.origin, label.scale, label.extra
+            if narration:
+                name, name_origin, name_scale, extra = layout_text(self.font(name_font), '', 1, name_style), (0, 0), .9, 0
+            else:
+                hd_label = self.hd_label(details, between_rings=duet is not None)
+                label = hd_label or preview_speaker(
+                    details, self.bank, self.font, names,
+                    previous_glyph=text_history.initial('dialogue_name') if text_history else -1)
+                name, name_origin, name_scale, extra = label.layout, label.origin, label.scale, label.extra
             rect = self.bank.rectangle(17, 8)
             cap_height = getattr(font, 'cap_height', None)
             if cap_height is None and cod:
@@ -394,7 +400,12 @@ class DialogueLayout:
                 # iPhone branch below, not SHS HD's photo-fitted one.
                 from .vector_text import cap_height as vector_cap_height
                 cap_height = vector_cap_height(font)
-            if cap_height is not None and cod:
+            if narration and cap_height is not None:
+                # Narration's own emphasis face (cod/profile.py, shs/profile.py NARRATION_EMPHASIS_FONT).
+                emphasis = GAMES[game_id(self.resources)].NARRATION_EMPHASIS_FONT
+                switch_fonts = {'`': (emphasis, self.font(emphasis))}
+                body_style = replace(body_style, height=cap_height, gap=10)
+            elif cap_height is not None and cod:
                 # CSFont uses the face's cap height, not the nominal Cocos label height. CoD keeps this fork's
                 # photo-verified pitch (IMG_0309 / IMG_0310) with BODY_MARKERS' colours, and draws emphasis in its
                 # own switch font (cod/profile.py EMPHASIS_FONTS: TrebuchetMS-Italic 16 with a 0.5-point edge).
@@ -429,7 +440,8 @@ class DialogueLayout:
                 body_style = replace(body_style, indents=tuple(2 * n for n in insets))
             measured = layout_text(font, sizing_text, rect.width, body_style, switch_fonts=switch_fonts)
             capacity = int((rect.height + body_style.gap) / (body_style.height + body_style.gap))
-            count = min(capacity + max(0, extra_rows), max(3, len(measured.lines)))
+            # (A narration box holds just its lines: small, beside the portrait.)
+            count = min(capacity + max(0, extra_rows), max(1 if narration else 3, len(measured.lines)))
             # Rows past HD's own: the bubble grows that much upward (the whole of it is moved up below).
             lift = max(0, count - capacity) * (body_style.height + body_style.gap)
             height = int(count * (body_style.height + body_style.gap) - body_style.gap + 7) if count else 8
@@ -507,7 +519,7 @@ class DialogueLayout:
                            switch_fonts=switch_fonts)
         if duet is not None:
             body = _shift_lines(body, [-n / 2 for n in body_style.indents])
-        if mode != 4:
+        if mode != 4 and not narration:     # (narration has no name to place)
             # Allow for any glyph becoming the first line on a later page.
             # The whole dialogue supplies one stable name position; neither
             # the native body box nor its byte offsets change for this fit.

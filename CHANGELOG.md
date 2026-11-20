@@ -12,6 +12,12 @@
   other record unchanged). The player doesn't read them yet. See docs/ADDONS.md.
 - **Mark as Finished** (owner, 2026-11-21): Data Management's Episodes page lists every episode with the finished ones
   (the lists' green play icon) already ticked; Save makes the ticked ones finished and the others not.
+- **Narration with the narrator's portrait** (Claire Hart plan Stage 0, E; `claire-hart` branch): a presentation flag,
+  `narration_portrait`, has a narrator line with art speak as a small dialogue box attached to the narrator's portrait (the
+  lead's side), in narration's italic text, with no name plate and no relationship icons (owner, 2026-11-19); on for
+  Claire Hart Classic's pack 31500 (`TRANSLATED_NARRATION_PORTRAITS`). Stand-in review sheet:
+  `reference/screenshots/verify/claire_hart/narration_portrait_stand_in.png`. The Creator's option follows once the
+  look is settled.
 - **Test channel: Sync Devices by command** (owner, 2026-11-19): `sync receive`, `sync send [shs|cod|both]
   [nobackup]`, `sync devices`, `sync choose`, `sync answer yes|no`, `sync wait`, `sync status`, `sync ok` and
   `sync stop` run a sync without taps or screenshots ([RUNTIME.md](docs/RUNTIME.md#test-channel-this-fork)).

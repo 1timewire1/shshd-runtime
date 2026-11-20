@@ -47,6 +47,9 @@ LEGACY_GAMES = {'CHC': dict(badge='CH', color=(12, 84, 48), category='Claire Har
 # shshd-runtime: the optional addon of Claire Hart's sharper originals of CoD's portraits, and the resource holding its map
 # and the rest of its contents (tools/translate/chslim.py). A complete Claire Hart addon will supersede it.
 PORTRAIT_ADDON = ('chslim', 28000)
+# shshd-runtime: translated packs whose narration shows the narrator's portrait (presentation narration_portrait): Claire
+# Hart Classic draws Claire (or an `_Event` alias's face) beside its narration (CLAIRE_HART_PLAN.md, decision E).
+TRANSLATED_NARRATION_PORTRAITS = {31500: True}
 UI_SHIFTS = {PAID_PROFILE: 0, FREE_PROFILE: 1, LOCALIZED_FREE_PROFILE: 5}
 PROFILES = dict.fromkeys(UI_SHIFTS, 'ipa')
 # Reference UI members. Character/background/audio banks retain their IDs.

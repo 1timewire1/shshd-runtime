@@ -95,7 +95,9 @@ class CreatorCoverageTests(unittest.TestCase):
                     if coverage.status == 'emits':
                         self.assertTrue(set(coverage.detail) <= set(KINDS))
         self.assertEqual({s for s, c in RUNTIME_STATUS.items() if c.status == 'pending'}, set())
-        self.assertEqual({m for m, c in PRESENTATION_STATUS.items() if c.status == 'pending'}, set())
+        # The one allowed, on the local claire-hart branch only: narration_portrait waits for the owner to settle its look
+        # before the Creator's option is built (CLAIRE_HART_PLAN.md Stage 0). Not to reach master pending.
+        self.assertEqual({m for m, c in PRESENTATION_STATUS.items() if c.status == 'pending'}, {'narration_portrait'})
 
     def test_emitting_kinds_really_compile_to_their_services(self):
         for service, coverage in STATUS.items():

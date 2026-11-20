@@ -1795,6 +1795,7 @@ PRESENTATION_TABLES = dict(duet=('TRANSLATED_DUETS', tuple), narration_theme=('T
                            portrait_effects=('TRANSLATED_PORTRAIT_EFFECTS',
                                              lambda spec: (spec[0], tuple(range(spec[1], spec[1] + EFFECTS)))),
                            music_loops=('TRANSLATED_MUSIC_LOOPS', dict),
+                           narration_portrait=('TRANSLATED_NARRATION_PORTRAITS', bool),
                            journal=('TRANSLATED_JOURNALS', tuple))      # (profile only: quest_journal.py)
 
 

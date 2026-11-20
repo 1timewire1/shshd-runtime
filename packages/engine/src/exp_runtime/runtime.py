@@ -211,6 +211,7 @@ class Session:
         self.engine.game_key = game_id(resources)
         self.engine.name_keys = self.name_keys()
         self.engine.object_portraits = self.object_portraits()
+        self.engine.narration_portrait = bool(presentation_feature(resources, 'narration_portrait'))
         self.engine.app_version = getattr(resources.library, 'app_info', {}).get('CFBundleVersion')
         transition = transition_class(resources)
         if transition is not None:
@@ -407,6 +408,7 @@ class Session:
                 install_state(engine, node.snapshot)       # `installStateData`: the 67 tracked variables, then what is kept below
         engine.character_names = dict(live.character_names)
         engine.name_keys, engine.object_portraits = live.name_keys, live.object_portraits
+        engine.narration_portrait = live.narration_portrait
         engine.strings[engine.name_key('$USR')] = live.strings.get(live.name_key('$USR'), '')
         for property_id in self.WARP_KEPT_PROPERTIES:
             key = live.number_key(0, property_id)
@@ -785,6 +787,7 @@ class Session:
                 self.engine.cutscenes_enabled = self.cutscenes
                 self.engine.name_keys = self.name_keys()
                 self.engine.object_portraits = self.object_portraits()
+                self.engine.narration_portrait = bool(presentation_feature(self.resources, 'narration_portrait'))
                 action = self.engine.dispatch(self.vm, resource_exists=self.resources.exists)
                 if action.name == 'cutscene':
                     try:

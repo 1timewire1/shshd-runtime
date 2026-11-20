@@ -151,6 +151,8 @@ PRESENTATION_STATUS = {
     # The BREW '07 translations' split `$USR` (owner, 2026-11-18): a Creator story names its own keys (any `$KEY`), in
     # its own names table.
     'name_keys': equivalent('a name under a key of its own (any $KEY in a name node)'),
+    # Claire Hart Classic's narration (plan Stage 0, E): its translated pack sets it; a Creator story can't yet.
+    'narration_portrait': pending("a narrator with a portrait (Claire Hart's pack sets it; a Creator story can't yet)"),
 }
 
 def calls(service):
