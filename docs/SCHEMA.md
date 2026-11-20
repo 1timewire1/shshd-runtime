@@ -387,6 +387,7 @@ exp-runtime never read 3. Every member is optional:
 | `date_first` | `true` | Title and date cards show the date as the title |
 | `three_word_games` | `true` | A word game (71) may have three words, one or two of them good |
 | `big_pickers` | `true` | A portrait picker (78) may offer up to ten photos |
+| `narration_portrait` | `true` | A narrator line whose narrator has art shows its portrait, the box attached to it, no name plate (Claire Hart's narration). The only member a Cause of Death episode may declare (its profile's `PRESENTATION_RECORD`); SHS episodes may declare every member |
 | `minigames` | `true` | The episode plays translated mini-games, so the player offers their switch for it |
 | `aliases` | `{"resource": [addon, resource]}` | A picture or sound taken from an extra add-on, under one of the episode's numbers. One aliased to the episode's first required add-on counts as that add-on's own number for its switches ("'08 Backgrounds") |
 | `optional_art` | `{addon: {"resource": addon resource}}` | Pictures an optional add-on draws instead of the episode's own while it's imported and its switch is on (the profile's `OPTIONAL_ART`): the BREW Surviving Hollywood Preview with `shshw` and "Hollywood Art" |

@@ -153,7 +153,7 @@ PRESENTATION_STATUS = {
     # its own names table.
     'name_keys': equivalent('a name under a key of its own (any $KEY in a name node)'),
     # Claire Hart Classic's narration (plan Stage 0, E): its translated pack sets it; a Creator story can't yet.
-    'narration_portrait': pending("a narrator with a portrait (Claire Hart's pack sets it; a Creator story can't yet)"),
+    'narration_portrait': equivalent('a free setting for Cause of Death (Add-Ons panel)'),
 }
 
 def calls(service):

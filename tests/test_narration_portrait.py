@@ -30,5 +30,33 @@ class NarrationPortraitTests(unittest.TestCase):
         self.assertEqual(profile.TRANSLATED_NARRATION_PORTRAITS, {31500: True})
 
 
+
+class CreatorNarrationPortraitTests(unittest.TestCase):
+    """The Creator's setting (owner, 2026-11-19): a CoD project may show the narrator's portrait beside narration, as Claire
+    Hart's cases do; CoD accepts that one declared member and no other."""
+
+    def test_a_cod_project_declares_it_when_set(self):
+        from exp_runtime.creator import Project
+        from exp_runtime.creator.compiler import presentation_record
+        from exp_runtime.creator.model import FREE_SETTING_GAMES, validate_structure
+        project = Project(game='cod')
+        self.assertNotIn('narration_portrait', presentation_record(project))
+        project.options = {'narration_portrait': True}
+        validate_structure(project)
+        self.assertEqual(presentation_record(project), {'narration_portrait': True})
+        self.assertEqual(FREE_SETTING_GAMES['narration_portrait'], 'cod')
+
+    def test_cod_reads_that_member_alone(self):
+        from types import SimpleNamespace
+        from exp_runtime.content import declared, presentation_feature
+        episode = SimpleNamespace(record=dict(pack_id=30000), library=SimpleNamespace(game_id='cod'),
+                                  presentation={'narration_portrait': True, 'duet': (1, 2), 'creator': True})
+        self.assertIs(presentation_feature(episode, 'narration_portrait'), True)
+        self.assertIsNone(presentation_feature(episode, 'duet'))         # not CoD's to declare
+        self.assertIsNone(declared(episode, 'creator'))
+        shs = SimpleNamespace(record=dict(pack_id=30000), library=SimpleNamespace(game_id='shs'), presentation={'duet': (1, 2)})
+        self.assertEqual(presentation_feature(shs, 'duet'), (1, 2))       # SHS still takes every member
+
+
 if __name__ == '__main__':
     unittest.main()

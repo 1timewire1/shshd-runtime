@@ -497,6 +497,8 @@ def presentation_record(project):
              if p['then_loop'] != -1}
     if loops:
         record['music_loops'] = loops
+    if project.game == 'cod' and not project.native and project.options.get('narration_portrait'):
+        record['narration_portrait'] = True      # (CoD's one declared member: cod/profile.py PRESENTATION_RECORD)
     if project.native or project.game != 'shs' or project.pack_id in TRANSLATION_PACKS:
         return record                   # an original episode, or a translation: its game's own tables
     record['creator'] = True            # the Creator's own names table (owner, 2026-11-09)

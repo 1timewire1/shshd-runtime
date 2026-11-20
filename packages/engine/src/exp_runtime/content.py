@@ -1810,15 +1810,22 @@ def presentation_feature(resources, name):
     value = getattr(profile, table, {}).get(record.get('pack_id'))
     if value is not None:
         return convert(value)
-    if not getattr(profile, 'PRESENTATION_RECORD', False):
+    if not accepts_declared(profile, name):
         return None
     return (getattr(resources, 'presentation', None) or {}).get(name)
+
+
+def accepts_declared(profile, name):
+    """Whether a game's episodes may declare presentation member `name` themselves: its PRESENTATION_RECORD, True for every
+    member or a tuple of those it takes (CoD's narrator portrait)."""
+    accepted = getattr(profile, 'PRESENTATION_RECORD', False)
+    return accepted is True or isinstance(accepted, tuple) and name in accepted
 
 
 def declared(resources, name):
     """shshd-runtime: an episode's own declaration of a presentation member (resource 3), where its game accepts one
     (PRESENTATION_RECORD); None otherwise."""
-    if not getattr(GAMES.get(game_id(resources)), 'PRESENTATION_RECORD', False):
+    if not accepts_declared(GAMES.get(game_id(resources)), name):
         return None
     return (getattr(resources, 'presentation', None) or {}).get(name)
 

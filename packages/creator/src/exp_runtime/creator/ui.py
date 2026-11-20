@@ -939,7 +939,7 @@ class Editor(QMainWindow):
     def addon_settings(self):
         """The primary add-on (its settings come with it, and the episode needs it), BREW's edition, what each declared add-on
         brings, and the translated games' settings that need no add-on (owner, 2026-11-09)."""
-        from .model import ADDON_EDITIONS, FREE_SETTINGS, primary_addon
+        from .model import ADDON_EDITIONS, FREE_SETTING_GAMES, FREE_SETTINGS, primary_addon
         if self.project.native:
             self.error('Native projects keep their original presentation.'); return
         if self.project.game != 'shs':
@@ -1007,6 +1007,8 @@ class Editor(QMainWindow):
         form.addRow(QLabel('<b>Settings that need no add-on</b>'))
         boxes = {}
         for name, label in FREE_SETTINGS.items():
+            if FREE_SETTING_GAMES.get(name, self.project.game) != self.project.game:
+                continue                    # (another game's: it would change nothing here)
             boxes[name] = QCheckBox(label)
             boxes[name].setChecked(bool(self.project.options.get(name)))
             form.addRow(boxes[name])

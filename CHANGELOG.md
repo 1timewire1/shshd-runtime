@@ -16,8 +16,9 @@
   `narration_portrait`, has a narrator line with art speak as a small dialogue box attached to the narrator's portrait (the
   lead's side), in narration's italic text, with no name plate and no relationship icons (owner, 2026-11-19); on for
   Claire Hart Classic's pack 31500 (`TRANSLATED_NARRATION_PORTRAITS`). Stand-in review sheet:
-  `reference/screenshots/verify/claire_hart/narration_portrait_stand_in.png`. The Creator's option follows once the
-  look is settled.
+  `reference/screenshots/verify/claire_hart/narration_portrait_stand_in.png`. A Cause of Death project in the Creator turns
+  it on with **Narration shows the narrator's portrait** (Add-Ons; the episode declares it, the one member CoD takes); the
+  Add-Ons dialog now offers each free setting only for its game (the BREW ones for SHS).
 - **Story-object pictures** (Claire Hart plan Stage 0, P; `claire-hart` branch): a new service, 225, shows a picture
   (an episode's own, or a required add-on's) in a framed square along the bottom of the dialogue box from the next line
   on, as Claire Hart Classic shows the items Claire finds. Up to 8 stack in a row, which goes at the next change of

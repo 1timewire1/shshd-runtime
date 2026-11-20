@@ -50,6 +50,9 @@ PORTRAIT_ADDON = ('chslim', 28000)
 # shshd-runtime: translated packs whose narration shows the narrator's portrait (presentation narration_portrait): Claire
 # Hart Classic draws Claire (or an `_Event` alias's face) beside its narration (CLAIRE_HART_PLAN.md, decision E).
 TRANSLATED_NARRATION_PORTRAITS = {31500: True}
+# shshd-runtime: the presentation members (resource 3, presentation.MEMBERS) a CoD episode may declare for itself: only the
+# narrator's portrait, a Creator setting (owner, 2026-11-19). SHS's profile accepts every member (True).
+PRESENTATION_RECORD = ('narration_portrait',)
 # shshd-runtime: translated packs whose backdrops the player darkens as it draws them, to n/255, while the shared Dim
 # Backdrops switch is on: Claire Hart Classic's 110 (its backdrop node's colour; the sequel's 102 comes with pack 31900).
 # The add-on keeps them at full brightness (CLAIRE_HART_PLAN.md, decision F).
