@@ -455,13 +455,26 @@ python tools/translate/chslim.py --mirror CLAIRE_HART_DIR --pairs PAIRS.txt --ca
 
 The add-on of the translated Claire Hart Classic cases (Other Games/docs/CLAIRE_HART_PLAN.md), pack 31500. Revision 1 began
 (2026-11-19) as chslim revision 1 exactly, under the same IDs and the same map at 28000, so CoD's portrait swap works the same
-from either: `chslim.py --chc` writes it, with its own record (`chc`, superseding chslim at revision 2) and title. It grows through
-the plan's stages without a new revision until it goes to testers: the rest of the portraits, the backdrops, the story objects,
-the title look and the music.
+from either. Since Stage 1 (2026-11-19) `tools/translate/claire_hart.py addon` writes it (454 MB): chslim revision 1's
+resources (`chslim.contents(chc=True)`) and everything else of Classic's, used by a case or not, under its own record (`chc`,
+superseding chslim at revision 2). It keeps revision 1 until it goes to testers.
+
+```sh
+python tools/translate/claire_hart.py addon --mirror CLAIRE_HART_DIR --pairs PAIRS.txt --catalog COD_CATALOG_PORTRAITS \
+    --cod-library COD_LIBRARY --extras EXTRAS_DIR --out OUT_DIR      # FFmpeg on PATH, for the tracks
+python tools/translate/claire_hart.py report --mirror CLAIRE_HART_DIR
+python tools/translate/claire_hart.py ids --mirror CLAIRE_HART_DIR --out claire_hart_ids.tsv
+```
 
 | Resources | What |
 | --- | --- |
-| 28000–28005, 28010 on, 29000–29001 | chslim revision 1's, kept (the map, the backdrop, the speech bubbles, the Romic fonts, the portraits, CoD's two edits) |
+| 26000–26786 | The 787 scenes' backdrops (`template`), in the scene folders' sorted order: Classic's own PNGs (paletted; full brightness, dimmed at draw time) |
+| 26900–26932 | The 33 tracks, MP3 128 kb/s |
+| 26960–26962, 26990 | The Title Screen Look (its spec, Classic's Play Now forest, its logo) and Title Screen Music (the main jingle) |
+| 26998 | The spec, JSON (version 1): `looks` (each look's 5 picture IDs: Normal, Angry, Happy, Sad, Surprised), `look_names`, `pictures` (portrait path → look, slot, ID), `scenes` (folder → backdrop ID, the 3:4 slice's left edge in the scene's pixels), `music` (track → ID), `story_objects` (picture path → ID) |
+| 27000–27644 | The 645 story-object pictures, Classic's own PNGs |
+| 28000–28005, 29000–29001 | chslim revision 1's, kept (the map, the backdrop, the speech bubbles, the Romic fonts, CoD's two edits) |
+| 28010–28844 | All 835 portraits, each at 28010 + its place in the sorted list (chslim's rule): CoD's matches framed as chslim's, the rest whole at the same scale |
 | 29100 | Claire Hart Dialogue's spec, JSON (`tools/translate/ch_dialogue_skin.py`): its density, text and emphasis colours, fonts, and where each picture is cut |
 | 29101–29108 | Its art: the speaker body (the tail side mirrored away), the name tab, the narrator box, the new portrait ring and disc, the Play Now button (Continue, at rest and pressed) and the story-object square |
 
@@ -470,7 +483,7 @@ Importing it removes chslim, and an episode or switch asking for chslim gets `ch
 **Pack 31500's episodes** (tagged `(CHC)`: the Claire Hart category, CH badge) require it. They draw its green backdrop (28001)
 under their scenes (the cod profile's `TRANSLATED_FRAME_BACKDROP`), and name their looks through **look banks**
 (`LOOK_BANKS`): CoD draws a look as 5 consecutive IDs, but chc holds each picture once, so ID 30000 + 5 × look + expression is
-the picture its spec at 26998 (from Stage 1: JSON, `looks`, each look's 5 picture IDs) names there
+the picture its spec at 26998 (`looks`: 185 looks, a face a look lacks given as its Normal) names there
 (`EpisodeResources._look_bank`). An episode's own resource at such an ID wins.
 
 **Claire Hart Dialogue** (Add-Ons, CH tag; owner, 2026-11-19): CoD's dialogue in Claire Hart's speech bubbles with CoD's

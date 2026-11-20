@@ -50,6 +50,12 @@
   2026-11-19), as CoD's narration is italic. CoD's emphasis takes Claire Hart's gold. A glyph a font lacks now draws nothing
   instead of the face's box (`vector_text.ttf_covered`). Art in `chc` 29100 on (`tools/translate/ch_dialogue_skin.py`).
   Review sheet: `reference/screenshots/verify/claire_hart/dialogue_skin_stand_in.png`.
+- **Claire Hart Classic's reader and `chc` revision 1** (Claire Hart plan Stage 1; `claire-hart` branch):
+  `tools/translate/claire_hart.py` reads Classic's cases (`report`; `ids` writes the E-number table) and writes the story
+  add-on (`addon`, 454 MB): all 835 portraits folded into 185 looks of CoD's five expressions (the spec's look banks), the 787
+  scenes' backdrops with each one's 3:4 slice (at Cause of Death's own cut of it, else centred), the 33 tracks as MP3, the
+  645 story-object pictures, the Title Screen Look and jingle, and Claire Hart Dialogue, used by a case or not, beside
+  chslim revision 1's pictures under their IDs. Review sheets: `reference/screenshots/verify/claire_hart/chc_rev1_*.png`.
 - **Test channel: Sync Devices by command** (owner, 2026-11-19): `sync receive`, `sync send [shs|cod|both]
   [nobackup]`, `sync devices`, `sync choose`, `sync answer yes|no`, `sync wait`, `sync status`, `sync ok` and
   `sync stop` run a sync without taps or screenshots ([RUNTIME.md](docs/RUNTIME.md#test-channel-this-fork)).

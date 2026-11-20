@@ -143,7 +143,13 @@ def library_pictures(folder):
 
 
 def build(mirror, pairs, catalog, sources, extras, *, chc=False):
-    """The addon's `.exp` bytes and a report. `mirror`: the Claire Hart Classic folder (bundle_names.csv and raw/), `pairs`: read_pairs',
+    """The addon's `.exp` bytes and a report (`contents`' resources, encoded)."""
+    resources, report = contents(mirror, pairs, catalog, sources, extras, chc=chc)
+    return encode_exp(resources), report
+
+
+def contents(mirror, pairs, catalog, sources, extras, *, chc=False):
+    """The addon's resources {ID: bytes} and a report. `mirror`: the Claire Hart Classic folder (bundle_names.csv and raw/), `pairs`: read_pairs',
     `catalog`: the CoD catalogue's portraits folder, `sources`: library_pictures', `extras`: the EDITED pictures' folder.
     `chc`: the Claire Hart Classic add-on instead, with EXTRA_PEOPLE's other pictures and the whole INTERFACE."""
     mirror = Path(mirror)
@@ -195,7 +201,7 @@ def build(mirror, pairs, catalog, sources, extras, *, chc=False):
     resources[1] = Metadata(PACK_ID, 0, ((CHC_TITLE if chc else ADDON_TITLE) + ' (addon)',) * 5).to_bytes()
     report = dict(pictures=len(crops), extra=len(extra), edited=len(EDITED), mapped=len(mapped),
                   unfound=sorted(number for number, keys in found.items() if not keys), hashes=len(spec['portraits']))
-    return encode_exp(resources), report
+    return resources, report
 
 
 def main(argv=None):
