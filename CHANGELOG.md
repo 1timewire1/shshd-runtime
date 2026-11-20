@@ -39,6 +39,8 @@
   branch): Add-Ons' Title Screen Look now works in CoD, with Claire Hart Classic's Play Now screen (its forest, and Claire and
   Paul over the gem banner) from `chc` in place of CoD's painting, behind the same buttons; the episode lists follow it, and
   Auto takes it after a Claire Hart case. Stand-in sheet: `reference/screenshots/verify/claire_hart/title_look_stand_in.png`.
+  Title Screen Music has Claire Hart's too: the 13 s main jingle, which Classic plays once at its episode select after Play
+  Now, played once on CoD's main menu in place of its own tune (`chc` 26990).
 - **Test channel: Sync Devices by command** (owner, 2026-11-19): `sync receive`, `sync send [shs|cod|both]
   [nobackup]`, `sync devices`, `sync choose`, `sync answer yes|no`, `sync wait`, `sync status`, `sync ok` and
   `sync stop` run a sync without taps or screenshots ([RUNTIME.md](docs/RUNTIME.md#test-channel-this-fork)).

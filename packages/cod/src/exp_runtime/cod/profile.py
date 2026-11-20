@@ -66,6 +66,10 @@ TRANSLATED_FRAME_BACKDROP = {31500: 28001}
 # painting behind the same buttons (desktop_cod_main). Auto follows the case last played.
 TITLE_LOOKS = {'chc': ('chc', 26960)}
 TITLE_LOOK_PACKS = {31500: 'chc'}
+# ...and its Title Screen Music: the 13 s Claire_Hart_Main_Jingle, which Classic's episode select plays once
+# (playsoundonload.js: `Main_Jingle`, loop false), as an MP3 at chc's 26990, played once in place of MENU_MUSIC.
+TITLE_MUSIC = {'chc': ('chc', 26990)}
+TITLE_MUSIC_PACKS = {31500: 'chc'}
 UI_SHIFTS = {PAID_PROFILE: 0, FREE_PROFILE: 1, LOCALIZED_FREE_PROFILE: 5}
 PROFILES = dict.fromkeys(UI_SHIFTS, 'ipa')
 # Reference UI members. Character/background/audio banks retain their IDs.

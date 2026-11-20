@@ -512,9 +512,9 @@ On the main menus (owner, 2026-11-09), Add-Ons keeps only Use Translated Mini-Ga
 **Per-Game Settings**; the pause menu lists them all on Add-Ons. Episodes made in the Creator count for a switch through their
 primary add-on.
 
-**Title Screen Music** (SHS's main menu only, under Add-Ons) chooses the tune the main menu plays, once, as its own: Default (the
+**Title Screen Music** (the main menus, under Add-Ons) chooses the tune the main menu plays, once, as its own: Default (the
 game's own), Auto (that of the game last played, by its pack or a Creator episode's primary add-on), or a translated game's
-title tune from its addon, offered when the library holds that addon (`TITLE_MUSIC` in the SHS profile):
+title tune from its addon, offered when the library holds that addon (`TITLE_MUSIC` in the game's profile):
 
 | Choice | Addon | Resource | The game's |
 | --- | --- | --- | --- |
@@ -523,6 +523,7 @@ title tune from its addon, offered when the library holds that addon (`TITLE_MUS
 | X360 | `shsx360` (revision 15) | 26996 | `music/main_menu` |
 | '11 | `shs11` | 26981 | Track 1, the main menu's one full tune; started 0.9 s in, past its silence (`audio.mp3_from`) |
 | Surviving Hollywood | `shshw` | 26907 | Cue 3007, the main menu's tune |
+| Claire Hart (CoD; `claire-hart` branch) | `chc` | 26990 | `Claire_Hart_Main_Jingle` (13 s), which Classic's episode select plays once after Play Now (`playsoundonload.js`), as an MP3 |
 
 **Title Screen Look** (the HD main menus, under Add-Ons; owner, 2026-11-16) chooses its art the same way: Default, Auto,
 or a translated game's own title art from its addon, offered when the addon carries it (`TITLE_LOOKS` in the SHS profile). The

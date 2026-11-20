@@ -77,7 +77,7 @@ SHARED_PREFERENCES = dict(
     side_panels=bool, hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, brew_08_backgrounds=bool, hollywood_art=bool, dsi_backgrounds=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, undo=bool, ch_portraits=bool, ch_backdrop=bool, dim_backdrops=bool, arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
     controller_confirm=('south', 'east'), grid_controls=('tap', 'hold'), dsi_pixels=('sharp', 'smooth'),
     preferred_language=PREFERRED_LANGUAGES,
-    order=('episode', 'title'), title_music=('default', 'auto', 'brew', 'nr', 'x360', 'shs11', 'shw'),
+    order=('episode', 'title'), title_music=('default', 'auto', 'brew', 'nr', 'x360', 'shs11', 'shw', 'chc'),
     last_title_game=('default', 'brew', 'nr', 'x360', 'shs11', 'shw'),
     title_look=('default', 'auto') + TITLE_LOOK_GAMES, last_title_look=('default',) + TITLE_LOOK_GAMES)
 

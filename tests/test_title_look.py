@@ -185,6 +185,10 @@ class CodTitleLookTests(unittest.TestCase):
                                                 presentation={}))
         self.assertEqual(app.state.last_title_look, 'chc')
         self.assertEqual(app.title_look().addon, 'chc')
+        self.assertEqual((profile.TITLE_MUSIC, profile.TITLE_MUSIC_PACKS), ({'chc': ('chc', 26990)}, {31500: 'chc'}))
+        self.assertEqual(app.state.last_title_game, 'chc')                  # Auto's tune follows the case too
+        from exp_runtime.desktop_pause_hd import TITLE_MUSIC_NAMES
+        self.assertEqual(TITLE_MUSIC_NAMES['chc'], 'Claire Hart')
 
     def test_cods_menu_takes_the_look_or_keeps_its_painting(self):
         from exp_runtime import desktop_cod_main
