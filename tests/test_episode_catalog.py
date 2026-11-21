@@ -397,14 +397,15 @@ class GameCatalogImportTests(unittest.TestCase):
         from exp_runtime.application import Application
         (self.root / 'shs_options.sav').write_bytes(options([]))
         (self.root / 'COD_OPTIONS.SAV').write_bytes(cod_options([]))
+        (self.root / 'mtxprods').write_bytes(b'{}')       # CoD's store listing, which Add Content takes too
         with patch.dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy'):
-            for game in ('shs', 'cod'):
+            for game, listed in (('shs', {'shs_options.sav'}), ('cod', {'cod_options.sav', 'mtxprods'})):
                 app = Application(self.root / 'absent-library', audio=False, game_key=game, check_updates=False)
                 try:
                     app.browser_kind = 'episodes'
                     app.read_folder(self.root)
                     names = {p.name.casefold() for p in app.files if p.is_file()}
-                    self.assertEqual(names, {f'{game}_options.sav'})
+                    self.assertEqual(names, listed)
                 finally:
                     app.close()
 

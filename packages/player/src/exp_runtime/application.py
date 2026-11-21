@@ -2659,9 +2659,12 @@ class Application:
                       if self.browser_kind == 'music_apk' else {'.exp', '.zip', '.rar', *FONT_SUFFIXES} if self.browser_kind == 'episodes'
                       else set(ARCHIVE_SUFFIXES) if self.browser_kind == 'bulk' else set())
         catalog_name = GAMES[self.selected_game].CATALOG_FILENAME if self.selected_game else None
+        # The game's catalog, and its store listing (CoD's mtxprods, which Add Content takes: content._store_listing).
+        sidecars = {catalog_name, getattr(GAMES[self.selected_game], 'STORE_FILENAME', None)} - {None} \
+            if self.selected_game else set()
         files = [p for p in folder.iterdir() if not p.name.startswith('.')
                  and (p.is_dir() or p.suffix.lower() in extensions
-                      or (self.browser_kind == 'episodes' and p.name.lower() == catalog_name))]
+                      or (self.browser_kind == 'episodes' and p.name.lower() in sidecars))]
         # Existing hidden content libraries are useful in the library picker.
         if self.browser_kind == 'library':
             files.extend(p for p in folder.iterdir() if p.name.startswith('.')

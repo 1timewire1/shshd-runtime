@@ -574,6 +574,9 @@
 
 ### Fixed
 
+- **Add Content's file browser hid CoD's store listing** (2026-11-21): a library takes `mtxprods` through Add Content
+  (the episode descriptions), but a computer's in-app browser listed only the catalog beside the episodes, so the file
+  could be added only with its folder or by dragging. It lists the game's store file now.
 - **A preview that failed once never came back** (owner, g54, 2026-11-21): a render that failed (Cause of Death's whole
   grid, during a first setup) was remembered like an episode with no title card, so its tile stayed blank until Rebuild
   Previews. Only "no title card" is remembered now; a failed render is tried again at the next launch, or by Rebuild
