@@ -2125,5 +2125,19 @@ class CasingEvidenceTests(unittest.TestCase):
             self.assertEqual([record['pack_id'] for record, _ in pairs.library_episodes(library)], [7])
 
 
+def setUpModule():
+    """The builders' fixtures leave out the picker icons, wherever the owner's reference folder is (addon_icons.py)."""
+    import addon_icons
+    from unittest.mock import patch as _patch
+    global _NO_ICON_REFERENCE
+    _NO_ICON_REFERENCE = _patch.object(addon_icons, 'REFERENCE', Path(__file__).resolve().parent / 'no-reference')
+    _NO_ICON_REFERENCE.start()
+
+
+def tearDownModule():
+    _NO_ICON_REFERENCE.stop()
+
+
 if __name__ == '__main__':
     unittest.main()
+

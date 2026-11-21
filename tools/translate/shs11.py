@@ -15,7 +15,7 @@ import zlib
 
 from PIL import Image
 
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shs11', "Surviving High School '11", 3     # 3: the Title Screen Look
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shs11', "Surviving High School '11", 4     # 4: the picker icon (addon_icons.py); 3: the Title Screen Look
 STORIES_NEED = 2        # what a story asks for: revision 3 added only the main menu's art, which no story uses
 PACK_ID, ADDON_EPISODE = 31600, 999     # (chslim.py's metadata has 31500)
 SPEC_FORMAT, SPEC_VERSION = 'shshd-shs11', 1
@@ -927,6 +927,8 @@ def build_addon(art, english, sounds, render=rendered_music):
     resources_out[MUSIC_BASE + SURPRISE_TRACK] = resources_out[MUSIC_BASE + SURPRISE_COPY_OF]
     import title_looks
     resources_out.update(title_looks.shs11_look(art))        # rev 3: the HD main menu's Title Screen Look
+    import addon_icons
+    addon_icons.add_icons(resources_out, ADDON_ID)          # rev 4: the game chooser's icon
     resources_out[SPEC] = json.dumps(spec, separators=(',', ':')).encode()
     resources_out[ADDON_RECORD] = provides_bytes(ADDON_ID, ADDON_TITLE, ADDON_REVISION)
     resources_out[1] = Metadata(PACK_ID, ADDON_EPISODE, (ADDON_TITLE + ' (addon)',) * 5).to_bytes()

@@ -337,6 +337,10 @@ class HdPauseTests(unittest.TestCase):
         about = self.menu.text_lines('about')[1]
         self.assertIn(f'Version: {self.module.VERSION}\nUpstream EXP Runtime: {self.module.UPSTREAM_VERSION}\n', about)
         self.assertIn('zazatree', about)
+        # Owner, 2026-11-21: andymenard credited for the Android groundwork, and the notices line last, under the Discord link.
+        self.assertIn('andymenard', about)
+        self.assertTrue(about.endswith('listed in THIRD_PARTY_NOTICES.txt, which comes with the app.'))
+        self.assertLess(about.index('Discord: https://discord.gg/'), about.index('THIRD_PARTY_NOTICES'))
 
     def test_a_text_page_keeps_clear_of_a_phones_status_and_navigation_bars(self):
         # Owner, g54, 2026-11-19: a tall frame's About and Help pages came close to both bars.
@@ -574,6 +578,10 @@ class CodPauseTests(unittest.TestCase):
         self.assertIn(f'Version: {desktop_cod_pause.VERSION}\nUpstream EXP Runtime: {desktop_cod_pause.UPSTREAM_VERSION}\n',
                       about)
         self.assertIn('zazatree', about)
+        # Owner, 2026-11-21: andymenard credited for the Android groundwork, and the notices line last, under the Discord link.
+        self.assertIn('andymenard', about)
+        self.assertTrue(about.endswith('listed in THIRD_PARTY_NOTICES.txt, which comes with the app.'))
+        self.assertLess(about.index('Discord: https://discord.gg/'), about.index('THIRD_PARTY_NOTICES'))
         self.menu.strings()[0] = 'Version: ~259~'
         overrides = {k: v for k, v in help_text_overrides.COD_HELP_TEXT_OVERRIDES.items() if k != 'about'}
         with patch.dict(help_text_overrides.COD_HELP_TEXT_OVERRIDES, overrides, clear=True):

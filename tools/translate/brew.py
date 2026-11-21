@@ -46,7 +46,7 @@ from kiwi_rewrite import Rewriter  # noqa: E402
 import newrules  # noqa: E402
 import nr_art  # noqa: E402
 
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsbrew', 'Surviving High School (BREW)', 13   # 13: BREW's heart, badger and lizard as badge icons (EXTRA_EVENT_ICONS); 12: the Title Screen Looks ('07, '08); 11: the theme park card picture (CARD_PICTURES); 10: badge icons the smartphone's size (EVENT_ICON_SIZE); 9: the Kid lowered (LOWERED_BODIES); 8: the TV faces in (MIRRORED_BODIES); 2: the event icons; 3: the Java '08 look;
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsbrew', 'Surviving High School (BREW)', 14   # 14: the picker icons, '07's and '08's (addon_icons.py); 13: BREW's heart, badger and lizard as badge icons (EXTRA_EVENT_ICONS); 12: the Title Screen Looks ('07, '08); 11: the theme park card picture (CARD_PICTURES); 10: badge icons the smartphone's size (EVENT_ICON_SIZE); 9: the Kid lowered (LOWERED_BODIES); 8: the TV faces in (MIRRORED_BODIES); 2: the event icons; 3: the Java '08 look;
 # 4: Classic stories' own backgrounds; 5: '08's redraws of them; 6: the stories' own catch picture (OWN_CATCH_PICTURES); 7: that
 # picture as an event icon too (OWN_ICON_BASE), and King of the Road's Michael centred (CENTRE_OWN_BODY)
 ADDON_REQUIRED = 7                      # what a story needs: rev 8 only redraws the TV, so the stories built for 7 stay as they are
@@ -4023,6 +4023,8 @@ def build_addon(casts, games, render_music=None, java_jar=None, shs_hd_episodes=
     resources.update(title_looks.brew_07_look(games['07'] / 'res_xlarge.pud'))
     if java_jar is not None and store_art is not None:
         resources.update(title_looks.brew_08_look(java_jar, store_art))
+    import addon_icons
+    addon_icons.add_icons(resources, ADDON_ID)              # rev 14: the game chooser's icons
     resources[SPEC] = json.dumps(spec, separators=(',', ':')).encode()
     resources[ADDON_RECORD] = provides_bytes(ADDON_ID, ADDON_TITLE, ADDON_REVISION)
     resources[1] = Metadata(PACK_CAMPAIGN, ADDON_EPISODE, (ADDON_TITLE + ' (addon)',) * 5).to_bytes()

@@ -4,6 +4,12 @@
 
 ### Added
 
+- **Picker icons in the translated games' add-ons** (owner, 2026-11-21): each add-on holds its game's icon (resource 26950's
+  spec, the pictures from 26951) for a game chooser that lists the add-on games later (ROADMAP 3.31), so that needs no
+  add-on update: New Rules' and '08's EA store thumbnails, '07's Centerscore box, '11's own app icon, Surviving
+  Hollywood's Vivendi banner, and a new one for the X360 prototype from its title logo. `tools/translate/addon_icons.py`
+  builds them, and patched the shipped add-ons: `shsnr` 6, `shsbrew` 14, `shs11` 4, `shshw` 9, `shsx360` 23 (every
+  other record unchanged). The player doesn't read them yet. See docs/ADDONS.md.
 - **Mark as Finished** (owner, 2026-11-21): Data Management's Episodes page lists every episode with the finished ones
   (the lists' green play icon) already ticked; Save makes the ticked ones finished and the others not.
 - **Test channel: Sync Devices by command** (owner, 2026-11-19): `sync receive`, `sync send [shs|cod|both]
@@ -449,6 +455,8 @@
 
 ### Changed
 
+- **About** (both games; owner, 2026-11-21): special thanks now include andymenard for the Android groundwork this
+  port built on, and the open-source notices line moved to the end, under the Discord link.
 - **Add Content** (owner, 2026-11-21): Data Management's Add Episodes moves to Data Management's own page, first, as Add
   Content. It takes what it took (episodes, add-ons, ZIP/RAR collections, a catalog) and now fonts (`.ttf`, `.otf`), copied
   into the library's fonts as Bulk Import copies them; the notice counts them and offers **Reopen**, which closes the

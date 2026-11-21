@@ -45,7 +45,7 @@ HIRES_PORTRAIT_OFFSET = 1000            # the X1i (HD-sized) set, as the New Rul
 # The X360 addon (shsx360, owner 2026-10-31): the prototype's own art, music and emoticons the three stories share, and
 # the arena's X360 skin (x360_arena_art.py). Each render and each scene background has one ID in every story, so the
 # stories can leave them out and read them from the addon (strip_addon). Add new ones at the end: the IDs are kept.
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 22   # 22: Josh's dance and the leash game's cast moved to the animations add-on; 21: the leash game's cast (leash.cast); 20: Josh's dance under each room's own lights (rooms); 19: Spike's Diss Battle taunts (skin spec battle.taunts); 18: the Diss Battle's music (dissdown); 17: the Title Screen Look (with --ms3); 16: Day of Diss's opening for taller frames (spec version 2); 15: its main menu's music
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shsx360', 'Surviving High School (Xbox 360 prototype)', 23   # 23: the picker icon (addon_icons.py); 22: Josh's dance and the leash game's cast moved to the animations add-on; 21: the leash game's cast (leash.cast); 20: Josh's dance under each room's own lights (rooms); 19: Spike's Diss Battle taunts (skin spec battle.taunts); 18: the Diss Battle's music (dissdown); 17: the Title Screen Look (with --ms3); 16: Day of Diss's opening for taller frames (spec version 2); 15: its main menu's music
 # The stories' version (episode_version.py): a newer one replaces an older copy on import, and a rebuild at the same
 # version replaces it too. Raise it when a build must never be replaced by an earlier one.
 STORY_VERSION = 1
@@ -1560,6 +1560,8 @@ def build_addon(stories, skin=None):
     for resource_id, payload in (skin or {}).items():
         if resources.setdefault(resource_id, payload) != payload:
             raise TranslateError(f'skin resource {resource_id} is already a story resource')
+    import addon_icons
+    addon_icons.add_icons(resources, ADDON_ID)              # rev 23: the game chooser's icon
     resources[ADDON_RECORD] = provides_bytes(ADDON_ID, ADDON_TITLE, ADDON_REVISION)
     resources[1] = Metadata(PACK_ID, ADDON_EPISODE, (ADDON_TITLE + ' (addon)',) * 5).to_bytes()
     return encode_exp(resources)

@@ -1031,10 +1031,11 @@ QuitGame()
         # frames, is what it needs now; 17 only the main menu's Title Screen Look; 18 the Diss Battle's music, which the
         # Planner needs; 19 only Spike's taunts, which the battle does without; 20 only redraws the dance under each room's
         # lights, which every story can do without; 21 only adds the leash game's cast, which Dating Beth's leash draws
-        # when it's there; 22 moves the dance and the cast into the animations add-on, which no story requires.
+        # when it's there; 22 moves the dance and the cast into the animations add-on, which no story requires; 23 only adds
+        # the game chooser's icon (addon_icons.py).
         self.assertEqual(max(story.addon_revision for story in x360.STORIES.values()), 18)
         self.assertEqual(x360.MONDAY_PLANNER.addon_revision, 18)
-        self.assertEqual(x360.ADDON_REVISION, 22)
+        self.assertEqual(x360.ADDON_REVISION, 23)
         self.assertEqual(set(x360.MONDAY_PLANNER.event_scenes.values()) - set(x360.SCENES), set())
 
     def test_the_practice_rounds_backgrounds_are_the_ones_the_player_knows(self):
@@ -1518,5 +1519,19 @@ class X360SkinTests(unittest.TestCase):
         self.assertEqual(front.getpixel((10, 10))[3], 0)
 
 
+def setUpModule():
+    """The builders' fixtures leave out the picker icons, wherever the owner's reference folder is (addon_icons.py)."""
+    import addon_icons
+    from unittest.mock import patch as _patch
+    global _NO_ICON_REFERENCE
+    _NO_ICON_REFERENCE = _patch.object(addon_icons, 'REFERENCE', Path(__file__).resolve().parent / 'no-reference')
+    _NO_ICON_REFERENCE.start()
+
+
+def tearDownModule():
+    _NO_ICON_REFERENCE.stop()
+
+
 if __name__ == '__main__':
     unittest.main()
+

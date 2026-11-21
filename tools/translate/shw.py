@@ -50,7 +50,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # 5: the status bar's sun as the full chapter's daytime time badge icon (SUN; shw_full.py; owner, 2026-11-14)
 # 6: the 1.0.4 (88K) demo's eight silhouettes as portraits (SILHOUETTE_BASE), for the full chapter's speakers with no face of
 #    their own (shw_full.SILHOUETTES; owner, 2026-11-15); built only when that demo's jar is given (build_addon lite_jar)
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shshw', 'Surviving Hollywood', 8     # 8: turned silhouettes, the phone badge; 7: the Title Screen Look
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'shshw', 'Surviving Hollywood', 9     # 9: the picker icon (addon_icons.py); 8: turned silhouettes, the phone badge; 7: the Title Screen Look
 PACK_ID = 31700                         # its metadata's pack: the demo's chapters (shw_lite.py, Phase 2)
 SPEC = 26998                            # what the addon holds, JSON
 SPEC_FORMAT, SPEC_VERSION = 'shshw', 1
@@ -407,6 +407,8 @@ def build_addon(jar, music=True, lite_jar=None):
         spec['music'][str(number)] = MUSIC_BASE + number - 3000
     import title_looks
     resources.update(title_looks.hollywood_look(jar))       # rev 7: the HD main menu's Title Screen Look
+    import addon_icons
+    addon_icons.add_icons(resources, ADDON_ID)              # rev 9: the game chooser's icon
     resources[SPEC] = json.dumps(spec, separators=(',', ':')).encode()
     resources[ADDON_RECORD] = provides_bytes(ADDON_ID, ADDON_TITLE, ADDON_REVISION)
     resources[1] = Metadata(PACK_ID, 0, (ADDON_TITLE + ' (addon)',) * 5).to_bytes()

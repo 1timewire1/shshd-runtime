@@ -364,7 +364,7 @@ class AddonTests(unittest.TestCase):
     def test_the_addon_holds_everything_and_says_where(self):
         data, spec = self.build()
         archive = ExpArchive(data)
-        self.assertEqual(addon_record(archive), ('provides', dict(id='shs11', title="Surviving High School '11", revision=3)))
+        self.assertEqual(addon_record(archive), ('provides', dict(id='shs11', title="Surviving High School '11", revision=4)))
         self.assertEqual(json.loads(archive.read(shs11.SPEC)), spec)
         self.assertEqual(len(spec['backgrounds']), shs11.LOCATIONS)
         self.assertEqual(spec['backgrounds']['0'], [26000, 26001])
@@ -834,5 +834,19 @@ class StoryTests(unittest.TestCase):
         self.assertEqual(record[2]['title'], shs11_story.END_TITLE)
 
 
+def setUpModule():
+    """The builders' fixtures leave out the picker icons, wherever the owner's reference folder is (addon_icons.py)."""
+    import addon_icons
+    from unittest.mock import patch as _patch
+    global _NO_ICON_REFERENCE
+    _NO_ICON_REFERENCE = _patch.object(addon_icons, 'REFERENCE', Path(__file__).resolve().parent / 'no-reference')
+    _NO_ICON_REFERENCE.start()
+
+
+def tearDownModule():
+    _NO_ICON_REFERENCE.stop()
+
+
 if __name__ == '__main__':
     unittest.main()
+

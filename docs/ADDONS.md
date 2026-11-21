@@ -82,12 +82,39 @@ saves.
 Replacing an episode adds a new record beside the old one, as an episode's id is its hash. Remove the stale record with
 `ContentLibrary.remove_episodes`. Saves are kept.
 
+## Picker icons
+
+Each translated game's add-on holds the game's icon for a game chooser that lists the add-on games beside SHS and CoD
+(owner, 2026-11-21; ROADMAP 3.31): packed now, so that feature needs no add-on update. The player doesn't read them yet.
+
+| Resource | What |
+| --- | --- |
+| 26950 | The spec, JSON: `{"version": 1, "games": [{"key", "title", "icon", "smooth"[, "edition"]}, ...]}`, one entry per game: its tag (`nr`, `brew07`, `brew08`, `shs11`, `shw`, `x360`), its name for the chooser, the resource of its picture, `smooth` false for pixel art (scaled nearest), and `edition` where one add-on holds two games (`shsbrew`: '07 and '08, as the Title Screen Looks tell them apart) |
+| 26951 on | The pictures: square PNGs at their source size, which the chooser scales to its icon |
+
+The owner's picks (2026-11-21), from the player's own files and the Web Archive's store art in the owner's reference
+folder (never shipped with the project):
+
+| Add-on | Game | Picture |
+| --- | --- | --- |
+| `shsnr` (revision 6) | New Rules | EA's store thumbnail (`product-thumbnail_shsnr`, 150 px) |
+| `shsbrew` (14) | '07 | Centerscore's box art (`92046_front`, its top 150 px) |
+| | '08 | EA's store thumbnail (`product-thumbnail_SHS`, 150 px) |
+| `shs11` (4) | '11 | Its own app icon (the 480x800 jar's `icon.png`, 102 px) |
+| `shshw` (9) | Surviving Hollywood | Vivendi's banner: the logo and gold reel (`bannerhollywood`, 178 px) |
+| `shsx360` (23) | X360 prototype | It had none: its title logo and the logo's black splat on its rayed sky (MS4's `gui` art, 256 px) |
+
+`tools/translate/addon_icons.py` makes them: each builder adds them as it builds (`add_icons`, which warns and goes on
+without the reference files), and `addon_icons.py patch IN OUT` adds them to an add-on already built, raising its
+revision by one and keeping every other record byte for byte (how the 2026-11-21 revisions were made). The DSi and
+Claire Hart add-ons have none yet.
+
 ## The addons
 
 ### `shsnr`: New Rules
 
-Required by every [New Rules](NEW_RULES.md) translation. Revision 5, about 45 MB; the stories ask for revision 3, since 4
-adds only the main menu's art and 5 only the arena's own info box (layout 23 and its hourglass in the skin;
+Required by every [New Rules](NEW_RULES.md) translation. Revision 6, about 45 MB; the stories ask for revision 3, since 4
+adds only the main menu's art, 6 only its [picker icon](#picker-icons) and 5 only the arena's own info box (layout 23 and its hourglass in the skin;
 [NEW_RULES.md](NEW_RULES.md)), which an older revision draws as a bubble.
 
 | Resources | What |
@@ -110,7 +137,7 @@ python tools/translate/translate.py newrules addon --pud RES_LARGE_PUD --x1i X1I
 
 ### `shsx360`: the cancelled Xbox 360 game
 
-Required by the four [X360](X360.md) stories, and read optionally for New Rules' X360 Arena Skin. Revision 22, about 48 MB.
+Required by the four [X360](X360.md) stories, and read optionally for New Rules' X360 Arena Skin. Revision 23, about 48 MB (23 adds only its [picker icon](#picker-icons)).
 Revision 22 moves Josh's dance and the leash game's cast into their own add-on, [`shsx360anim`](#shsx360anim-the-x360-animations)
 (owner, 2026-11-18), so this one is about half the size; no story needs them. Revision 21 added the leash game's cast (89 MB
 with it), revision 20 the dance under each room's own lights ([X360.md](X360.md#joshs-dance)).
@@ -166,8 +193,8 @@ for; it must match `LEASH_CAST_PLACES`.
 
 ### `shs11`: Surviving High School '11
 
-Required by the five [SHS '11](SHS11.md) stories, and read optionally for its Memory in place of letter grids. Revision 3, about 9 MB;
-the stories ask for revision 2, since 3 adds only the main menu's art. Its pack is 31600.
+Required by the five [SHS '11](SHS11.md) stories, and read optionally for its Memory in place of letter grids. Revision 4, about 9 MB;
+the stories ask for revision 2, since 3 adds only the main menu's art and 4 its [picker icon](#picker-icons). Its pack is 31600.
 
 | Resources | What |
 | --- | --- |
@@ -187,9 +214,9 @@ python tools/translate/translate.py shs11 --art IT_480X800_JAR --english N73_JAR
 ### `shsbrew`: the BREW games
 
 Required by every translated [BREW](BREW.md) story (126: the '08 Campaign, the Classic stories, the M.A.S.H. packs and Fall
-'06), under either game's badge. It holds all their art and music, and the stories hold only their scripts. Revision 13,
-about 19.2 MB; the stories ask for revision 7 (Theme Park's card 11), since the later ones only redraw pictures or add the
-main menu's art.
+'06), under either game's badge. It holds all their art and music, and the stories hold only their scripts. Revision 14,
+about 19.3 MB; the stories ask for revision 7 (Theme Park's card 11), since the later ones only redraw pictures or add the
+main menu's art and (14) the [picker icons](#picker-icons), '07's and '08's.
 
 | Resources | What |
 | --- | --- |
@@ -220,7 +247,7 @@ python tools/translate/translate.py brew --base-08 GAME_08_FOLDER --base-07 MODU
 ### `shshw`: Surviving Hollywood
 
 Optional for the BREW Classic *Surviving Hollywood Preview* (31100, 73), and required by Surviving Hollywood's own chapters
-(pack 31700, [HOLLYWOOD.md](HOLLYWOOD.md): the Lite revision 4, *The Bright Lights* revision 8). Revision 8, about 4.1 MB.
+(pack 31700, [HOLLYWOOD.md](HOLLYWOOD.md): the Lite revision 4, *The Bright Lights* revision 8). Revision 9, about 4.2 MB (9 adds only its [picker icon](#picker-icons)).
 Built from the Surviving Hollywood demo's 240 × 320 jar (1.0.2): its painted portraits, its backgrounds, its dialogue panel as
 the frame, its music, its catch game's look, its status bar's moon and sun (revision 5: the full chapter's daytime badges) and
 its soft key's phone (revision 8: the journal's badge); and from the low-end 1.0.4 (88K) demo's jar, its eight silhouettes
