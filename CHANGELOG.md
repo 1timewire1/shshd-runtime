@@ -76,6 +76,11 @@
   (2026-11-20): the part's player (Claire, or Troy in his cases) is on the left and narrates, with their own portrait
   and no name plate; a round line is in their voice ("I searched my office and found the Belt."); later parts drop the
   repeated introduction, episodes their store sign-off; joined names get their space (Jillian Gish, Will Yu).
+- **Mini-games on the test channel** ([RUNTIME.md](docs/RUNTIME.md#test-channel-this-fork)): `state` reports the open
+  mini-game (the Creator's playtest report, now shared as `minigame_report.py`; a Claire Hart round lists its names,
+  Power-Ups and hint), and `play` presses, picks a cell or arena key, or in a round finds a listed object, misses, uses
+  the hint or a Power-Up, picks a name and continues, by real taps through the round's own hit tests; `pinch` zooms a
+  round. Checked on a PC with six rounds from three random cases (72 of 72 finds, zoomed finds too).
 
 ### Changed
 

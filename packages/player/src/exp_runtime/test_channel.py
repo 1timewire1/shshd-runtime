@@ -14,14 +14,22 @@ nothing here races the game. A command that takes time (`run-until`, `wait`) is 
 it's done, so real clocks (fades, timers) run as in play.
 
     ping                        the app is up
-    state                       what's showing: screen, pending story screen and its text/options, prompt, switches
+    state                       what's showing: screen, pending story screen and its text/options, prompt, switches;
+                                `minigame` for an open mini-game (minigame_report: its score, time, what it waits for;
+                                a Claire Hart round's listed names, hint, power-ups and view)
     continue                    a tap on a line or panel (Enter)
     answer N                    pick choice or prompt row N (0 first)
     type TEXT                   type into name entry, then confirm it
     key NAME                    a key press: return, escape, up, down, left, right, space, n, u, ... (the menus' keys)
-    pinch FACTOR [MS] [MOVES]   two fingers on the open story tree part to FACTOR times as far apart over MS
-                                (default 800) and lift, MOVES moves a frame (default 3); replies with the tree's size
-                                before and after
+    pinch FACTOR [MS] [MOVES]   two fingers on the open story tree (or a Claire Hart round) part to FACTOR times as far
+                                apart over MS (default 800) and lift, MOVES moves a frame (default 3); replies with the
+                                tree's size (the round's zoom) before and after
+    play press [N]              the open mini-game's go-ahead or button; a cell 0-8 in SHS '11's games; a key code on
+                                New Rules' arena (-5 OK, -1 to -4 the joystick, 48-57 numbers), a row on its menu
+    play find NAME|SLOT         a Claire Hart round: a real tap on that listed object, where nothing listed covers it
+                                (the view centred on it first if it's off screen); `play miss` taps an empty spot
+    play hint | pick SLOT | continue | powerup NAME   a round's hint orb, a name for the Psychic Locator, the Level
+                                Summary's Continue, or focus / locator / clairvoyance / time_warp
     back                        Android's Back (Escape)
     skip / undo                 Skip Ahead / Undo
     pause / resume              the pause menu
@@ -480,6 +488,13 @@ class Commands:
         catch = getattr(session.engine, 'brew_catch', None)
         if catch is not None:
             out['catch'] = dict(score=catch.score, target=catch.target, remaining=catch.remaining, over=catch.over)
+        from .minigame_report import describe
+        minigame = describe(session, skippable=game.host_prompt is not None)
+        if minigame is not None:
+            out['minigame'] = minigame
+            view = getattr(getattr(game, 'claire_round_renderer', None), 'view', None)
+            if minigame['kind'] == 'claire_round' and view is not None:
+                minigame['view'] = dict(zoom=round(view.zoom, 3), centre=[round(view.cx), round(view.cy)])
         return out
 
     # -- acting -------------------------------------------------------------------------------------------------------
@@ -562,29 +577,36 @@ class Commands:
         factor = float(parts[0]) if parts else 2.0
         ms = float(parts[1]) if len(parts) > 1 else 800.0
         moves = max(1, int(parts[2])) if len(parts) > 2 else 3
-        panels = getattr(self.game, 'side_panels', None)
-        if panels is None or panels.tree_rect is None:
-            return dict(ok=False, error='the story tree is not showing (key tab opens the panels)')
         finger = getattr(self.app, 'finger_input', None)
         if finger is None:
             from .platforms.android import Host
             host = Host.__new__(Host)
             host.app = self.app
             finger = host.finger
-        return self._pinch(finger, panels, factor, ms, moves)
+        game = self.game
+        if game is not None and game._claire_ready():
+            # A Claire Hart round (owner, 2026-11-21): the fingers about the frame's middle, zooming the scene (1x to 2x).
+            frame = game.bg_viewport
+            view = game.claire_round_renderer.view
+            return self._pinch(finger, frame.center, frame.width, lambda: view.zoom, factor, ms, moves, 'zoom')
+        panels = getattr(game, 'side_panels', None)
+        if panels is None or panels.tree_rect is None:
+            return dict(ok=False, error='the story tree is not showing (key tab opens the panels), nor a Claire Hart round')
+        return self._pinch(finger, panels.tree_rect.center, panels.tree_rect.width, panels._zoom_size, factor, ms, moves,
+                           'tree_size')
 
-    def _pinch(self, finger, panels, factor, ms, moves):
+    def _pinch(self, finger, centre, span, size, factor, ms, moves, reported):
         from types import SimpleNamespace
         width, height = self.app.window.get_size()
-        cx, cy = panels.tree_rect.center
-        half = panels.tree_rect.width / 8
+        cx, cy = centre
+        half = span / 8
 
         def touch(kind, finger_id, x):
             finger(SimpleNamespace(type=kind, finger_id=finger_id, x=x / width, y=cy / height, dx=0, dy=0, touch_id=0),
                    check_sdl=False)
         touch(pygame.FINGERDOWN, 9001, cx - half)
         touch(pygame.FINGERDOWN, 9002, cx + half)
-        before, began, last, done = panels._zoom_size(), time.perf_counter(), half, False
+        before, began, last, done = size(), time.perf_counter(), half, False
         while not done:
             yield
             progress = min(1.0, (time.perf_counter() - began) * 1000 / ms)
@@ -599,7 +621,7 @@ class Commands:
         touch(pygame.FINGERUP, 9001, cx - last)
         touch(pygame.FINGERUP, 9002, cx + last)
         result = yield from self._settled(0.3)
-        return dict(result, tree_size=[round(before, 2), round(panels._zoom_size(), 2)])
+        return dict(result, **{reported: [round(before, 2), round(size(), 2)]})
 
     def do_back(self, _):
         return self._then_key('escape')
@@ -1359,6 +1381,137 @@ class Commands:
         self._pointer(pygame.MOUSEBUTTONUP, (x2, y2), button=1)
         result = yield from self._settled(0.3)
         return result
+
+    # -- the mini-games (owner, 2026-11-21) ---------------------------------------------------------------------------
+    # `state`'s `minigame` says what's open and what it waits for (minigame_report.describe); `play` gives it a player's
+    # input. The translated mini-games take the calls the desktop's own handlers make for a tap or key; Claire Hart's rounds
+    # take real taps, at the place the round draws what's tapped, so its hit-testing, panning and buttons are exercised.
+
+    def do_play(self, rest):
+        """`play press [N]` (the go-ahead or the game's button; a cell 0-8 for SHS '11's games; a key code on New Rules'
+        arena, a row on its menu); Claire Hart's rounds: `play find NAME|SLOT`, `play miss`, `play hint`,
+        `play powerup focus|locator|clairvoyance|time_warp`, `play pick SLOT` (the Psychic Locator), `play continue`."""
+        game = self._need_game()
+        words = rest.split(None, 1)
+        if not words:
+            return dict(ok=False, error='play what? (press, find, miss, hint, powerup, pick, continue)')
+        verb, arg = words[0], words[1].strip() if len(words) > 1 else ''
+        session = game.session
+        action = session.pending
+        name = action.name if action is not None else None
+        if game.host_prompt is not None:
+            return dict(ok=False, error='a skip prompt is up: answer it first (`answer N`, Play to play)')
+        if name == 'claire_round':
+            return self._claire_play(verb, arg)
+        if verb != 'press':
+            return dict(ok=False, error=f'{verb} is for Claire Hart rounds; this is {name}')
+        from .minigame_report import CELL_GAMES, PRESS_GAMES
+        value = int(arg) if arg.lstrip('-').isdigit() else None
+        if name == 'arena_frame':
+            if value is None:
+                return dict(ok=False, error='the arena takes a key code (-5 OK, -1 to -4 the joystick, 48-57 the number keys)')
+            return self._act(lambda: game.command(('arena_key', value)))
+        if name in ('arena_menu', 'arena_info'):
+            return self._act(lambda: game.command(('arena_answer', value if value is not None else 0)))
+        if name in CELL_GAMES:
+            if value is not None and not 0 <= value < 9:
+                return dict(ok=False, error='a cell is 0-8 (none for an OK)')
+            return self._act(lambda: game._attempt(lambda: session.answer(value)))
+        if name in PRESS_GAMES:
+            return self._act(lambda: game._attempt(lambda: session.answer(None)))
+        return dict(ok=False, error=f'no mini-game is open ({name})')
+
+    def _claire_window(self, x, y):
+        """A point on the round's canvas, in window pixels (desktop._claire_point's inverse)."""
+        game = self.game
+        frame = game.bg_viewport
+        width, height = game.claire_round_renderer.canvas.get_size()
+        return frame.x + x * frame.width / width, frame.y + y * frame.height / height
+
+    def _claire_tap(self, x, y):
+        """A real tap at canvas (x, y): press and release a frame apart, then the state."""
+        point = self._claire_window(x, y)
+        self._pointer(pygame.MOUSEBUTTONDOWN, point, button=1)
+        yield
+        self._pointer(pygame.MOUSEBUTTONUP, point, button=1)
+        result = yield from self._settled(0.3)
+        return dict(result, tapped=[round(point[0]), round(point[1])])
+
+    def _claire_spot(self, renderer, game, obj):
+        """Canvas (x, y) of an opaque pixel of `obj` where it is the first listed, unfound object a tap hits (the round's
+        own rule), nearest its middle; the view centred on it first when that pixel is off the play area. None if no
+        such pixel."""
+        from .claire_rounds import pixel_hit
+        _, normal, _, _ = renderer.spec()['scenes'][game.scene]['objects'][obj]
+        number, w, h, left, top = normal
+        sprite = renderer.sprite(game.scene, number)
+        step = max(1, min(w, h) // 12)
+        points = sorted(((px, py) for py in range(0, h, step) for px in range(0, w, step)
+                         if pixel_hit(lambda ax, ay: sprite.get_at((ax, ay))[3], w, h, px, py)),
+                        key=lambda p: (p[0] - w / 2) ** 2 + (p[1] - h / 2) ** 2)
+        from .desktop_claire_round import TOP_BAR
+        wanted = [o for o in game.listed if o not in game.found]
+        top_bar, bar_top = TOP_BAR * renderer.k, renderer.bar_top()
+        for recentred in (False, True):
+            if recentred:
+                renderer.view.centre_on(left + w / 2, top + h / 2)    # (as the hint's marker brings an object into view)
+            for px, py in points:
+                x, y = renderer.view.to_canvas(left + px, top + py)
+                if not (0 <= x < renderer.canvas.get_width() and top_bar + 4 <= y < bar_top - 24):
+                    continue
+                if renderer.hit(game, x, y) != ('scene', renderer.objects_at(game, x, y)):
+                    continue
+                hits = [o for o in renderer.objects_at(game, x, y) if o in wanted]
+                if hits and hits[0] == obj:
+                    return x, y
+        return None
+
+    def _claire_play(self, verb, arg):
+        game = self.game
+        if not game._claire_ready():
+            return dict(ok=False, error='the round is not ready to play (opening, paused or a window over it)')
+        renderer, round_ = game.claire_round_renderer, game.session.engine.claire_round
+        if verb == 'continue':
+            if not round_.over:
+                return dict(ok=False, error='the round is still being played')
+            button = renderer.summary_rects()[2]
+            return self._claire_tap(*button.center)
+        if round_.over:
+            return dict(ok=False, error='the round is over: `play continue`')
+        if verb == 'find':
+            listed = [(slot, o) for slot, o in enumerate(round_.slots) if o >= 0 and o not in round_.found]
+            if arg.isdigit():
+                match = [o for slot, o in listed if slot == int(arg)]
+            else:
+                match = [o for _, o in listed if round_.names[o].lower() == arg.lower()]
+            if not match:
+                names = [round_.names[o] for _, o in listed]
+                return dict(ok=False, error=f'{arg!r} is not listed to find; listed: {names}')
+            spot = self._claire_spot(renderer, round_, match[0])
+            if spot is None:
+                return dict(ok=False, error=f'no spot on {round_.names[match[0]]} a tap reaches first')
+            return self._claire_tap(*spot)
+        if verb == 'miss':
+            # The emptiest point of the play area: where no object's sprite is under the tap.
+            width = renderer.canvas.get_width()
+            from .desktop_claire_round import TOP_BAR
+            for y in range(round(TOP_BAR * renderer.k + 10), round(renderer.bar_top() - 10), 23):
+                for x in range(10, width - 10, 37):
+                    if renderer.hit(round_, x, y) == ('scene', []):
+                        return self._claire_tap(x, y)
+            return dict(ok=False, error='no empty spot in view')
+        if verb == 'hint':
+            return self._claire_tap(*renderer.orb_rect().center)
+        if verb == 'powerup':
+            rects = renderer.segment_rects()
+            if arg not in rects:
+                return dict(ok=False, error=f'a power-up is one of {sorted(rects)}')
+            return self._claire_tap(*rects[arg].center)
+        if verb == 'pick':
+            if not arg.isdigit() or not 0 <= int(arg) < len(round_.slots):
+                return dict(ok=False, error=f'a slot is 0-{len(round_.slots) - 1}')
+            return self._claire_tap(*renderer.label_rect(int(arg)).center)
+        return dict(ok=False, error=f'a round takes find, miss, hint, powerup, pick or continue, not {verb!r}')
 
     # -- the app's data folder ----------------------------------------------------------------------------------------
 

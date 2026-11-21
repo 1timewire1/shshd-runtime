@@ -430,6 +430,19 @@ working set, Linux's and Android's VmRSS/VmHWM, iOS's phys_footprint, the figure
 Python's and the host's drawing time). `open` waits for the requested story itself, so opening one from inside another
 no longer replies with the old one's screen.
 
+Mini-games run by command too (owner, 2026-11-21). `state` adds `minigame` when one is open: the same report the
+Creator's playtests give (`minigame_report.py`: kind, score, time left, phase and `waits_for`); a Claire Hart round
+also lists its names (slot, name, object, found), the count, score, multiplier, clock, misclicks and lock, the hint and
+each Power-Up's uses left, the markers shown and `view` (zoom and centre). `play press [VALUE]` is the player's press:
+the go-ahead or the game's button, a cell for SHS '11's Memory and Reflex, a key code (`nr_arena.KEY_BITS`) or menu pick
+on New Rules' arena. In a round, `play find NAME|SLOT` taps a pixel of that listed object where it shows (the view
+centres on it first if it's off screen), `play miss` taps where nothing is, `play hint` taps the hint orb,
+`play powerup focus|locator|clairvoyance|time_warp` a Power-Up's segment, `play pick SLOT` a listed name (the Psychic
+Locator's choice) and `play continue` the Level Summary's Continue; `pinch` in a round zooms it about its centre. All
+are real pointer events through the round's own hit tests, refused while a skip prompt is up or what's asked isn't
+there to tap (a name not listed); a spent Power-Up or an unready hint is tapped as a player would, and the round
+ignores it (the reply's `minigame` shows nothing changed).
+
 Sync Devices runs by command too (owner, 2026-11-19: the device passes drove it by taps, screenshots and coordinates):
 `sync receive` and `sync send [shs|cod|both] [nobackup]` open Data Management's Sync Devices where a player reaches it
 (the open game's Options over its main menu, or the chooser's) and start Receive, or Send with every switch on and Find
