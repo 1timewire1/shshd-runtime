@@ -390,8 +390,16 @@ class X360Deck:
         cache = self._fx_cache()
         found = cache.get(key)
         if found is None:
-            found = pygame.transform.smoothscale(self.picture(name), (side, side))
-            found.fill((*step, 255), special_flags=pygame.BLEND_RGBA_MULT)
+            # Tinted at the picture's own size, once a colour, then scaled: the same pixels (the multiply and the
+            # smoothing are each per channel), and a scale alone is no new picture on a native host. Tinted after the
+            # scale, each new size was a multiply worked in Python and a new PNG there: a wrong answer's puffs, growing
+            # five times over a second, made one a puff each frame, up to 1027 x 1027 (iPad, 2026-11-20: 400 ms frames).
+            tint = ('fx-tint', name, step)
+            source = cache.get(tint)
+            if source is None:
+                source = cache[tint] = self.picture(name).copy()
+                source.fill((*step, 255), special_flags=pygame.BLEND_RGBA_MULT)
+            found = pygame.transform.smoothscale(source, (side, side))
             if additive:
                 light = pygame.Surface((side, side))
                 light.fill((0, 0, 0))

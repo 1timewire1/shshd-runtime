@@ -573,6 +573,10 @@
   2026-11-19). Each frame the host moved the layers it kept into the new picture in one Core Animation commit and put
   that picture up in a second; a refresh between them showed the old picture without those layers. Both are one
   commit now.
+- **A wrong answer slowed the X360 arena skin on the iPad** (owner, 2026-11-20): its smoke puffs, growing over a
+  second, were tinted after each new size, a multiply the iPad works out in Python and sends on as a new picture (up
+  to 400 ms frames). The tint is made once a colour at the sprite's own size and scaled after, the same pixels; the
+  flares, sparks, flames and stink of the Diss Battle and Practice share it.
 - **Eight one-script episodes never ended** (owner, g54, 2026-11-20): Easter Egg Hunt, O.M.G.! It's St. Patrick's
   Day! and the six Homecoming vote packages end with a halt in their only script, which kept the story open on its
   last scene with nothing to tap. Once the story has run, that halt ends the episode as an exit does ("Miss An
