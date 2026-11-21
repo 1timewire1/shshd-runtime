@@ -1,17 +1,9 @@
 # Changelog
 
-## 1.1.0 (shshd-runtime)
+## Unreleased (shshd-runtime)
 
 ### Added
 
-- **Picker icons in the translated games' add-ons** (owner, 2026-11-21): each add-on holds its game's icon (resource 26950's
-  spec, the pictures from 26951) for a game chooser that lists the add-on games later (ROADMAP 3.31), so that needs no
-  add-on update: New Rules' and '08's EA store thumbnails, '07's Centerscore box, '11's own app icon, Surviving
-  Hollywood's Vivendi banner, and a new one for the X360 prototype from its title logo. `tools/translate/addon_icons.py`
-  builds them, and patched the shipped add-ons: `shsnr` 6, `shsbrew` 14, `shs11` 4, `shshw` 9, `shsx360` 23 (every
-  other record unchanged). The player doesn't read them yet. See docs/ADDONS.md.
-- **Mark as Finished** (owner, 2026-11-21): Data Management's Episodes page lists every episode with the finished ones
-  (the lists' green play icon) already ticked; Save makes the ticked ones finished and the others not.
 - **Narration with the narrator's portrait** (Claire Hart plan Stage 0, E; `claire-hart` branch): a presentation flag,
   `narration_portrait`, has a narrator line with art speak as a small dialogue box attached to the narrator's portrait (the
   lead's side), in narration's italic text, with no name plate and no relationship icons (owner, 2026-11-19); on for
@@ -84,6 +76,26 @@
   (2026-11-20): the part's player (Claire, or Troy in his cases) is on the left and narrates, with their own portrait
   and no name plate; a round line is in their voice ("I searched my office and found the Belt."); later parts drop the
   repeated introduction, episodes their store sign-off; joined names get their space (Jillian Gish, Will Yu).
+
+### Changed
+
+- **chslim revision 2, and `chc` begun** (owner, 2026-11-19; `claire-hart` branch): chslim keeps only what CoD shows (17 MB,
+  was 21); Claire Hart's own extras (the rest of Troy, Paul and Claire, the speech bubbles, the Romic fonts) move to `chc`,
+  Claire Hart Classic's add-on, which starts as chslim revision 1 exactly and supersedes chslim
+  (`tools/translate/chslim.py --chc`).
+
+## 1.1.0 (shshd-runtime)
+
+### Added
+
+- **Picker icons in the translated games' add-ons** (owner, 2026-11-21): each add-on holds its game's icon (resource 26950's
+  spec, the pictures from 26951) for a game chooser that lists the add-on games later (ROADMAP 3.31), so that needs no
+  add-on update: New Rules' and '08's EA store thumbnails, '07's Centerscore box, '11's own app icon, Surviving
+  Hollywood's Vivendi banner, and a new one for the X360 prototype from its title logo. `tools/translate/addon_icons.py`
+  builds them, and patched the shipped add-ons: `shsnr` 6, `shsbrew` 14, `shs11` 4, `shshw` 9, `shsx360` 23 (every
+  other record unchanged). The player doesn't read them yet. See docs/ADDONS.md.
+- **Mark as Finished** (owner, 2026-11-21): Data Management's Episodes page lists every episode with the finished ones
+  (the lists' green play icon) already ticked; Save makes the ticked ones finished and the others not.
 - **Test channel: Sync Devices by command** (owner, 2026-11-19): `sync receive`, `sync send [shs|cod|both]
   [nobackup]`, `sync devices`, `sync choose`, `sync answer yes|no`, `sync wait`, `sync status`, `sync ok` and
   `sync stop` run a sync without taps or screenshots ([RUNTIME.md](docs/RUNTIME.md#test-channel-this-fork)).
@@ -533,10 +545,6 @@
   Content. It takes what it took (episodes, add-ons, ZIP/RAR collections, a catalog) and now fonts (`.ttf`, `.otf`), copied
   into the library's fonts as Bulk Import copies them; the notice counts them and offers **Reopen**, which closes the
   game's library and opens it again (as Switch Game does, on every platform) so the new fonts are used.
-- **chslim revision 2, and `chc` begun** (owner, 2026-11-19; `claire-hart` branch): chslim keeps only what CoD shows (17 MB,
-  was 21); Claire Hart's own extras (the rest of Troy, Paul and Claire, the speech bubbles, the Romic fonts) move to `chc`,
-  Claire Hart Classic's add-on, which starts as chslim revision 1 exactly and supersedes chslim
-  (`tools/translate/chslim.py --chc`).
 - **Add-ons are read a record at a time** (Claire Hart plan Stage 0): an add-on was read whole into memory and hashed
   each time a library opened (and by Sync, Options and the Creator asking about it). Now only its index is read, each
   record as it's needed, and its file is hashed the first time and then known by its size and time
