@@ -552,6 +552,7 @@ class Application:
         """Rebuild Previews: every drawn episode preview (and its "no title card" mark) thrown away and drawn again."""
         import shutil
         shutil.rmtree(library.directory / 'thumbs', ignore_errors=True)
+        episode_thumbnails.forget_failures(library)        # (and this run's failed renders tried again)
         model = PickerModel(library)
 
         def progress(done, total, title):

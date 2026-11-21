@@ -568,6 +568,10 @@
 
 ### Fixed
 
+- **A preview that failed once never came back** (owner, g54, 2026-11-21): a render that failed (Cause of Death's whole
+  grid, during a first setup) was remembered like an episode with no title card, so its tile stayed blank until Rebuild
+  Previews. Only "no title card" is remembered now; a failed render is tried again at the next launch, or by Rebuild
+  Previews.
 - **The iPad's screen flickered** (owner, 2026-11-20): parts of the picture went black for a frame now and then (the
   title screen, story screens, and often New Rules' arena under "View tutorial?"; also the rare black flash of
   2026-11-19). Each frame the host moved the layers it kept into the new picture in one Core Animation commit and put

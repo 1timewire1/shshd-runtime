@@ -205,13 +205,14 @@ def release_game_caches():
 
 
 def generate(library, record):
-    """Render and cache one episode's preview; True when a file was written."""
+    """Render and cache one episode's preview: True when a file was written, False when the episode has no title card,
+    None when the render failed (an error: tried again the next time, not remembered as "no card")."""
     path = thumbnail_path(library, record)
     try:
         image = capture_title_card(library, record)
     except (ContentError, pygame.error, OSError, ValueError, KeyError, AttributeError, RecursionError) as error:
         logging.warning('No preview for %s: %s', record['titles'][0], error)
-        return False
+        return None
     if image is None:
         return False
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -225,11 +226,28 @@ def generate(library, record):
     return True
 
 
+# Renders that failed with an error while this app ran, by (library folder, episode id): not tried again until the next
+# launch. A failure was once marked `.none` like an episode without a card and never tried again: the g54's whole CoD
+# grid stayed blank after its first setup failed every preview (owner, 2026-11-21).
+FAILED = set()
+
+
+def _failed_key(library, record):
+    return str(getattr(library, 'directory', '')), record['id']
+
+
+def forget_failures(library):
+    """Rebuild Previews: this library's failed renders are tried again now."""
+    folder = str(getattr(library, 'directory', ''))
+    FAILED.difference_update({key for key in FAILED if key[0] == folder})
+
+
 def missing_records(library, records):
-    """Episodes with neither a bundled nor a cached preview, and not yet tried (a failed try is remembered)."""
+    """Episodes with neither a bundled nor a cached preview, and not yet tried: an episode found to have no title card
+    is remembered (`.none`); one whose render failed is left for the app's next launch."""
     return [r for r in records
             if not thumbnail_path(library, r).exists() and not marked(thumbnail_path(library, r).with_suffix('.none'))
-            and bundled_preview(library, r) is None]
+            and _failed_key(library, r) not in FAILED and bundled_preview(library, r) is None]
 
 
 def marked(marker):
@@ -251,6 +269,8 @@ def ensure(library, records, progress=None):
         release_episode_caches()
         if made_one:
             made += 1
+        elif made_one is None:
+            FAILED.add(_failed_key(library, record))
         else:
             marker = thumbnail_path(library, record).with_suffix('.none')
             marker.parent.mkdir(parents=True, exist_ok=True)

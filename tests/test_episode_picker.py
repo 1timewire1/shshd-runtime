@@ -280,6 +280,29 @@ class ModelTests(unittest.TestCase):
         (thumbs / f'{failed["id"]}.none').write_bytes(episode_thumbnails.MARKER)
         self.assertEqual(episode_thumbnails.missing_records(library, library.episodes), [todo])
 
+    def test_a_render_that_fails_is_tried_again_and_only_no_card_is_remembered(self):
+        """The g54's CoD grid stayed blank: its first setup failed every preview and each failure was marked `.none`
+        ("no title card") for good (owner, 2026-11-21). A failure is left for the next launch, or Rebuild Previews."""
+        broken, cardless = (record(i, 101, i, f'T{i}') for i in range(1, 3))
+        library = library_with(self.root, [broken, cardless])
+        self.addCleanup(episode_thumbnails.FAILED.clear)
+
+        def capture(library, record):
+            if record['id'] == broken['id']:
+                raise OSError('font missing')
+            return None                                             # no title card
+        with patch.object(episode_thumbnails, 'capture_title_card', capture), \
+                patch.object(episode_thumbnails, 'release_episode_caches', lambda: None):
+            self.assertEqual(episode_thumbnails.ensure(library, library.episodes), 0)
+        thumbs = self.root / 'thumbs'
+        self.assertFalse((thumbs / f'{broken["id"]}.none').exists())
+        self.assertTrue(episode_thumbnails.marked(thumbs / f'{cardless["id"]}.none'))
+        self.assertEqual(episode_thumbnails.missing_records(library, library.episodes), [])       # not again this run
+        episode_thumbnails.forget_failures(library)                                               # Rebuild Previews
+        self.assertEqual(episode_thumbnails.missing_records(library, library.episodes), [broken])
+        episode_thumbnails.FAILED.clear()                                                         # the next launch
+        self.assertEqual(episode_thumbnails.missing_records(library, library.episodes), [broken])
+
 
 class FakeSession:
     """Serves a fixed list of pending actions; each answer moves to the next one."""
