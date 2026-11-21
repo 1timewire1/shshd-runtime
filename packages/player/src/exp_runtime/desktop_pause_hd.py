@@ -241,7 +241,7 @@ SEPIA = (0.779, 0.166, 0.0, 102.1,
 # string bank's ~276~ token appears at all is the About page (checked against a real HD string bank), and only
 # this project's own override of it (`help_text_overrides.py`) is ever shown, so this reports shshd-runtime's
 # own release instead. The one line to edit on a release; nothing else about the About text needs to change.
-VERSION = '1.0.2'
+VERSION = '1.1.0'
 # The upstream exp-runtime release this fork last merged (owner, 2026-10-21: shown under the version, About pages'
 # `~upstream~`). Change it with each upstream merge.
 UPSTREAM_VERSION = 'v0.6.1'

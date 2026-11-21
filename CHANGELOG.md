@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (shshd-runtime)
+## 1.1.0 (shshd-runtime)
 
 ### Added
 

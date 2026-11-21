@@ -12,9 +12,9 @@ uv run --locked --extra creator-mcp shshd-creator-mcp --workspace /path/to/stori
 Install the server with pip, from a release's Python wheels:
 
 ```sh
-python -m pip install --find-links ./wheels "shshd-runtime[creator-mcp]==1.0.2"
+python -m pip install --find-links ./wheels "shshd-runtime[creator-mcp]==1.1.0"
 # Equivalent component-only install:
-python -m pip install --find-links ./wheels "shshd-runtime-creator[mcp]==1.0.2"
+python -m pip install --find-links ./wheels "shshd-runtime-creator[mcp]==1.1.0"
 ```
 
 This extra installs the [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk/tree/v1.x),
