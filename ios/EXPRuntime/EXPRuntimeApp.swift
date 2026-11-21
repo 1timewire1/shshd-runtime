@@ -53,9 +53,13 @@ final class GameCanvasView: UIView, UIKeyInput {
     private var composedRoot: CALayer?
     private var shownSize: CGSize?
     func show(_ frame: ComposedFrame) {
-        let root = compositor.update(frame)
+        // One transaction for the new tree and its going up: `update` takes the layers a frame keeps (an unchanged
+        // subtree: New Rules' arena canvas, its frame picture in it, still under SHS's "View tutorial?" choice) out of
+        // the root on screen into the new root. Its own begin/commit, outermost here, sent that at once, and until this
+        // one put the new root up the screen showed the old root without them: black where they were (iPad, 2026-11-20).
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        let root = compositor.update(frame)
         shownSize = frame.root.size
         if image != nil { image = nil }
         if composedRoot !== root {

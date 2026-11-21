@@ -568,6 +568,11 @@
 
 ### Fixed
 
+- **The iPad's screen flickered** (owner, 2026-11-20): parts of the picture went black for a frame now and then (the
+  title screen, story screens, and often New Rules' arena under "View tutorial?"; also the rare black flash of
+  2026-11-19). Each frame the host moved the layers it kept into the new picture in one Core Animation commit and put
+  that picture up in a second; a refresh between them showed the old picture without those layers. Both are one
+  commit now.
 - **Eight one-script episodes never ended** (owner, g54, 2026-11-20): Easter Egg Hunt, O.M.G.! It's St. Patrick's
   Day! and the six Homecoming vote packages end with a halt in their only script, which kept the story open on its
   last scene with nothing to tap. Once the story has run, that halt ends the episode as an exit does ("Miss An
