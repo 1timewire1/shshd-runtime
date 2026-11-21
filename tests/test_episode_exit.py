@@ -17,7 +17,7 @@ from exp_runtime.scene_badge import SceneBadge
 from exp_runtime.trace import trace_archive
 from exp_runtime.vm import VMError
 from test_content import FAKE_NATIVE, archive, make_apk, metadata
-from test_runtime import Resources, host_call
+from test_runtime import Resources, answer_screen, host_call, text_words
 from test_vm import program
 
 
@@ -395,10 +395,23 @@ class HaltEndingMenuTests(EpisodeExitMenuTests):
         self.assertTrue(s.episode_ended)
         self.assertFalse(s.episode_exited)
 
-    def test_a_first_script_that_halts_stays_resumable(self):
+    def test_a_first_script_that_halts_before_any_input_stays_resumable(self):
         s = Session(Resources(program(0x33)))
         self.assertEqual(s.advance().name, 'finished')
         self.assertFalse(s.episode_ended)
+
+    def test_a_first_script_that_halts_after_its_story_ends_the_episode(self):
+        """Eight one-script SHS episodes end with a HALT in their first script after their last line (Easter Egg
+        Hunt, the Homecoming vote packages): it ends them, or they sat on their last scene for good (owner, g54,
+        2026-11-20)."""
+        words, (line,) = text_words('The last line.')
+        s = Session(Resources(program(*host_call(13, line, 0), 0x33, words=words, gap=2)))
+        self.assertEqual(s.advance().name, 'dialogue')
+        self.assertFalse(s.episode_ended)
+        self.assertEqual(answer_screen(s).name, 'finished')
+        self.assertEqual(s.scene_loads, 0)
+        self.assertTrue(s.episode_ended)
+        self.assertFalse(s.episode_exited)
 
 
 if __name__ == '__main__':

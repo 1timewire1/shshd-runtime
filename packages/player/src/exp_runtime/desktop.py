@@ -5418,10 +5418,16 @@ class Desktop:
         # the sepia backdrop, the one the pause menu's own equivalent path never does.
         was_capture, self.capture = self.capture, True
         self._snapshotting = True
+        # The location layer's pan settled where this frame puts it, the live one left as it was: the pan keeps its
+        # place between frames, so a 3:4 picture taken from another shape (Fit Screen on a phone) asked for a new place
+        # and was drawn at the live frame's, short of the frame's edge (a black bar down a save's thumbnail; owner,
+        # g54, 2026-11-20). It also set the live pan moving.
+        live_pan, self.location_pan = self.location_pan, LocationPan()
         try:
             self.render()
         finally:
             self._snapshotting = False
+            self.location_pan = live_pan
             self.menu_open = opened
             self.capture = was_capture
             self.aspect_ratio = shape

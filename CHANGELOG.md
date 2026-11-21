@@ -568,6 +568,13 @@
 
 ### Fixed
 
+- **Eight one-script episodes never ended** (owner, g54, 2026-11-20): Easter Egg Hunt, O.M.G.! It's St. Patrick's
+  Day! and the six Homecoming vote packages end with a halt in their only script, which kept the story open on its
+  last scene with nothing to tap. Once the story has run, that halt ends the episode as an exit does ("Miss An
+  Episode?"); a script that halts before anything is shown stays as it was.
+- **A black bar down a saved game's picture** (owner, g54, 2026-11-20): leaving a story at Fit Screen on a phone in a
+  scene that pans with the speaker drew the 3:4 picture with the live frame's pan, short of its right edge. The picture
+  now takes the pan's place for its own frame, and the live pan is left alone.
 - **The Creator's colours for Cause of Death** (owner, 2026-11-19): CoD has one box style, grey, with the speaker's
   name slanted (every character in its episodes) or upright (its narrator, and Holiday Interlude's Ghostly Specter); its
   pink-red box is never used. The Creator offered SHS's four colours and gave new characters "Blue", which drew that

@@ -218,6 +218,9 @@ class Session:
         self.pending: EngineAction | None = None
         self.remaining_ms: int | None = None
         self.scene_loads = 0
+        # Inputs this session has answered (not saved): a first script's HALT ends the episode only after the story ran
+        # (episode_ended).
+        self.answered = 0
         self.nest_stack = []
         self._load_dt_view()
         self._vibrations = 0
@@ -428,13 +431,18 @@ class Session:
 
     @property
     def episode_ended(self) -> bool:
-        """Service 7/63's exit, or a HALT in a scheduled (later) scene with no script left to load. CoD's "Your Case:
-        The Missing Child" "Try again" branch ends that way instead of calling scene 25003's exit routine, leaving a
-        blank scene with its music playing. What the native scene shows after such a HALT is unverified; the player
-        hands it back to the menu like an exit. A first script that halts keeps its ordinary resumable state."""
+        """Service 7/63's exit, or a HALT with no script left to load. CoD's "Your Case: The Missing Child" "Try again"
+        branch ends that way in a scheduled scene instead of calling scene 25003's exit routine, leaving a blank scene
+        with its music playing; and eight one-script SHS episodes end so in their first (Easter Egg Hunt, O.M.G.! It's
+        St. Patrick's Day!, the Homecoming vote packages), which sat on their last scene for good (owner, g54,
+        2026-11-20): once this session has answered an input there. A first script that halts before any input (a
+        test's whole story) keeps its ordinary resumable state, as a save made at such a HALT does (_finished_save).
+        What the native scene shows after such a HALT is unverified; the player hands it back to the menu like an
+        exit."""
         if self.pending is None:
             return False
-        return self.pending.name == 'episode_exit' or (self.pending.name == 'finished' and self.scene_loads > 0)
+        return self.pending.name == 'episode_exit' or (self.pending.name == 'finished'
+                                                       and (self.scene_loads > 0 or self.answered > 0))
 
     @property
     def transitioning(self) -> bool:
@@ -895,6 +903,7 @@ class Session:
             raise VMError('There is no pending input')
         if self.episode_exited:
             raise VMError('The episode has ended; there is no pending input')
+        self.answered += 1
         if self.transitioning:
             return action
         if action.name == 'choice':
