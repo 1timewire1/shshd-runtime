@@ -30,13 +30,27 @@ it's done, so real clocks (fades, timers) run as in play.
     set KEY on|off              a switch, as Options does (undo, skip_ahead, java_look, arena_minigames, ...);
                                 `set dsi_pixels sharp|smooth` (Extras' DSi Backgrounds is these two: `set dsi_backgrounds
                                 on` with the pixels), `set preferred_language en|fr|it|de|es` (the titles,
-                                and the DSi's, '11's and the Creator's stories where they have it)
+                                and the DSi's, '11's and the Creator's stories where they have it), any choice
+                                option (title_look, title_music...), `set start_in auto|games|shs|cod`,
+                                `set music_volume|sound_volume 0-100`
+    options [PAGE]              Options at PAGE: general, sound, extras, addons, per_game, controller, data, library,
+                                episodes, progress, sync, or a screen name (choice:start_in...): the main menu's, or in
+                                a story the pause menu's (opened first)
+    rows                        the open menu page's rows: label, kind, key, value (the pause menu itself too: Resume,
+                                Skip Ahead, Undo, Options, Help, Main Menu)
+    press LABEL                 a row of the open Options page, as a tap (its label or key): pages open, switches flip,
+                                choices open their page, picks choose, actions run (their question shows as `window`)
+    do ACTION                   a Data Management action by its key, as its row (verify_library, back_up, mark_read...)
+    pick TITLE|ID               tick or untick an episode in Data Management's tick list (Mark as Finished, Delete...)
+    act                         the tick list's verb button (Save, Delete, Export, Reset)
     aspect 3:4|2:3|9:16|fit|default   General's Aspect Ratio (default: the device's own)
     resize W H                  a computer's window resized to W x H pixels, as a drag would (with `aspect fit`, any
                                 shape: 9:20 is `resize 540 1200`); not on a phone, whose window is its screen
-    game shs|cod                pick a game, as the game picker does (`open` needs one picked)
-    import PATH                 Add Episodes with that file (Android: one in the app's files folder); waits for it
-    window yes|no|ok|LABEL|N    press a button of the menu's open window (`state` shows it as `window`), or the Nth
+    game shs|cod                pick a game, as the game picker does (`open` needs one picked); a story held for
+                                Resume is saved and let go, as the main menu's switch button does
+    import PATH                 Add Content with that file (Android: one in the app's files folder); waits for it
+    window yes|no|ok|LABEL|N    press a button of the menu's open window by its words (`state` shows them, a game's
+                                own string ids resolved), its id, or the Nth
     reopen TITLE                as `open`, continuing the story from its autosave
     open TITLE                  start the episode whose title contains TITLE (or whose id starts with TITLE), from the
                                 beginning; of several copies, the newest import
@@ -432,14 +446,15 @@ class Commands:
         app, game = self.app, self.game
         out = dict(ok=True, screen=app.screen, stage=getattr(app.shell, 'stage', None) if app.shell else None,
                    message=getattr(app, 'message', None), busy=bool(app.busy),
-                   progress=getattr(app, 'progress_text', '') or None)
+                   progress=getattr(app, 'progress_text', '') or None, game=getattr(app, 'selected_game', None))
+        if app.shell is not None and getattr(app.shell, 'pause_open', False):
+            out['page'] = app.shell.pause.state.screen          # the Options page showing over the main menu
         prompt = getattr(app.shell, 'prompt', None) if app.shell else None
         if prompt is not None:
             out['menu_prompt'] = str(prompt)[:200]
         window = self._window()
         if window is not None:
-            menu = window[0]
-            out['window'] = dict(title=str(menu.title), text=str(menu.message)[:400], buttons=[str(item.label) for item in window[1]])
+            out['window'] = self._window_words(window)
         if game is None:
             return out
         session = game.session
@@ -632,6 +647,164 @@ class Commands:
         shell.activate((button,))
         return self._settled(1.2)
 
+    # -- the main menu's Options and Data Management, by name (owner, 2026-11-21: no screenshot-and-tap) -----------------
+    PAGE_NAMES = {'general': 'options:general', 'sound': 'options:sound', 'extras': 'options:extras',
+                  'addons': 'options:addons', 'add-ons': 'options:addons', 'per_game': 'options:per_game',
+                  'per-game': 'options:per_game', 'controller': 'options:controller', 'data': 'options:data',
+                  'library': 'data:library', 'episodes': 'data:episodes', 'progress': 'data:progress',
+                  'sync': 'data:sync'}
+
+    def _main_options(self):
+        app = self.app
+        if app.shell is None or app.library is None:
+            raise ValueError('no game is open (`game shs` or `game cod` first)')
+        if app.screen == 'game':
+            raise ValueError('a story is open: leave it first (`menu`)')
+        if app.screen != 'main':
+            app.show('main', remember=False)
+        if not app.shell.pause_open:
+            app.shell.activate(('options',))
+        return app.shell
+
+    def _menu(self):
+        """The menu `rows` and `press` drive: (its HdPauseMenu, its settings, how a row's command is sent). In a story,
+        the story's pause menu (Desktop.pause_hd, sent through Desktop.command); else the main menu's Options."""
+        game = self.game
+        if game is not None:
+            if not game.menu_open:
+                raise ValueError('the pause menu is not open (`pause` or `options` first)')
+            return game.pause_hd, game._pause_settings(), game.command
+        shell = self.app.shell
+        if shell is None or not getattr(shell, 'pause_open', False):
+            raise ValueError('no Options page is open (`options` first)')
+        return shell.pause, shell.settings(), shell.activate
+
+    def do_options(self, rest):
+        """`options [PAGE]`: Options at PAGE: general, sound, extras, addons, per_game, controller, data, library,
+        episodes, progress, sync, or a screen name (options:extras, data:episodes, choice:start_in). On the main menu,
+        its Options; in a story, the pause menu's (it opens first; Data Management is the main menu's only)."""
+        page = rest.strip().lower()
+        game = self.game
+        if game is not None:
+            if not game.menu_open:
+                game.command(('menu',))
+                yield from self._settled(0.6)
+            pause = game.pause_hd
+        else:
+            pause = self._main_options().pause
+        pause.open(self.PAGE_NAMES.get(page, page) if page and page != 'options' else 'options')
+        result = yield from self._settled(0.5)
+        return dict(result, page=pause.state.screen)
+
+    def _menu_rows(self):
+        """The open menu page's rows as a player reads them: [dict(label, kind, key, value, command)]: the commands
+        its rows send when tapped (desktop_pause_hd.screen_layout)."""
+        from .desktop_pause_hd import DATA_TITLES, JOURNAL_LABEL, OPTION_CATEGORIES, SKIP_AHEAD_LABEL, UNDO_LABEL
+        pause, settings, _ = self._menu()
+        strings, screen = pause.strings(), pause.state.screen
+        rows = []
+        if screen == 'pause':
+            # A story's pause menu itself: Resume, (Skip Ahead, Undo, Quest Journal,) Options, Help, Main Menu.
+            entries = [(strings[20], ('resume',)), (strings[10], ('pause_open', 'options')),
+                       (strings[120], ('pause_open', 'help')), (strings[9], ('main_menu',))]
+            for flag, label, command in (('journal_row', JOURNAL_LABEL, ('journal',)), ('undo_row', UNDO_LABEL, ('undo',)),
+                                         ('skip_ahead_row', SKIP_AHEAD_LABEL, ('skip_ahead',))):
+                if settings.get(flag):
+                    entries.insert(1, (label, command))
+            return [dict(label=str(label), kind='action', key=command[-1], command=command) for label, command in entries]
+        if screen == 'options':
+            for category, label in OPTION_CATEGORIES:
+                if pause.option_rows(category, settings, strings):
+                    rows.append(dict(label=label, kind='page', key='options:' + category,
+                                     command=('pause_open', 'options:' + category)))
+            return rows
+        category = (screen if screen in DATA_TITLES or screen in pause.row_pages or screen.startswith('choice:')
+                    else screen.split(':', 1)[1])
+        for kind, label, key in pause.option_rows(category, settings, strings):
+            row = dict(label=str(label), kind=kind, key=key if isinstance(key, str) else list(key))
+            if kind == 'slider':
+                row.update(value=settings.get(key + '_volume'), command=None)       # (`set music_volume N`)
+            elif kind == 'pick':
+                option, value = key
+                row.update(value=label == settings.get(option), command=('pause_cycle', option, value))
+            elif kind == 'folder':
+                row.update(value=settings.get(key), command=('pause_cycle', key))
+            elif kind == 'choice':
+                row.update(value=settings.get(key), command=('pause_open', 'choice:' + key))
+            elif kind == 'switch':
+                row.update(value=bool(settings.get(key, False)), command=('pause_toggle', key))
+            elif kind == 'cycle':
+                row.update(value=settings.get(key), command=('pause_cycle', key))
+            else:
+                row.update(command=('pause_open' if kind == 'page' else 'pause_action', key))
+            rows.append(row)
+        return rows
+
+    def do_rows(self, _):
+        """The open Options page's rows: label, kind (switch, choice, pick, page, action, folder, cycle, slider), key,
+        value (a switch's on/off, a choice's current value, a pick's tick)."""
+        rows = self._menu_rows()
+        return dict(ok=True, page=self._menu()[0].state.screen,
+                    rows=[{k: v for k, v in row.items() if k != 'command'} for row in rows])
+
+    def do_press(self, rest):
+        """`press LABEL`: a row of the open Options page, as a tap on it (its label, without case, or its key): a page
+        opens, a switch flips, a choice's page opens, a pick is chosen, an action runs (its question shows as `window`)."""
+        wanted = rest.strip().lower()
+        rows = self._menu_rows()
+        row = next((r for r in rows if r['label'].lower() == wanted), None)
+        row = row or next((r for r in rows if str(r['key']).lower() == wanted), None)
+        if row is None or row['command'] is None:
+            return dict(ok=False, error=f'no row {rest!r}: {[r["label"] for r in rows]}')
+        self._menu()[2](row['command'])
+        result = yield from self._settled(0.6)
+        return dict(result, pressed=row['label'])
+
+    def do_do(self, rest):
+        """`do ACTION`: a Data Management action by its key, as its row does (verify_library, rebuild_previews,
+        back_up, mark_read, delete_episodes, add_episodes...): `rows` on a data page lists the keys."""
+        key = rest.strip()
+        shell = self._main_options()
+        from .desktop_pause_hd import DATA_ACTIONS, DATA_PAGES
+        if key not in {k for k, _ in DATA_ACTIONS}:
+            return dict(ok=False, error=f'do is one of {", ".join(k for k, _ in DATA_ACTIONS)}')
+        page = next((screen for screen, _, rows in DATA_PAGES if any(k == key for k, _ in rows)), 'options:data')
+        shell.pause.open(page)
+        yield from self._settled(0.4)
+        shell.activate(('pause_action', key))
+        result = yield from self._settled(0.8)
+        return result
+
+    def _choosing(self):
+        picker = self.app.picker
+        choosing = getattr(picker, 'choosing', None)
+        if choosing is None:
+            raise ValueError('no episode tick list is open (`press Mark as Finished`, `press Delete Episodes`...)')
+        return picker, choosing
+
+    def do_pick(self, rest):
+        """`pick TITLE|ID`: tick or untick an episode in Data Management's tick list (Mark as Finished, Delete, Export,
+        Reset Decision Tree): its title contains TITLE, or its id starts with ID."""
+        picker, choosing = self._choosing()
+        wanted = rest.strip().lower()
+        records = [r for r in self.app.library.episodes if r['id'] in choosing.allowed]
+        found = [r for r in records if r['id'].startswith(wanted) and len(wanted) >= 6] or \
+                [r for r in records if any(wanted in (t or '').lower() for t in r.get('titles', ()))]
+        if not found:
+            return dict(ok=False, error=f'no episode {rest!r} in this list')
+        choosing.toggle(found[-1]['id'])
+        return dict(ok=True, episode=(found[-1].get('titles') or [''])[0], ticked=found[-1]['id'] in choosing.chosen,
+                    chosen=len(choosing.chosen))
+
+    def do_act(self, _):
+        """The tick list's verb button (Save, Delete, Export, Reset): its question shows as `window`."""
+        picker, choosing = self._choosing()
+        if not choosing.can_act():
+            return dict(ok=False, error='nothing is ticked')
+        from .desktop_episode_list_hd import CHOICE_ACT
+        self.app.picker_command(CHOICE_ACT)
+        return self._settled(0.8)
+
     def do_set(self, rest):
         key, _, value = rest.partition(' ')
         wanted = value.strip() in ('on', 'true', '1')
@@ -646,6 +819,23 @@ class Commands:
             state.persist()
             if key.startswith('dsi_') or key == 'preferred_language':
                 self.app.apply_dsi()
+            return dict(ok=True, key=key, value=getattr(state, key))
+        if key == 'start_in':
+            # General's Start In (settings.json, the app's own): auto, games, shs or cod.
+            from .settings import START_IN
+            if value.strip() not in START_IN:
+                return dict(ok=False, error=f'start_in is one of {", ".join(START_IN)}')
+            self.app.settings.set_start_in(value.strip())
+            return dict(ok=True, key=key, value=self.app.settings.start_in)
+        if state is not None and key in ('music_volume', 'sound_volume'):
+            # Sound's sliders: 0-100, as the slider sets them.
+            if not value.strip().isdigit() or not 0 <= int(value) <= 100:
+                return dict(ok=False, error=f'{key} is 0 to 100')
+            if self.app.shell is not None:
+                self.app.shell.set_volume(key.split('_')[0], int(value) / 100)     # as the slider does
+            else:
+                setattr(state, key, int(value))
+                state.persist()
             return dict(ok=True, key=key, value=getattr(state, key))
         if state is None or type(getattr(state, key, None)) is not bool:
             return dict(ok=False, error=f'unknown switch {key!r}')
@@ -684,8 +874,10 @@ class Commands:
 
     def do_game(self, rest):
         key = rest.strip().lower()
-        if self.app.game is not None:
+        if self.app.game is not None and self.app.screen == 'game':
             return dict(ok=False, error='a story is open: leave it first')
+        # (A story held for Resume behind the main menu is let go with its library, saved first, as the main menu's
+        # switch button does: test channel wish, 2026-11-20.)
         if getattr(self.app, 'selected_game', None) != key or self.app.library is None:
             self.app.choose_game(key)
         return self._settled(0.5)
@@ -738,15 +930,42 @@ class Commands:
             return None
         return shell.data.menu(stack.current), shell.data.items(stack.current)
 
+    def _window_words(self, window):
+        """A window as a player reads it: a game's own window carries string ids (its title '5', buttons '25' / '24'),
+        shown as the words they draw (test channel wish, 2026-11-20)."""
+        menu, buttons = window
+        shell = self.app.shell
+        windows, variables = getattr(shell, 'windows', None), None
+        try:
+            variables = shell.variables()
+        except Exception:                               # (a shell without a game's variables: the ids' own words)
+            variables = None
+
+        def words(string_id):
+            try:
+                return windows.text_for(string_id, variables) if windows is not None else str(string_id)
+            except (KeyError, IndexError, TypeError, AttributeError):
+                return str(string_id)
+
+        def label(action):
+            try:
+                return windows.item_label(action, variables) if windows is not None else str(action.label)
+            except (KeyError, IndexError, TypeError, AttributeError):
+                return str(action.label)
+        return dict(title=words(menu.title), text=words(menu.message)[:400], buttons=[label(b) for b in buttons],
+                    ids=[str(b.label) for b in buttons])
+
     def do_window(self, rest):
         """Press a button of the open window: `yes` (its verb, the last), `no`, `ok`, a label, or its position (0 first)."""
         window = self._window()
         if window is None:
             return dict(ok=False, error='no window is open')
         buttons, wanted = window[1], rest.strip().lower()
-        # A label first: a game's own window labels its buttons by string id ('25', '24'), which a position never
-        # reached (iPad, 2026-11-19: `window 24` found no button '24' in ['25', '24']).
-        found = next((b for b in buttons if str(b.label).lower() == wanted), None)
+        # Its words first ("no", "play with sound": a game's own window draws them from string ids), then a label as an
+        # id ('25', '24'), which a position never reached (iPad, 2026-11-19: `window 24` found no button '24').
+        words = [label.lower() for label in self._window_words(window)['buttons']]
+        found = next((b for b, word in zip(buttons, words) if word == wanted), None)
+        found = found or next((b for b in buttons if str(b.label).lower() == wanted), None)
         if found is not None:
             pass
         elif wanted.isdigit():
@@ -754,7 +973,7 @@ class Commands:
         elif wanted == 'yes':
             found = buttons[-1]
         if found is None:
-            return dict(ok=False, error=f'no button {rest!r}: {[str(b.label) for b in buttons]}')
+            return dict(ok=False, error=f'no button {rest!r}: {self._window_words(window)["buttons"]}')
         self.app.shell.stack.press(found)
         return self._idle(60)
 
@@ -901,7 +1120,9 @@ class Commands:
         def reached():
             game = self.game
             if game is None:
-                return False
+                # The story ended (its end card shows over the main menu) or was left: nothing more to run (test channel
+                # wish, 2026-11-20: run-until choice in Easter Egg Hunt waited out its time after the end).
+                return self.app.screen != 'game'
             action = game.session.pending
             if game.host_prompt is not None:                # a mini-game's skip prompt: that game (or a stop it can't pass)
                 return not game.host_prompt.get('loading')  # (once its outcomes are worked out)
@@ -924,6 +1145,8 @@ class Commands:
             elif action is not None and action.name == 'presentation' and kind != 'presentation':
                 game.command(('continue',))
         result = yield from self._until(reached, seconds, step, every=0.12)
+        if self.game is None:
+            return dict(result, reached=False, ended=True)
         action = self.game.session.pending if self.game is not None else None
         result['reached'] = bool(result.get('reached')) and (kind in ('stop', 'any') or (action is not None and action.name == kind)
                                                                or (kind == 'prompt' and self.game.host_prompt is not None

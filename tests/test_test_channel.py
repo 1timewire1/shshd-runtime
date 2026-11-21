@@ -75,6 +75,118 @@ class TestChannelTests(unittest.TestCase):
             self.assertFalse(channel.do_window('maybe')['ok'])
         self.assertEqual(pressed, [yes, no, yes, no, yes])
 
+    def test_a_games_window_reads_as_its_words_and_is_answered_by_them(self):
+        """Test channel wish, 2026-11-20: a game's own window gave string ids ('5', '25' / '24')."""
+        no, yes = SimpleNamespace(label='25'), SimpleNamespace(label='24')
+        words = {'5': 'Play with sound?', '25': 'No', '24': 'Yes'}
+        pressed = []
+        windows = SimpleNamespace(text_for=lambda key, variables: words.get(str(key), ''),
+                                  item_label=lambda action, variables: words[action.label])
+        shell = SimpleNamespace(stack=SimpleNamespace(stack=[1], current='prompt', press=pressed.append),
+                                data=SimpleNamespace(menu=lambda key: SimpleNamespace(title='5', message=0xffff),
+                                                     items=lambda key: [no, yes]),
+                                windows=windows, variables=lambda: {})
+        channel = self.module.Commands(None, SimpleNamespace(shell=shell))
+        self.assertEqual(channel._window_words(channel._window()),
+                         dict(title='Play with sound?', text='', buttons=['No', 'Yes'], ids=['25', '24']))
+        with mock.patch.object(channel, '_idle', return_value=dict(ok=True)):
+            self.assertTrue(channel.do_window('no')['ok'])
+            self.assertTrue(channel.do_window('Yes')['ok'])
+            self.assertIn("['No', 'Yes']", channel.do_window('maybe')['error'])
+        self.assertEqual(pressed, [no, yes])
+
+    @staticmethod
+    def finish(job):
+        """A command's reply: a job (a generator) run to its end, as the channel runs it a frame at a time."""
+        if not hasattr(job, '__next__'):
+            return job
+        try:
+            while True:
+                next(job)
+        except StopIteration as stop:
+            return stop.value
+
+    @staticmethod
+    def settled(seconds=0.5):
+        yield
+        return dict(ok=True)
+
+    def menu_channel(self, screen):
+        """A channel over a main menu whose Options show `screen`, with a page of each kind of row."""
+        activated = []
+        rows = {'extras': [('switch', 'Allow Undo', 'undo'), ('choice', 'DSi Backgrounds', 'dsi_backgrounds'),
+                           ('action', 'Unlock Warping', 'unlock_warp')],
+                'choice:start_in': [('pick', 'Choose a Game', ('start_in', 'games'))]}
+        pause = SimpleNamespace(state=SimpleNamespace(screen=screen), row_pages={}, strings=lambda: {},
+                                option_rows=lambda category, settings, strings: rows.get(category, []),
+                                open=lambda page: setattr(pause.state, 'screen', page))
+        shell = SimpleNamespace(pause=pause, pause_open=True, activate=activated.append,
+                                settings=lambda: dict(undo=True, dsi_backgrounds='Off', start_in='Choose a Game'))
+        app = SimpleNamespace(shell=shell, library=object(), screen='main', show=lambda *a, **k: None)
+        return self.module.Commands(None, app), activated
+
+    def test_rows_and_press_drive_the_options_pages_by_label(self):
+        """Owner, 2026-11-21: the Options pages by name and label, without a screenshot and a tap."""
+        channel, activated = self.menu_channel('options:extras')
+        listed = channel.do_rows('')
+        self.assertEqual([(r['label'], r['kind'], r.get('value')) for r in listed['rows']],
+                         [('Allow Undo', 'switch', True), ('DSi Backgrounds', 'choice', 'Off'), ('Unlock Warping', 'action', None)])
+        with mock.patch.object(channel, '_settled', self.settled):
+            for label in ('allow undo', 'DSi Backgrounds', 'unlock_warp'):
+                self.assertEqual(self.finish(channel.do_press(label))['ok'], True)
+            self.assertIn('no row', self.finish(channel.do_press('Nothing Here'))['error'])
+        self.assertEqual(activated, [('pause_toggle', 'undo'), ('pause_open', 'choice:dsi_backgrounds'),
+                                     ('pause_action', 'unlock_warp')])
+        channel.app.shell.pause.state.screen = 'choice:start_in'
+        self.assertEqual(channel.do_rows('')['rows'], [dict(label='Choose a Game', kind='pick', key=['start_in', 'games'],
+                                                           value=True)])
+
+    def test_in_a_story_rows_and_press_drive_its_pause_menu(self):
+        """The story's pause menu (Desktop.pause_hd): its own rows, and its rows' commands sent through the story."""
+        sent = []
+        strings = {20: 'Resume', 10: 'Options', 120: 'Help & About', 9: 'Main Menu'}
+        pause = SimpleNamespace(state=SimpleNamespace(screen='pause'), row_pages={}, strings=lambda: strings,
+                                option_rows=lambda category, settings, strings: [])
+        game = SimpleNamespace(menu_open=True, pause_hd=pause, command=sent.append,
+                               _pause_settings=lambda: dict(undo_row=True, skip_ahead_row=True))
+        channel = self.module.Commands(None, SimpleNamespace(screen='game', game=game, shell=None))
+        self.assertEqual([r['label'] for r in channel.do_rows('')['rows']],
+                         ['Resume', 'Skip Ahead', 'Undo', 'Options', 'Help & About', 'Main Menu'])
+        with mock.patch.object(channel, '_settled', self.settled):
+            self.assertTrue(self.finish(channel.do_press('undo'))['ok'])
+        self.assertEqual(sent, [('undo',)])
+        game.menu_open = False
+        self.assertIn('pause menu is not open', str(self.raises(lambda: channel.do_rows(''))))
+
+    @staticmethod
+    def raises(call):
+        try:
+            call()
+        except ValueError as error:
+            return error
+        return None
+
+    def test_options_opens_a_page_by_its_short_name(self):
+        channel, _ = self.menu_channel('options')
+        with mock.patch.object(channel, '_settled', self.settled):
+            self.assertEqual(self.finish(channel.do_options('episodes'))['page'], 'data:episodes')
+
+    def test_pick_and_act_work_the_tick_lists(self):
+        from exp_runtime.desktop_episode_list_hd import CHOICE_ACT, EpisodeChoice
+        choosing = EpisodeChoice('Mark as Finished', 'Save', {'aaaaaaaa1', 'bbbbbbbb2'}, act_when_empty=True)
+        commands = []
+        app = SimpleNamespace(picker=SimpleNamespace(choosing=choosing), picker_command=commands.append,
+                              library=SimpleNamespace(episodes=[dict(id='aaaaaaaa1', titles=['Easter Egg Hunt']),
+                                                                dict(id='bbbbbbbb2', titles=['Football Star']),
+                                                                dict(id='cccccccc3', titles=['Not Listed'])]))
+        channel = self.module.Commands(None, app)
+        self.assertEqual(channel.do_pick('easter')['ticked'], True)
+        self.assertEqual(channel.do_pick('aaaaaaaa')['ticked'], False)
+        self.assertFalse(channel.do_pick('not listed')['ok'])
+        with mock.patch.object(channel, '_settled', lambda seconds=0.5: dict(ok=True)):
+            self.assertTrue(channel.do_act('')['ok'])
+        self.assertEqual(commands, [CHOICE_ACT])
+
     def test_timing_and_profile_report_on_the_frames_between(self):
         port = free_port()
         channel = self.module.TestChannel(port, Path(self.temporary.name))

@@ -406,7 +406,7 @@ Set `SHSHD_TEST_CHANNEL` to a port before launching to let a script drive the ru
 frames, as input would, and act on its state rather than the screen: `state` (the screen, the pending story screen with
 its text and options, a skip prompt, switches, the undo chain), `continue`, `answer N`, `type TEXT`, `key NAME`,
 `back`, `skip`, `undo`, `pause`, `resume`, `set KEY on|off`, `aspect 3:4|2:3|9:16|fit|default` (General's Aspect Ratio), `resize W H` (a computer's window at that size, as a drag leaves it: with `aspect fit`, any shape, such as 9:20), `game shs|cod` (as the game picker), `import PATH` (Add
-Episodes with a file the app can read; it waits for the import), `window yes|no|ok|LABEL` (a button of the menu's
+Content with a file the app can read; it waits for the import), `window yes|no|ok|LABEL` (a button of the menu's
 confirmation or notice, which `state` shows as `window`), `open TITLE` (or an
 id prefix; of several imported copies, the newest), `run-until KIND [SECONDS]` (lines advance until that screen, or the
 first stop it can't pass, a skip prompt included), `wait`, `timing on|off` (fps, median, p90, worst frame, and each
@@ -438,6 +438,19 @@ the open question (the code, or a whole library), `sync wait [SECONDS]` lasts un
 something, and `sync status` reports the page, the session (status, peer, code, progress), whether a question is open
 and the last result's notice; `sync ok` closes that notice and `sync stop` leaves Sync. Two copies of the app on one
 computer (`SHSHD_SYNC_LOOPBACK=1`, `SHSHD_DEVICE_NAME`, play-sync-test.ps1) sync this way with no window shown.
+
+The main menu's Options and Data Management, and a story's pause menu, run by name too (owner, 2026-11-21: no
+screenshot and tap): `options [PAGE]` opens them at a page (in a story, the pause menu's Options: it opens first) (`general`, `sound`, `extras`, `addons`, `per_game`, `controller`, `data`,
+`library`, `episodes`, `progress`, `sync`, or a screen name such as `choice:start_in`); `rows` lists the open page's rows (the pause menu itself too: Resume, Skip Ahead, Undo, Options, Help, Main Menu)
+(label, kind, key and value: a switch's on/off, a choice's current value, a pick's tick); `press LABEL` presses one as a
+tap does (its label or key: a page opens, a switch flips, a choice opens its page, a pick is chosen, an action runs and
+its question shows as `window`); `do ACTION` runs a Data Management action by its key (`verify_library`, `back_up`,
+`mark_read`...); `pick TITLE|ID` ticks or unticks an episode in a tick list (Mark as Finished, Delete, Export, Reset
+Decision Tree) and `act` presses its verb button. `set` takes any option directly: a switch, a choice option,
+`start_in auto|games|shs|cod`, `music_volume|sound_volume 0-100`. `state` names the open game (`game`) and the open
+Options page (`page`), and shows a window in words (a game's own windows carry string ids, now resolved; `window` takes
+the words); `run-until` stops when the story ends (`ended`); `game` lets go of a story kept for Resume, as the main
+menu's switch button does.
 
 `tools/test_channel.py` is the client. On Android, `--adb SERIAL --enable` writes the variable into the app's
 `p4a_env_vars.txt` with `run-as`, so only a debuggable build can have it (a release build never listens); an update
