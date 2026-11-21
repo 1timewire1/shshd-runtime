@@ -25,6 +25,35 @@ class NarrationPortraitTests(unittest.TestCase):
         portrait = DialoguePortrait.from_details(details, {7: [2401, 2402, -1, 2404, 2405]})
         self.assertEqual((portrait.asset_id, portrait.mode), (2402, 1))
 
+    def test_a_narration_line_with_a_portrait_saves_and_loads(self):
+        # Check 3 (2026-11-21): the loader wanted relationship state for every line in a speaker's layout, so a save on
+        # Claire's narration (55 of case 1's 169 lines) could not be loaded: Resume and Undo failed there.
+        import copy
+        from exp_runtime.runtime import SaveError, Session
+        from test_runtime import Resources, host_call, text_words
+        from test_vm import program
+        words, (ref,) = text_words('The night was quiet.')
+        resources = Resources(program(*host_call(65, 7, ref, -1), 0x33, words=words))
+        from unittest.mock import patch
+        wanted = lambda episode, name: True if name == 'narration_portrait' else None      # as pack 31500 declares it
+        with patch('exp_runtime.runtime.presentation_feature', wanted):
+            session = Session(resources)
+            session.engine.ui_defaults[75] = 7
+            session.engine.character_art_variants[7] = [2401, 2402, -1, 2404, 2405]
+            details = session.advance().details
+            self.assertEqual((details['presentation_mode'], details.get('narration'), details['relationship']),
+                             (1, True, None))
+            restored = Session.from_snapshot(resources, session.snapshot())
+            self.assertEqual(restored.snapshot(), session.snapshot())
+            bad = copy.deepcopy(session.snapshot())
+            bad['pending']['details']['visible_character_id'] = 9        # not the narrator's own portrait
+            with self.assertRaises(SaveError):
+                Session.from_snapshot(resources, bad)
+            bad = copy.deepcopy(session.snapshot())
+            bad['pending']['details']['narration'] = 'yes'
+            with self.assertRaises(SaveError):
+                Session.from_snapshot(resources, bad)
+
     def test_cod_turns_it_on_for_claire_hart_classic_only(self):
         from exp_runtime.cod import profile
         self.assertEqual(profile.TRANSLATED_NARRATION_PORTRAITS, {31500: True})

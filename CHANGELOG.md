@@ -84,6 +84,13 @@
   Claire Hart Classic's add-on, which starts as chslim revision 1 exactly and supersedes chslim
   (`tools/translate/chslim.py --chc`).
 
+### Fixed
+
+- **A save on Claire Hart's narration couldn't be loaded** (Claire Hart plan check 3, 2026-11-21): a narration line beside
+  the narrator's portrait (Stage 0 E) has no relationship state, and the loader refused any line in a speaker's layout
+  without one, so Resume and Undo failed on 55 of Case 1's 169 lines. It now takes that narration, checked against its
+  narrator.
+
 ## 1.1.0 (shshd-runtime)
 
 ### Added

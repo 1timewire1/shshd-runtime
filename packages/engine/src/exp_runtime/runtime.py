@@ -2189,6 +2189,13 @@ class Session:
                         change = engine.prepare_relationship(details['visible_character_id'], settled=True)
                         details['relationship'] = asdict(change) if change else None
                     change = _typed_value(details['relationship'], RelationshipChange | None)
+                    # shshd-runtime (narration_portrait, Claire Hart Stage 0 E): the narrator beside its portrait speaks in
+                    # a speaker's layout but as narration, with no relationship state (engine.present_dialogue); found by
+                    # check 3 (2026-11-21), when such a line's save could not be loaded.
+                    narration = _typed_value(details.get('narration', False), bool)
+                    if narration and (change is not None or details['visible_character_id'] != details['character_id']
+                                      or details['presentation_mode'] not in (1, 2)):
+                        raise SaveError('Narration with a portrait does not match its narrator')
                     if change is not None and details.get('status_icons'):
                         change.validate()          # service 37's settled icons: not from the property cache
                     elif change is not None:
@@ -2199,7 +2206,7 @@ class Session:
                                 or engine.numbers.get(engine.number_key(change.character_id, 3000)) != change.asset_id
                                 or engine.numbers.get(engine.number_key(change.character_id, 3001)) != change.count):
                             raise SaveError('Relationship indicators do not match their NPC cache')
-                    elif details['visible_character_id'] > 0 and details['presentation_mode'] in (1, 2):
+                    elif details['visible_character_id'] > 0 and details['presentation_mode'] in (1, 2) and not narration:
                         raise SaveError('NPC dialogue is missing its relationship state')
                     if request.yield_id in (15, 76):
                         # HD's own case 0xf reads its first two words (engine.py); Android's and the
