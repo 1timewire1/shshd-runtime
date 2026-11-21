@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Mark as Finished** (owner, 2026-11-21): Data Management's Episodes page lists every episode with the finished ones
+  (the lists' green play icon) already ticked; Save makes the ticked ones finished and the others not.
 - **Test channel: Sync Devices by command** (owner, 2026-11-19): `sync receive`, `sync send [shs|cod|both]
   [nobackup]`, `sync devices`, `sync choose`, `sync answer yes|no`, `sync wait`, `sync status`, `sync ok` and
   `sync stop` run a sync without taps or screenshots ([RUNTIME.md](docs/RUNTIME.md#test-channel-this-fork)).
@@ -447,6 +449,10 @@
 
 ### Changed
 
+- **Add Content** (owner, 2026-11-21): Data Management's Add Episodes moves to Data Management's own page, first, as Add
+  Content. It takes what it took (episodes, add-ons, ZIP/RAR collections, a catalog) and now fonts (`.ttf`, `.otf`), copied
+  into the library's fonts as Bulk Import copies them; the notice counts them and offers **Reopen**, which closes the
+  game's library and opens it again (as Switch Game does, on every platform) so the new fonts are used.
 - **Add-ons are read a record at a time** (Claire Hart plan Stage 0): an add-on was read whole into memory and hashed
   each time a library opened (and by Sync, Options and the Creator asking about it). Now only its index is read, each
   record as it's needed, and its file is hashed the first time and then known by its size and time

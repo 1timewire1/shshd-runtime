@@ -193,8 +193,11 @@ CHOICE_PARENTS = {'aspect_ratio': 'options:general', 'preferred_language': 'opti
 # Add-on choices the main menu keeps on Per-Game Settings rather than Add-Ons: their page's way back goes there.
 PER_GAME_CHOICES = ()
 VALUE_PX, VALUE_GAP, VALUE_ALPHA = 19, 3, 150
-# Data Management (owner, 2026-10-29) lists its pages, then Reset Settings; each page's rows are the actions the main
-# menu offers (`settings` has the key). A row is (key, label); a page is (screen, title, rows).
+# Data Management (owner, 2026-10-29) lists Add Content, its pages, then Add-Ons and Reset Settings; each page's rows are
+# the actions the main menu offers (`settings` has the key). A row is (key, label); a page is (screen, title, rows).
+# Add Content (episodes, add-ons and fonts) is on Data Management's own page, first (owner, 2026-11-21; it was the
+# Episodes page's Add Episodes).
+DATA_FIRST = (('add_episodes', 'Add Content'),)
 DATA_PAGES = (('data:library', 'Library', (('library_info', 'Library Info'), ('storage', 'Storage'),
                                            ('verify_library', 'Verify Library'), ('rebuild_previews', 'Rebuild Previews'),
                                            ('rebuild_hd_art', 'Rebuild HD Art'), ('open_library', 'Open Another Library'),
@@ -203,7 +206,7 @@ DATA_PAGES = (('data:library', 'Library', (('library_info', 'Library Info'), ('s
                                            ('delete_library_shs', 'Delete Surviving High School'),
                                            ('delete_library_cod', 'Delete Cause of Death'),
                                            ('delete_libraries', 'Delete Both Libraries'))),
-              ('data:episodes', 'Episodes', (('add_episodes', 'Add Episodes'), ('delete_episodes', 'Delete Episodes'),
+              ('data:episodes', 'Episodes', (('mark_read', 'Mark as Finished'), ('delete_episodes', 'Delete Episodes'),
                                              ('export_episodes', 'Export Episodes'), ('export_folder', 'Exports Folder'),
                                              ('reset_trees', 'Reset Decision Tree'))),
               ('data:progress', 'Progress', (('back_up', 'Back Up Progress'), ('restore', 'Restore Progress'),
@@ -213,7 +216,7 @@ DATA_PAGES = (('data:library', 'Library', (('library_info', 'Library Info'), ('s
                                              ('sync_receive', 'Receive from Another Device'))))
 # Add-Ons opens the host's page of them (desktop_addons), as Restore Progress does its rows.
 DATA_LAST = (('manage_addons', 'Add-Ons'), ('reset_settings', 'Reset Settings'))
-DATA_ACTIONS = tuple(row for _, _, rows in DATA_PAGES for row in rows) + DATA_LAST
+DATA_ACTIONS = DATA_FIRST + tuple(row for _, _, rows in DATA_PAGES for row in rows) + DATA_LAST
 # A row's control sits against the card's right side, CONTROL_RIGHT points in (owner, 2026-10-14; SHS HD's own
 # switches sat 168 in): the switch (79 x 27) and the value button, a little bigger (104 x 34, its label at 18 points).
 CONTROL_RIGHT = 26
@@ -954,9 +957,10 @@ class HdPauseMenu:
             return [('switch', self.SWITCH_LABELS[key], key) for key in ADDON_KEYS
                     if key in settings and key != 'arena_minigames'] + self.addon_choices(settings)
         if category == 'data':
+            first = [('action', label, key) for key, label in DATA_FIRST if key in settings]
             pages = [('page', title, screen) for screen, title, rows in DATA_PAGES
                      if any(key in settings for key, _ in rows)]
-            return pages + [('action', label, key) for key, label in DATA_LAST if key in settings]
+            return first + pages + [('action', label, key) for key, label in DATA_LAST if key in settings]
         if category in DATA_TITLES:
             # A row whose setting is a name (Backups / Exports Folder: the folder's) shows it under its label, as General's
             # choices show theirs (owner, 2026-11-19; it was on a value button).

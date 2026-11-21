@@ -848,10 +848,10 @@ New Rules Hi-Res Portraits and Preferred Language); each game's own Options stil
   - Add-Ons picks the game first, when both have a library ([ADDONS.md](ADDONS.md#data-management)).
   - Sync Devices sends both games, or the one chosen on the send page's Games row (see COD.md's Sync Devices).
     Receiving needs no library at all.
-  Open Another Library, Add Episodes and Add APK Music stay per game.
+  Open Another Library, Add Content and Add APK Music stay per game.
 
 The file browser is drawn here too (`draw_browser`), for all seven kinds: Choose Game, Open Library, Bulk Import,
-Add Episodes, Add APK Music, and the Backups and Exports folders. It is a tall card with:
+Add Content, Add APK Music, and the Backups and Exports folders. It is a tall card with:
 - the folder's path at the top (a tap lets you type one, and Enter opens it);
 - a strip with Up, and Default for the two folder settings;
 - the folder's entries as rows, with shape icons, scrolled by the wheel and Page Up / Down;

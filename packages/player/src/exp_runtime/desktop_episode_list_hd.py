@@ -90,11 +90,16 @@ CHOICE_ACT = ('act',)           # the choice footer's verb button
 
 class EpisodeChoice:
     """Data Management's episode multi-select (owner, 2026-10-29): the list shows only the episodes `allowed`, each
-    with a tick box, and `verb` is the footer button that acts on the ticked ones (`chosen`)."""
+    with a tick box, and `verb` is the footer button that acts on the ticked ones (`chosen`). Mark as Finished's
+    list (owner, 2026-11-21) starts with the finished ones ticked (`chosen`) and saves with none ticked too (`act_when_empty`)."""
 
-    def __init__(self, title, verb, allowed):
+    def __init__(self, title, verb, allowed, chosen=(), act_when_empty=False):
         self.title, self.verb, self.allowed = title, verb, set(allowed)
-        self.chosen = set()
+        self.chosen = set(chosen) & self.allowed
+        self.act_when_empty = act_when_empty
+
+    def can_act(self):
+        return bool(self.chosen) or self.act_when_empty
 
     def toggle(self, record_id):
         if record_id in self.allowed:
@@ -220,7 +225,7 @@ class HdEpisodeList(HdEpisodePicker):
         if self.choosing is not None and self.act_focus:
             # On the verb button: Enter presses it (once something is ticked), Up goes back to the last row.
             if key in (pygame.K_RETURN, pygame.K_SPACE):
-                return CHOICE_ACT if self.choosing.chosen else None
+                return CHOICE_ACT if self.choosing.can_act() else None
             if key == pygame.K_UP:
                 self.act_focus = False
             return None
@@ -293,8 +298,8 @@ class HdEpisodeList(HdEpisodePicker):
         chosen = len(self.choosing.chosen)
         button = pygame.Surface((BUTTON_SIZE[0] * S, BUTTON_SIZE[1] * S), pygame.SRCALPHA)
         self.draw_button(button, 0, 0, orange=True, label=self.choosing.verb,
-                         pressed=self.pressed == CHOICE_ACT or (self.act_focus and chosen > 0))
-        if not chosen:
+                         pressed=self.pressed == CHOICE_ACT or (self.act_focus and self.choosing.can_act()))
+        if not self.choosing.can_act():
             button.set_alpha(110)
         layer.blit(button, (act.x * S, act.y * S))
         text = f'{chosen} selected'
@@ -302,7 +307,7 @@ class HdEpisodeList(HdEpisodePicker):
         width = act.left - back.right
         self.text(layer, text, size, back.right, back.centery - self.font(size).get_height() / S / 2,
                   color=self.TEXT_ROW_COLOR, outline=False, width=width)
-        if chosen and not (self.popup or self.alert):
+        if self.choosing.can_act() and not (self.popup or self.alert):
             self.hits.append((act, CHOICE_ACT))
 
     def mark_width(self, mark):

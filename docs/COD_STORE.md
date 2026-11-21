@@ -136,7 +136,7 @@ their chapters can use each chapter's own entry. The owner's listing keeps 462 K
   anywhere inside a folder (`content._store_listing`). Archives are not searched for it. That means:
   - `cod_episodes/`, or beside the IPAs, in the import folder (staged_import.py);
   - the same places in a bulk .zip / .rar (extraction keeps it);
-  - Add Episodes or a drop onto a CoD library, alone or with episodes. An existing library can gain one later.
+  - Add Content or a drop onto a CoD library, alone or with episodes. An existing library can gain one later.
 - **Validation:** the file must be an NSKeyedArchiver plist of at most 16 MiB, with 1-5000 products. Each product's
   `binPack` must be a ZIP whose `contents.bin` parses exactly. Otherwise the import stops with an error and the
   library is unchanged.

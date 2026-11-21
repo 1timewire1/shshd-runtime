@@ -265,6 +265,55 @@ class LibraryActionTests(unittest.TestCase):
         self.assertEqual(app.choice_allowed('reset_trees'), {'a', 'f'})
         app.game = SimpleNamespace(session=SimpleNamespace(resources=SimpleNamespace(record={'id': 'a'})))
         self.assertEqual(app.choice_allowed('delete_episodes'), set())         # the one being played stays
+        self.assertEqual(app.choice_allowed('mark_read'), {'a', 'f', 'p'})     # Mark as Finished: every episode
+
+    def test_mark_as_finished_sets_the_finished_marks_to_the_ticked_episodes(self):
+        """Owner, 2026-11-21: Mark as Finished sets the lists' green icon. Ticked ones become finished, unticked ones (and
+        their older copies' marks) stop being finished; the marks are kept at once."""
+        app = self.episode_app()
+        app.library.episodes[0]['carries'] = ['old-a']                       # a newer copy of an episode read before
+        app.state.finished = {'old-a', 'p'}
+        self.assertEqual(app.finished_ids(), {'a', 'p'})                    # what the list starts with ticked
+        title, text = app.mark_read(app.library, {'f'})
+        self.assertEqual(app.state.finished, {'f'})
+        self.assertEqual((title, text), ('Episodes Marked', '1 episode is marked as finished.'))
+        saved = json.loads((app.library.directory / 'player.json').read_text())
+        self.assertEqual(saved['finished'], ['f'])
+        self.assertEqual(app.mark_read(app.library, {'f'})[1], 'Nothing changed.')
+        app.mark_read(app.library, set())                                    # none ticked: none finished
+        self.assertEqual(app.state.finished, set())
+
+    def test_add_content_copies_fonts_into_the_library_and_names_them(self):
+        """Owner, 2026-11-21: Add Content takes fonts too, as Bulk Import copies them."""
+        app = self.app()
+        font = self.root / 'trebucbd.ttf'
+        font.write_bytes(b'font')
+        jobs = []
+        app.executor = SimpleNamespace(submit=lambda work, *args, **kwargs: jobs.append((work, args)) or 'job')
+        app.library.add_episodes = Mock(return_value=0)
+        app.add_episode_files([font])
+        self.assertEqual((app.library.directory / 'fonts' / 'trebucbd.ttf').read_bytes(), b'font')
+        self.assertEqual(jobs[0][0](), 0)                                    # nothing for the library to read
+        app.library.add_episodes.assert_not_called()
+        self.assertEqual(app.added_text(0), 'Added 1 font. The font is used once the game is reopened.')
+        story = self.root / 'story.exp'
+        story.write_bytes(b'x')
+        app.add_episode_files([story, font])
+        self.assertEqual(jobs[1][1][0], [story])                             # the library gets the episode alone
+        app.add_episode_files([story], replace_saved=True)                   # "Replace Saved Episodes?" runs again
+        self.assertEqual(app.fonts_added, 1)
+
+    def test_reopen_opens_the_same_game_again(self):
+        """Add Content's font notice offers Reopen: the game's library closes and opens again, as Switch Game does."""
+        app = self.app()
+        app.shell, app._switch_to = None, Mock()
+        app.reopen_game()
+        app._switch_to.assert_called_once_with('shs')
+        app.shell = SimpleNamespace(fading=False, leave=Mock())
+        app.screen = 'main'
+        app.reopen_game()                                                    # the main menu fades out first
+        app.shell.leave.call_args[0][0]()
+        self.assertEqual(app._switch_to.call_count, 2)
 
     def test_reset_trees_clears_football_stars_tree_but_not_the_others_folders(self):
         app = self.episode_app()

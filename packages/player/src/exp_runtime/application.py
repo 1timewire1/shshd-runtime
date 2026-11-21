@@ -48,9 +48,16 @@ from . import frame_shape
 from .frame_shape import CHOICES as ASPECT_RATIOS
 from .updates import UPDATE_TITLE, UpdateCheck, update_message
 from .pointer import ButtonPress
-from .staged_import import (ARCHIVE_SUFFIXES, discover as discover_staged_import, import_bulk, import_staged,
-                            staged_archive, staged_import_directory)
+from .staged_import import (ARCHIVE_SUFFIXES, FONT_SUFFIXES, copy_fonts as copy_staged_fonts, discover as discover_staged_import,
+                            import_bulk, import_staged, staged_archive, staged_import_directory)
 from .vm import VMError
+
+
+def copy_fonts(library, fonts):
+    """Add Content's fonts copied into the library's `fonts/`, as Bulk Import copies them (vector_text finds a font
+    there by its file name); how many are there now."""
+    copy_staged_fonts(list(fonts), library.directory)
+    return sum((library.directory / 'fonts' / font.name).is_file() for font in fonts)
 
 
 ERRORS = (ContentError, SaveError, VMError, OSError, ValueError, pygame.error)
@@ -94,6 +101,8 @@ EPISODE_CHOICES = {
                         'Exporting episodes'),
     'reset_trees': ('Reset Decision Tree', 'Reset', ('No Trees', 'No episode has a Decision Tree yet.'),
                     'Resetting trees'),
+    # Owner, 2026-11-21: Mark as Finished sets the finished mark (the lists' green play icon); the finished ones start ticked.
+    'mark_read': ('Mark as Finished', 'Save', ('No Episodes', 'The library has no episodes.'), 'Saving'),
 }
 
 
@@ -541,7 +550,7 @@ class Application:
         lines += [f'Missing: {name}' for name in missing] + [f'Damaged: {name}' for name in damaged]
         lines.append('')
         if any(name not in apps for name in missing + damaged):
-            lines.append('Add Episodes restores an episode when it is given the episode\'s file again (a damaged '
+            lines.append('Add Content restores an episode when it is given the episode\'s file again (a damaged '
                          'file was removed).')
         if any(name in apps for name in missing + damaged):
             lines.append('A missing or damaged app comes back only by importing the game again.')
@@ -618,7 +627,7 @@ class Application:
             playing = (self.game.session.resources.record['id'] if self.game is not None and library is self.library
                        else None)
             return {r['id'] for r in episodes if 'file' in r and not r.get('builtin') and r['id'] != playing}
-        if kind == 'export_episodes':
+        if kind in ('export_episodes', 'mark_read'):
             return {r['id'] for r in episodes}
         return {r['id'] for r in episodes if self.has_tree(r, library)}
 
@@ -633,7 +642,10 @@ class Application:
         self.shell.pause_open = False
         self.picker = None
         self.open_picker(restore=False, style='list')
-        self.picker.choosing = EpisodeChoice(title, verb, allowed)
+        if kind == 'mark_read':
+            self.picker.choosing = EpisodeChoice(title, verb, allowed, chosen=self.finished_ids(), act_when_empty=True)
+        else:
+            self.picker.choosing = EpisodeChoice(title, verb, allowed)
         self.choice_kind = kind
 
     def leave_choice(self):
@@ -660,7 +672,7 @@ class Application:
             self.start_data_job(EPISODE_CHOICES[kind][3], lambda library: work(library, chosen), self.choice_done)
         if kind == 'delete_episodes':
             self.shell.confirm('Delete Episodes?', f'{count} will be deleted from {self.game_title}, with their saved '
-                               'games and Decision Trees. Add Episodes brings one back from its file.', 'Delete', run)
+                               'games and Decision Trees. Add Content brings one back from its file.', 'Delete', run)
         elif kind == 'reset_trees':
             self.shell.confirm('Reset Decision Tree?', f'The Decision Tree of {count} will be cleared, with its saved '
                                'scenes. Saved games stay.', 'Reset', run)
@@ -668,13 +680,17 @@ class Application:
             run()
 
     def added_text(self, count):
-        """What Add Episodes brought, with add-ons named apart, and what newer versions replaced (episode_version.py)."""
+        """What Add Content brought, with add-ons and fonts named apart, and what newer versions replaced (episode_version.py)."""
         library = self.library
         addons = getattr(library, 'last_addons_added', 0)
         episodes = count - addons
+        fonts = vars(self).get('fonts_added', 0)       # (set by add_episode_files; none before the first)
         parts = ([f'{episodes} episode{"s" if episodes != 1 else ""}'] if episodes else []) + (
-            [f'{addons} add-on{"s" if addons != 1 else ""}'] if addons else [])
+            [f'{addons} add-on{"s" if addons != 1 else ""}'] if addons else []) + (
+            [f'{fonts} font{"s" if fonts != 1 else ""}'] if fonts else [])
         text = f'Added {" and ".join(parts)}.' if parts else 'No new episodes were added.'
+        if fonts:
+            text += f' The font{"s are" if fonts != 1 else " is"} used once the game is reopened.'
         replaced, kept, older = (len(getattr(library, name, ())) for name in ('last_replaced', 'last_kept', 'last_older'))
         carried = len(getattr(library, 'last_carried', ()))
         if carried:
@@ -689,12 +705,22 @@ class Application:
         return text
 
     def add_episode_files(self, paths, replace_saved=None):
-        """Add Episodes on the worker. A newer version replacing a copy with a saved game asks first (owner,
+        """Add Content on the worker: episodes and add-ons, and fonts (owner, 2026-11-21), which are copied into the
+        library's fonts as Bulk Import copies them. A newer version replacing a copy with a saved game asks first (owner,
         2026-11-06): the library stops before writing anything, and `ask_replace_saved` runs it again with the answer.
         The episode being played is never replaced."""
         playing = self.game.session.resources.record['id'] if self.game is not None else None
+        fonts = [Path(p) for p in paths if Path(p).suffix.lower() in FONT_SUFFIXES]
+        paths = [p for p in paths if Path(p).suffix.lower() not in FONT_SUFFIXES]
+        if fonts:
+            self.fonts_added = copy_fonts(self.library, fonts)
+        elif replace_saved is None:                     # (a re-run after "Replace Saved Episodes?" keeps the count)
+            self.fonts_added = 0
         self.import_paths_pending = list(paths)
         self.job_kind = 'episodes'
+        if not paths:                                   # fonts alone: nothing for the library to read
+            self.job = self.executor.submit(lambda: 0)
+            return
         self.job = self.executor.submit(self.library.add_episodes, paths, self.report_progress,
                                         replace_saved=replace_saved, keep=(playing,) if playing else ())
 
@@ -750,6 +776,19 @@ class Application:
         self.refresh_saves()
         self.picker = None
         self.shell.notify(*result)
+
+    def mark_read(self, library, ids):
+        """Mark as Finished (owner, 2026-11-21): the ticked episodes are finished, the others not; an unticked episode's
+        older copies' marks (`carries`) go with it. Kept at once."""
+        state = self.state
+        unticked = {e['id'] for e in library.episodes} - set(ids)
+        carried = {old for e in library.episodes if e['id'] in unticked for old in (e.get('carries') or ())}
+        before = set(state.finished)
+        state.finished = (state.finished - unticked - carried) | set(ids)
+        state.persist()
+        changed = len(before ^ state.finished)
+        return ('Episodes Marked', f'{len(ids)} episode{"s are" if len(ids) != 1 else " is"} marked as finished.'
+                if changed else 'Nothing changed.')
 
     def delete_episodes(self, library, ids):
         """Delete Episodes: the episodes, their saved games, screenshots, previews and Decision Trees. HD art already
@@ -1460,6 +1499,18 @@ class Application:
             self._switch_to(other)
             return
         self.show_game_chooser()
+
+    def reopen_game(self):
+        """Close this game's library and open it again, as Switch Game does (a story in progress is saved first): what
+        Add Content's fonts need to be used (owner, 2026-11-21; every platform, so no process restart)."""
+        key = self.selected_game
+        if key is None:
+            return
+        if self.shell is not None and self.screen == 'main':
+            if not self.shell.fading:
+                self.shell.leave(lambda: self._switch_to(key))
+            return
+        self._switch_to(key)
 
     def _switch_to(self, other):
         self.choose_game(other)
@@ -2605,7 +2656,7 @@ class Application:
     def read_folder(self, folder):
         folder = Path(folder).expanduser().resolve()
         extensions = ({'.apk', '.ipa'} if self.browser_kind == 'apk' else {'.apk'}
-                      if self.browser_kind == 'music_apk' else {'.exp', '.zip', '.rar'} if self.browser_kind == 'episodes'
+                      if self.browser_kind == 'music_apk' else {'.exp', '.zip', '.rar', *FONT_SUFFIXES} if self.browser_kind == 'episodes'
                       else set(ARCHIVE_SUFFIXES) if self.browser_kind == 'bulk' else set())
         catalog_name = GAMES[self.selected_game].CATALOG_FILENAME if self.selected_game else None
         files = [p for p in folder.iterdir() if not p.name.startswith('.')
@@ -2884,7 +2935,11 @@ class Application:
                     self.picker = None
                     self.show('main' if self.shell is not None else 'episodes', remember=False)
                     self.message = (self.added_text(result) if result or getattr(self.library, 'last_older', None)
-                                    else 'Library updated. No new episodes were added.')
+                                    or vars(self).get('fonts_added') else 'Library updated. No new episodes were added.')
+                    if vars(self).get('fonts_added') and self.shell is not None:
+                        # Owner, 2026-11-21: a new font is only read as the game opens, so the notice offers Reopen.
+                        self.shell.confirm('Content Added', self.message, 'Reopen', self.reopen_game, decline='OK')
+                        self.message = ''
                     self.prepare_previews()
             except ReplaceSavedEpisodes as error:
                 if kind == 'episodes':
@@ -3249,7 +3304,7 @@ class Application:
         picker, kind = self.picker, command[0]
         if kind == 'back':
             self.back()
-        elif kind == 'act' and self.choice_kind is not None and picker.choosing.chosen:
+        elif kind == 'act' and self.choice_kind is not None and picker.choosing.can_act():
             self.choice_command()
         elif kind == 'restore':
             picker.alert = picker.restore_alert()

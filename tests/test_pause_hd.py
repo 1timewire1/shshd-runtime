@@ -222,9 +222,9 @@ class HdPauseTests(unittest.TestCase):
         self.assertEqual(rows[-2][1], ('pause_open', 'choice:preferred_language'))         # last row: opens its page
         from exp_runtime.desktop_pause_hd import PANEL_W, PANEL_X
         self.assertEqual((rows[-2][0].x, rows[-2][0].width), (PANEL_X, PANEL_W))       # the whole row
-        state.screen = 'options:data'                                       # its pages, those with an offered row
-        self.assertEqual([c for _, c in self.commands()], [('pause_open', 'data:library'),
-                                                           ('pause_open', 'data:episodes'), ('pause_back',)])
+        state.screen = 'options:data'                   # Add Content first, then its pages, those with an offered row
+        self.assertEqual([c for _, c in self.commands()], [('pause_action', 'add_episodes'),
+                                                           ('pause_open', 'data:library'), ('pause_back',)])
         state.screen = 'data:library'
         self.assertEqual([c for _, c in self.commands()], [('pause_action', 'open_library'), ('pause_back',)])
         self.assertFalse(self.menu.back())
@@ -233,9 +233,9 @@ class HdPauseTests(unittest.TestCase):
     def test_a_folder_row_shows_its_folder_under_its_name_and_the_whole_row_chooses_another(self):
         # Exports Folder and Backups Folder, as General's choices show theirs (owner, 2026-11-19; it was a value button).
         from exp_runtime.desktop_pause_hd import PANEL_W, PANEL_X
-        self.settings.update(add_episodes=True, export_folder='Surviving High School')
+        self.settings.update(mark_read=True, export_folder='Surviving High School')
         self.assertEqual(self.menu.option_rows('data:episodes', self.settings, self.menu.strings()),
-                         [('action', 'Add Episodes', 'add_episodes'), ('folder', 'Exports Folder', 'export_folder')])
+                         [('action', 'Mark as Finished', 'mark_read'), ('folder', 'Exports Folder', 'export_folder')])
         self.menu.state.screen = 'data:episodes'
         rect, command = self.commands()[1]
         self.assertEqual(command, ('pause_cycle', 'export_folder'))

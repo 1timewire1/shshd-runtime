@@ -460,7 +460,7 @@ class AppOptions:
             for game, (checked, missing, damaged, _) in results:
                 lines += [GAMES[game].TITLE, f'{checked} files checked.']
                 lines += [f'Missing: {name}' for name in missing] + [f'Damaged: {name}' for name in damaged] + ['']
-            lines.append('Add Episodes (in that game) restores an episode when given its file again; a damaged file '
+            lines.append('Add Content (in that game) restores an episode when given its file again; a damaged file '
                          'was removed. A missing or damaged app comes back only by importing the game again.' + again)
             self.page('data:verify', 'Verify Library', '\n'.join(lines))
         self.confirm('Verify Libraries?', 'Every file of both games is checked against its checksum, which can take a '
@@ -918,7 +918,7 @@ class AppScreens:
         title = GAMES[game].TITLE
         if kind == 'delete_episodes':
             ask = ('Delete Episodes?', f'{count} will be deleted from {title}, with their saved games and Decision '
-                   'Trees. Add Episodes brings one back from its file.', ('No', 'Delete'), (None, run))
+                   'Trees. Add Content brings one back from its file.', ('No', 'Delete'), (None, run))
         elif kind == 'reset_trees':
             ask = ('Reset Decision Tree?', f'The Decision Tree of {count} will be cleared, with its saved scenes. Saved '
                    'games stay.', ('No', 'Reset'), (None, run))
@@ -1202,7 +1202,7 @@ class AppScreens:
         a folder setting), the folder's entries as rows, Back and Use This Folder."""
         from .desktop_pause_hd import TALL
         card = self.game_card(app) or self.card
-        titles = {'apk': 'Choose Game', 'music_apk': 'Add APK Music', 'episodes': 'Add Episodes',
+        titles = {'apk': 'Choose Game', 'music_apk': 'Add APK Music', 'episodes': 'Add Content',
                   'library': 'Open Library', 'bulk': 'Bulk Import', 'backups': 'Backups Folder',
                   'exports': 'Exports Folder'}
         folder_kind = app.browser_kind in ('backups', 'exports')

@@ -73,6 +73,19 @@ class ListTests(unittest.TestCase):
         self.list.choosing.toggle('not offered')
         self.assertEqual(self.list.choosing.chosen, set())
 
+    def test_mark_as_finished_starts_ticked_and_saves_with_none_ticked(self):
+        """Owner, 2026-11-21: the finished episodes start ticked, and Save also clears the last one."""
+        from exp_runtime.desktop_episode_list_hd import CHOICE_ACT, EpisodeChoice
+        first, *rest = [r for row in self.model.rows for r in row.episodes]
+        allowed = {first['id'], rest[-1]['id']}
+        self.list.choosing = EpisodeChoice('Mark as Finished', 'Save', allowed, chosen={first['id'], 'not listed'},
+                                           act_when_empty=True)
+        self.assertEqual(self.list.choosing.chosen, {first['id']})
+        self.list.choosing.toggle(first['id'])
+        self.assertTrue(self.list.choosing.can_act())
+        self.list.act_focus = True
+        self.assertEqual(self.list.key(pygame.K_RETURN), CHOICE_ACT)
+
     def test_a_header_tap_toggles_its_row_and_is_never_forwarded_as_an_app_command(self):
         key = self.model.rows[0].key
         rect = pygame.Rect(0, 0, 700, 52)

@@ -42,7 +42,7 @@ class AddonPages:
     def _listed(self, summaries):
         self.summaries = summaries
         if not summaries:
-            self.host.notice('No Add-Ons', 'This library has no add-ons. Add Episodes imports one from its file.')
+            self.host.notice('No Add-Ons', 'This library has no add-ons. Add Content imports one from its file.')
             return
         self.host.rows(PAGE, 'Add-Ons', [(ROW + key, summary['title']) for key, summary in summaries.items()], ROOT)
 
@@ -87,7 +87,7 @@ class AddonPages:
         summary = self.summaries[addon]
         users = len(summary['users'])
         warning = (f'{needs(users).capitalize()}, and {"it" if users == 1 else "they"} won\'t start until the add-on is '
-                   'imported again. Saved games stay.' if users else 'No episode needs it. Add Episodes brings it back from its file.')
+                   'imported again. Saved games stay.' if users else 'No episode needs it. Add Content brings it back from its file.')
 
         def run():
             self.host.job('Deleting add-on', lambda library: library.remove_addons([addon]), self._deleted)

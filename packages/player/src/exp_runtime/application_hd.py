@@ -61,7 +61,7 @@ DATA_CONFIRMATIONS = {
                        'HD files, which can take a few minutes.', 'Rebuild'),
 }
 # The Episodes page's rows that open an episode list to choose from (application.EPISODE_CHOICES).
-EPISODE_LISTS = ('delete_episodes', 'export_episodes', 'reset_trees')
+EPISODE_LISTS = ('delete_episodes', 'export_episodes', 'reset_trees', 'mark_read')
 # The confirmations above that run as a background job: (the busy card's title, the Application method given the result).
 DATA_JOBS = {
     'verify_library': ('Verifying library', 'verify_report'),
@@ -942,11 +942,12 @@ class HdShell:
     confirmed = None                # what the confirmation window's Yes does
     declined = None                 # what its No does, when it does something (else it only closes)
 
-    def confirm(self, title, message, verb, action, cancel=None):
-        """Ask before a Data Management action: `title` and `message`, No and `verb` (orange, as a Yes is); `verb`
-        runs `action`, No runs `cancel` if given (Add Episodes' question goes on either way)."""
+    def confirm(self, title, message, verb, action, cancel=None, decline='No'):
+        """Ask before a Data Management action: `title` and `message`, No (or `decline`: Add Content's font notice
+        has OK) and `verb` (orange, as a Yes is); `verb` runs `action`, No runs `cancel` if given (Add Content's
+        question goes on either way)."""
         no = ((ENGINE, self.DECLINE_ACTION),) if cancel is not None else ((BACK, 0),)
-        self.data.add_window(self.CONFIRM_MENU, title, message, (('No', no),
+        self.data.add_window(self.CONFIRM_MENU, title, message, ((decline, no),
                                                                 (verb, ((ENGINE, self.CONFIRM_ACTION),))))
         self.confirmed, self.declined = action, cancel
         self.open_window(self.CONFIRM_MENU)

@@ -110,7 +110,7 @@ filters for folders. This addresses first-open graying reported with the CoD
 IPA; cold picker behavior across physical-device providers remains a manual
 check.
 
-**Options → Data Management → Episodes → Add Episodes** accepts EXP files, ZIP/RAR collections, episode folders
+**Options → Data Management → Add Content** accepts EXP files, ZIP/RAR collections, episode folders, fonts (TTF/OTF)
 and the selected game's catalog file. Choose an archive directly in Files; its
 subfolders are scanned for EXPs and the selected game's catalog. Imported
 episodes persist in the app's library after closing or relaunching, and the

@@ -912,7 +912,8 @@ CoD's colours (`cod/hd_art.positional_frames`).
         Verify Library, Rebuild Previews, Rebuild HD Art, Open Another Library, Delete Library.
         Delete Library asks twice, then deletes the library's own parts (`application.LIBRARY_PARTS`, never
         anything else in its folder) and goes to the game chooser.
-      - **Episodes:** Add Episodes, Delete Episodes, Export Episodes, Exports Folder, Reset Decision Tree.
+      - **Add Content** (on Data Management's own page, first, since 2026-11-21): episodes, add-ons and fonts.
+      - **Episodes:** Mark as Finished, Delete Episodes, Export Episodes, Exports Folder, Reset Decision Tree.
       - **Progress:** Back Up Progress, Restore Progress, Backups Folder, Reset Names, Delete All Saves.
       - **Sync Devices:** Send to Another Device, Receive from Another Device.
       - **Add-Ons** (with any in the library; [ADDONS.md](ADDONS.md#data-management)).
@@ -983,7 +984,7 @@ CoD's colours (`cod/hd_art.positional_frames`).
       Game?", and reports with an OK notice. Verify Library and the two Rebuild rows run as background jobs under
       the busy card. Verify checks every file against the checksum the library recorded. A damaged episode's file
       is removed, since it cannot play. A built-in episode is written again from the game's app, and any other
-      comes back when Add Episodes is given its file again. Rebuild HD Art is offered where there is HD art to
+      comes back when Add Content is given its file again. Rebuild HD Art is offered where there is HD art to
       build: an SHS library with HD episodes, or Cause of Death.
   - **Controls** sit against the card's right side, 26 points in (owner's choice; SHS HD's switches sat 168 in): the
     79 x 27 switch, and the value buttons at 104 x 34 with an 18-point label, wider where the value needs it.
@@ -1208,7 +1209,7 @@ There is no native screen to follow.
 **The store listing** is `Documents/mtxprods` from a 1.4.7 device backup (`cod/store.py`). Its format, what the
 library keeps of it, and its coverage are in [COD_STORE.md](COD_STORE.md).
 - **Importing it:** it goes in `cod_episodes/` or beside the IPAs in the import folder or a bulk archive, or comes
-  through Add Episodes or a drop.
+  through Add Content or a drop.
 - **What the library keeps** (`store` in library.json, `content/<sha>.json`): every product field except `granted`,
   each product's `binPack` byte for byte, and its parsed contents. So the chapters inside the Volume sets keep their
   own entries, for splitting the sets later. The file's user record (device and account identifiers, push token,

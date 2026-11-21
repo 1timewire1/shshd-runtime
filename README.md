@@ -125,7 +125,7 @@ already has a library is left as it is.
 From Bulk Import, **Back** leads to the game chooser. Select **Surviving High
 School** or **Cause of Death**, then choose that game's APK/IPA or open its
 existing library. Add EXP files, ZIP/RAR collections or a folder later
-through Options (**Data Management → Add Episodes** in the HD menus), or drag
+through Options (**Data Management → Add Content** in the HD menus, which also takes add-ons and fonts), or drag
 them onto the menu. SHS's bundled stories, including Football Star, and CoD's
 Volume One are imported automatically.
 
@@ -204,7 +204,7 @@ libarchive; see [archive import](docs/RUNTIME.md#episode-archives).
 
 If your episode folder includes the original `shs_options.sav` (SHS) or
 `cod_options.sav` (CoD), its catalog supplies the original season, volume and
-story groups. You can also add that file separately through **Add Episodes**
+story groups. You can also add that file separately through **Add Content**
 or drag-and-drop. Reimporting the folder updates these names without adding
 duplicate copies of identical EXPs or resetting progress. Episodes absent from
 the supplied catalog keep numeric pack names.
