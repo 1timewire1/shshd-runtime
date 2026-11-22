@@ -264,12 +264,17 @@ class Host:
 
     def _control_page(self):
         """Who takes a UIKit control's change: the story's pause card (while it is not closing), the main menu's
-        Options, or nobody (its page has gone: the next frame puts the control back, or hides it)."""
+        Options, the game chooser's Options (no library open: AppScreens.options, which places them too; they went
+        nowhere before 2026-11-22), or nobody (its page has gone: the next frame puts the control back, or hides it)."""
         game = self.app.game if self.app.screen == 'game' else None
         if game is not None and game.menu_open and not game.pause_closing:
             return game
         if self.app.screen == 'main' and self.app.shell is not None and self.app.shell.pause_open:
             return self.app.shell
+        screens = getattr(self.app, 'app_screens', None)
+        if (self.app.screen == 'options' and self.app.library is None and screens is not None
+                and screens.options is not None and screens.options.ask is None):
+            return screens.options
         return None
 
     def flip_switch(self, key, on):
@@ -279,7 +284,7 @@ class Host:
         page = self._control_page()
         if shown.get(key, on) == on or page is None:
             return
-        if page is self.app.shell:
+        if page is self.app.shell or not hasattr(page, 'command'):      # (the shell, or the chooser's Options)
             page.activate(('pause_toggle', key))
         else:
             page.command(('pause_toggle', key))
@@ -290,7 +295,7 @@ class Host:
         page = self._control_page()
         if key not in ('music', 'sound') or page is None:
             return
-        if page is self.app.shell:
+        if page is self.app.shell or not hasattr(page, '_set_volume'):  # (the shell, or the chooser's Options)
             page.set_volume(key, value)
         else:
             page._set_volume(key, value)

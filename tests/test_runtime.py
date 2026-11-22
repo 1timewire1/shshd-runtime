@@ -82,7 +82,7 @@ class RuntimeTests(unittest.TestCase):
         action = answer_screen(s)
         self.assertEqual((action.details['text'], s.scene, len(s.nest_stack)), ('Inside.', 25003, 1))
         saved = s.snapshot()
-        self.assertEqual((saved['version'], [entry['scene'] for entry in saved['nested']]), (42, [25001]))
+        self.assertEqual((saved['version'], [entry['scene'] for entry in saved['nested']]), (45, [25001]))
         restored = Session.from_snapshot(r, copy.deepcopy(saved))
         self.assertEqual((restored.scene, len(restored.nest_stack)), (25003, 1))
         for session in (s, restored):

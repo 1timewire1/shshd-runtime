@@ -175,6 +175,8 @@ class DialoguePage:
     # shshd-runtime (General's Aspect Ratio): how far the whole bubble (box, text, title, portrait) was moved up for the
     # rows it holds past HD's own (DialogueLayout.page's `extra_rows`), so its bottom stays where HD's is.
     lift: float = 0
+    # shshd-runtime: the width the body wraps in (SHSTextLayer's drawRegion): Text Animation's wipe crosses it per line.
+    body_width: float = 0
 
 
 class DialogueLayout:
@@ -557,4 +559,5 @@ class DialogueLayout:
             name_bounds = None if name_bounds is None else replace(name_bounds, y=name_bounds.y - lift)
         return DialoguePage(box, drawn_origin, body_font, body, portrait, name_font,
                             name, name_origin, name_scale, start, start + end, name_bounds, note_frame, note_tint,
-                            note_pack=note_pack, theme=details['theme'] if duet is not None or narration_theme else None, lift=lift)
+                            note_pack=note_pack, theme=details['theme'] if duet is not None or narration_theme else None, lift=lift,
+                            body_width=body_width)

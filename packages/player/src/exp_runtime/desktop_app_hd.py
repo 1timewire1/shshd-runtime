@@ -118,12 +118,19 @@ class AppCard(HdPauseMenu):
             rect = pygame.Rect(round((x + 12 - r) * S), round((middle - r) * S), round(2 * r * S), round(2 * r * S))
             pygame.draw.arc(layer, GRAY, rect, -0.8, 0.8, max(1, round(2 * S)))
 
-    def slider(self, layer, top, value):
-        """A volume row's control line, as HdPauseMenu.slider draws it with shape speakers."""
+    def slider(self, layer, top, value, key=None):
+        """A volume row's control line, as HdPauseMenu.slider draws it with shape speakers; where the host shows its own
+        (iOS: a UISlider, graphics.native_controls), the speakers are drawn and the track is placed for it instead. (The
+        page passes `key` since the iOS host's UISliders; without it here the chooser's Sound page stopped the app on
+        every platform: reported on iOS 2026-11-22.)"""
         middle = top + 86
         self.speaker(layer, 112, middle, 0)
         self.speaker(layer, 618, middle, 2)
         left, right = 143, 603
+        if pygame.native_controls is not None and key is not None:
+            self.screen_controls.append(dict(kind='slider', key=key, left=left, right=right, middle=middle,
+                                             value=float(value)))
+            return pygame.Rect(left - 10, middle - 22, right - left + 20, 44)
         self.rect(layer, (74, 132, 213), (left, middle - 3, right - left, 6), 3)
         self.rect(layer, (150, 185, 235), (left, middle - 3, right - left, 2), 1)
         knob = round((left + (right - left) * value) * S)
@@ -220,7 +227,7 @@ class AppOptions:
     def settings(self):
         """What the pages offer, as HdShell.settings has it for the main menu (less a library's own rows)."""
         from . import graphics
-        from .desktop_pause_hd import ASPECT_NAMES, CONFIRM_NAMES, GRID_CONTROLS_NAMES, START_IN_NAMES
+        from .desktop_pause_hd import ASPECT_NAMES, CONFIRM_NAMES, GRID_CONTROLS_NAMES, START_IN_NAMES, TEXT_ANIMATION_NAMES
         v, app = self.values(), self.app
         settings = {key: v[key] for key in ('vibration', 'music', 'sound', 'side_panels', 'choice_hints', 'skip_minigames',
                                             'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
@@ -234,7 +241,8 @@ class AppOptions:
                         preferred_language=LANGUAGE_NAMES.get(v['preferred_language'], v['preferred_language']),
                         check_updates=app.settings.check_for_updates,
                         start_in=START_IN_NAMES[app.settings.start_in], reset_settings=True,
-                        aspect_ratio=ASPECT_NAMES[app.settings.aspect(app.fixed_window)])
+                        aspect_ratio=ASPECT_NAMES[app.settings.aspect(app.fixed_window)],
+                        text_animation=TEXT_ANIMATION_NAMES.get(v.get('text_animation'), TEXT_ANIMATION_NAMES['letters']))
         if graphics.supports_vibration():
             settings['device_vibration'] = v['device_vibration']
         if graphics.controller_connected():
@@ -340,6 +348,10 @@ class AppOptions:
                 app.sync_controller()
             elif key == 'grid_controls':
                 self.set(key, 'hold' if v[key] == 'tap' else 'tap')
+            elif key == 'text_animation':
+                from .dialogue_animation import TEXT_ANIMATIONS
+                current = v.get(key) if v.get(key) in TEXT_ANIMATIONS else 'letters'
+                self.set(key, TEXT_ANIMATIONS[(TEXT_ANIMATIONS.index(current) + 1) % len(TEXT_ANIMATIONS)])
             elif key in ('backup_folder', 'export_folder'):
                 app.choose_folder(key)
             elif key == 'sync_games':

@@ -24,7 +24,7 @@ from .desktop_hd_menu import HdMenuWindows
 from .desktop_main_hd import HdMainMenu
 from .animation_curves import ease_in_out
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
-from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES,
+from .desktop_pause_hd import (ASPECT_NAMES, TEXT_ANIMATION_NAMES, CONFIRM_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES,
                                focus_step, place_controls)
 from .menu_engine import BACK, CUSTOM_MENUS, ENGINE
 from .settings import START_IN
@@ -401,6 +401,7 @@ class HdShell:
         settings['check_updates'] = self.app.settings.check_for_updates
         settings['start_in'] = START_IN_NAMES[self.app.settings.start_in]
         settings['aspect_ratio'] = ASPECT_NAMES[self.app.settings.aspect(self.app.fixed_window)]
+        settings['text_animation'] = TEXT_ANIMATION_NAMES.get(state.text_animation, TEXT_ANIMATION_NAMES['letters'])
         settings['skip_sound_prompt'] = state.skip_sound_prompt         # Sound's, on the main menu only
         if graphics.controller_connected():
             settings['controller_confirm'] = CONFIRM_NAMES[state.controller_confirm]
@@ -462,7 +463,7 @@ class HdShell:
             state.persist()
             self.app.picker = None                      # the pickers' captions follow the language
             self.app.apply_dsi()                        # ...and the add-ons' stories (the library and a paused episode)
-        elif key in ('controller_confirm', 'grid_controls'):
+        elif key in ('controller_confirm', 'grid_controls', 'text_animation'):
             setattr(state, key, value)
             self.app._attempt(state.persist)
             if key == 'controller_confirm':
@@ -818,6 +819,11 @@ class HdShell:
         elif kind == 'pause_cycle' and command[1] == 'grid_controls':
             state = self.app.state
             state.grid_controls = 'hold' if state.grid_controls == 'tap' else 'tap'
+            self.app._attempt(state.persist)
+        elif kind == 'pause_cycle' and command[1] == 'text_animation':
+            from .dialogue_animation import TEXT_ANIMATIONS
+            state = self.app.state
+            state.text_animation = TEXT_ANIMATIONS[(TEXT_ANIMATIONS.index(state.text_animation) + 1) % len(TEXT_ANIMATIONS)]
             self.app._attempt(state.persist)
         elif kind == 'pause_cycle' and command[1] in ('backup_folder', 'export_folder'):
             self.app.choose_folder(command[1])

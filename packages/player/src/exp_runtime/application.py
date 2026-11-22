@@ -2381,6 +2381,7 @@ class Application:
         self.game.disable_choice_timer = self.state.disable_choice_timer
         self.game.controller_confirm = self.state.controller_confirm
         self.game.grid_controls = self.state.grid_controls
+        self.game.text_animation = self.state.text_animation
         self.game.hd_backdrop = self.state.hd_backdrop
         self.game.side_panels_enabled = self.state.side_panels
         self.game.hires_portraits = self.state.hires_portraits
@@ -2497,6 +2498,7 @@ class Application:
         self.state.music, self.state.sound = self.game.music_enabled, self.game.sound_enabled
         self.state.controller_confirm = self.game.controller_confirm
         self.state.grid_controls = self.game.grid_controls
+        self.state.text_animation = getattr(self.game, 'text_animation', getattr(self.state, 'text_animation', 'letters'))
         self.state.vibration = self.game.vibration_enabled
         self.state.device_vibration = self.game.device_vibration_enabled
         self.state.choice_hints = self.game.choice_hints

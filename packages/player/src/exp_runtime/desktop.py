@@ -52,7 +52,7 @@ from .x360_diss import (ROUND_BACKGROUNDS as X360_ROUND_BACKGROUNDS, ROUND_EPISO
                         SOUND_GOOD as X360_SOUND_GOOD, SOUND_REMIX as X360_SOUND_REMIX)
 from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, GRID_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
-from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE, LANGUAGE_NAMES,
+from .desktop_pause_hd import (ASPECT_NAMES, TEXT_ANIMATION_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE, LANGUAGE_NAMES,
                                focus_step, place_controls)
 from . import backdrop_fit, frame_shape
 from .desktop_hd_menu import HdMenuWindows
@@ -403,6 +403,19 @@ class Desktop:
     warp_unlocked = True
     controller_confirm = 'south'    # a controller's confirm button (Options' Controller page; the app's MenuState)
     grid_controls = 'hold'          # the word grid with a controller: 'hold' or 'tap' (Options' Controller page)
+
+    @property
+    def text_animation(self):
+        """General's Text Animation (dialogue_animation.TEXT_ANIMATIONS), kept on the library: the session reads it there
+        as each page starts (Session._text_reveal), across loads and restarts."""
+        return getattr(getattr(self.session.resources, 'library', None), 'text_animation', 'letters')
+
+    @text_animation.setter
+    def text_animation(self, value):
+        from .dialogue_animation import TEXT_ANIMATIONS
+        library = getattr(self.session.resources, 'library', None)
+        if library is not None:
+            library.text_animation = value if value in TEXT_ANIMATIONS else 'letters'
     warp_lockout = 0
     panels_open = False
     panels_progress = 0.0
@@ -1634,7 +1647,11 @@ class Desktop:
         ready = False
         if self.autoplay and action is not None and not self.session.transitioning and self.host_prompt is None:
             if action.name == 'dialogue':
-                ready = engine.dialogue_animation is not None and engine.dialogue_animation.complete
+                # (Text Animation's wipe or instant page also waits out the time its letters would have taken: owner,
+                # 2026-11-22, so Autoplay reads the same at any setting.)
+                motion = engine.dialogue_animation
+                ready = motion is not None and motion.complete and (
+                    getattr(motion, 'text_mode', 'letters') == 'letters' or motion.elapsed_ms >= motion.letters_end_ms)
             elif action.name in ('message_panel', 'survey_confirmation'):
                 ready = engine.message_panel is not None and engine.message_panel.ready
             elif action.name == 'presentation':
@@ -3752,6 +3769,7 @@ class Desktop:
         # them (owner).
         return dict(vibration=self.vibration_enabled, music=self.music_enabled, sound=self.sound_enabled,
                     aspect_ratio=ASPECT_NAMES[self.aspect_ratio],
+                    text_animation=TEXT_ANIMATION_NAMES.get(getattr(self, 'text_animation', 'letters'), TEXT_ANIMATION_NAMES['letters']),
                     **({'device_vibration': self.device_vibration_enabled} if pygame.supports_vibration() else {}),
                     **(dict(controller_confirm=CONFIRM_NAMES[self.controller_confirm],
                             grid_controls=GRID_CONTROLS_NAMES[self.grid_controls],
@@ -3972,6 +3990,20 @@ class Desktop:
             if value != 'off':
                 self.set_dsi_pixels(value)
             self.set_dsi_backgrounds(value != 'off')
+            if self.on_settings:
+                self.on_settings()
+            if len(command) > 2:
+                self.pause_hd.back()
+            self._menu_sound()
+            return
+        if kind == 'pause_cycle' and command[1] == 'text_animation':
+            # Text Animation: a value picked on its choice page (then back), or a step to the next. The page on show
+            # keeps its own; the next one takes it.
+            from .dialogue_animation import TEXT_ANIMATIONS
+            if len(command) > 2:
+                self.text_animation = command[2]
+            else:
+                self.text_animation = TEXT_ANIMATIONS[(TEXT_ANIMATIONS.index(self.text_animation) + 1) % len(TEXT_ANIMATIONS)]
             if self.on_settings:
                 self.on_settings()
             if len(command) > 2:

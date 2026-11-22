@@ -2,8 +2,19 @@
 
 ## Unreleased (shshd-runtime)
 
+### Added
+
+- **Text Animation** (Options → General; a player's suggestion, owner 2026-11-22): dialogue text Letter by Letter
+  (Android's, the default, as before), in the iOS games' own **Line Wipe** (decompiled from SHS HD's
+  `SHSTextLayer`: each line wiped in over 0.6 s a text width, the next once its text is out; a tap hurries the rest to
+  0.2 s) or **Instant**. With Autoplay Dialogue a page still waits as long as its letters would have taken. Saves are
+  version 45 and keep a page's mode; older saves load as Letter by Letter. See docs/MAIN_MENU.md.
+
 ### Fixed
 
+- **Options → Sound in the game chooser stopped the app** (reported on iOS 2026-11-22; every platform, since the
+  iOS volume sliders): "AppCard.slider() got an unexpected keyword argument 'key'". The chooser's card takes the
+  slider's key, and on iOS its UISliders and UISwitches now reach the chooser's Options (they went nowhere there).
 - **A Cause of Death word quiz closed the app with Ask to Skip Mini-Games on** (found 2026-11-21; in v1.1.0): while its
   skip prompt's outcomes were worked out, Android's loading band read the scene's pan from a stand-in engine that had none.
   The stand-in now carries it (`Desktop._loading_view`).

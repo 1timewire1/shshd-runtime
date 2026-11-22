@@ -14,6 +14,7 @@ from .episode_index import section_place
 from .languages import PREFERRED_LANGUAGES, TITLE_LANGUAGES, episode_title, language_settings, preferred_from
 from .games import GAMES, game_id
 from .launcher import default_library, remember_library
+from .dialogue_animation import TEXT_ANIMATIONS
 from .runtime import SaveError, Session
 from .process import RuntimeProcess
 from .menu_assets import MenuFont, MenuStrings
@@ -76,6 +77,7 @@ SHARED_PREFERENCES = dict(
     skip_minigames=bool, skip_ad_intros=bool, skip_upsell_intros=bool, autoplay=bool, disable_choice_timer=bool,
     side_panels=bool, hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, brew_08_backgrounds=bool, hollywood_art=bool, dsi_backgrounds=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, undo=bool, ch_portraits=bool, ch_backdrop=bool, arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
     controller_confirm=('south', 'east'), grid_controls=('tap', 'hold'), dsi_pixels=('sharp', 'smooth'),
+    text_animation=TEXT_ANIMATIONS,
     preferred_language=PREFERRED_LANGUAGES,
     order=('episode', 'title'), title_music=('default', 'auto', 'brew', 'nr', 'x360', 'shs11', 'shw'),
     last_title_game=('default', 'brew', 'nr', 'x360', 'shs11', 'shw'),
@@ -205,6 +207,8 @@ class MenuState:
                     self.controller_confirm = data['controller_confirm']
                 if data.get('grid_controls') in ('tap', 'hold'):
                     self.grid_controls = data['grid_controls']
+                if data.get('text_animation') in TEXT_ANIMATIONS:
+                    self.text_animation = data['text_animation']
                 if data.get('hd_art') in ('off', 'twins', 'fill'):
                     self.hd_art = data['hd_art']
                 # (A file from before Preferred Language has the four it replaced: languages.preferred_from.)
@@ -309,6 +313,9 @@ class MenuState:
         # The word grid with a controller (owner, 2026-10-29): 'hold' (the default), the confirm button held drags, the
         # stick or D-pad steering it (desktop.Desktop._grid_hold); 'tap', confirm adds the highlighted cell
         self.grid_controls = 'hold'
+        # General's Text Animation (owner, 2026-11-22): how a dialogue page's text comes out (dialogue_animation.py
+        # TEXT_ANIMATIONS): Android's letter by letter (the default, as before), the iOS builds' line wipe, or at once
+        self.text_animation = 'letters'
         self.order = 'episode'
         # General's Preferred Language (owner, 2026-11-18): the episode titles, the DSi's stories, SHS '11's and the
         # Creator's in it where each has it (the properties below; languages.language_settings)
@@ -439,7 +446,7 @@ class MenuState:
                     ms3_characters=self.ms3_characters, java_look=self.java_look, brew_08_backgrounds=self.brew_08_backgrounds, hollywood_art=self.hollywood_art, dsi_backgrounds=self.dsi_backgrounds, dsi_pixels=self.dsi_pixels, smartphone_music=self.smartphone_music, word_grid_skin=self.word_grid_skin, grids_as_memory=self.grids_as_memory, skip_ahead=self.skip_ahead, undo=self.undo, ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop,
                     arena_minigames=self.arena_minigames, arena_skin=self.arena_skin,
                     skip_sound_prompt=self.skip_sound_prompt, controller_confirm=self.controller_confirm,
-                    grid_controls=self.grid_controls,
+                    grid_controls=self.grid_controls, text_animation=self.text_animation,
                     names=self.names,      # in the order written: replacement walks the table in that order
                     name_sets=self.name_sets)
         temporary = None

@@ -639,6 +639,16 @@ take no taps. Their text reveals at its own pace; then, instead of the Continue 
 safe) and advance as a tap would. It is not a full autoplay: choices, name entry, the mini-games
 and the portrait picker still wait for the player, and the gear still opens the pause menu.
 
+**Options → General → Text Animation** (this player's, owner 2026-11-22): a dialogue page's text **Letter by Letter**
+(Android's cursor, one source index a 1/30 s: the default, as before), in **Line Wipe** (the iOS builds' typed lines,
+`-[SHSTextLayer addTypingAnimations:lineTime:]`, SHS HD 1.4.38 00058634: each visible line's clip slides across it, a
+region's width in 0.6 s, the next line starting once this one's text is out; a tap re-adds them at 0.2 s, as
+`speedUpTyping`, so it hurries the wipe rather than ending it) or **Instant** (the page when its text would start).
+Either of the others keeps the page's clock running to where the letters would have ended, and Autoplay Dialogue
+waits for that too, so it reads the same at any setting. A page keeps the mode it began with; saves keep it (version
+45). Its choice page is on General in the main menu, the story's pause menu and the chooser's Options
+(`dialogue_animation.TEXT_ANIMATIONS`, `Session._text_reveal`, `DialogueRenderer.draw_wipe`).
+
 **Options → Extras → Disable Choice Timer** (this player's, off by default): a timed choice holds its clock
 (`Session.choice_timer`) and is drawn untimed, with one more row, last, **Let the Timer Run Out**, for the scenes
 that need no answer. That row runs the native timeout callback (`Session.expire_choice`), with its own timeout

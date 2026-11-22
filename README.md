@@ -170,6 +170,10 @@ Answer hints, Skip mini-games, Skip ad intros and Skip upsell intros only.
 - **Autoplay Dialogue** (Options → General) advances dialogue by itself 0.75 s
   after its text is out (title cards after 1.5 s); choices, name
   entry and mini-games still wait for you. Off by default.
+- **Text Animation** (Options → General) is how dialogue text comes out:
+  Letter by Letter (Android's, the default), Line Wipe (the iOS games' own:
+  each line wiped in from the left, a tap hurrying it) or Instant. With
+  Autoplay, a page still waits as long as its letters would have taken.
 - **Disable Choice Timer** (Options → Extras) stops timed choices' clocks and
   adds a last row, Let the Timer Run Out, for scenes that need no answer. Off by
   default.

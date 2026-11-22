@@ -1012,6 +1012,13 @@ does not resume the VM. Repeated input before that completion cannot acknowledge
 the page. The desktop also stops processing queued game input when a tap
 changes the reveal state, requiring the resulting frame to be displayed first.
 
+**Text Animation (this fork).** General's Text Animation keeps this cadence as **Letter by Letter** (the default)
+and adds the iOS builds' **Line Wipe** (`-[SHSTextLayer addTypingAnimations:lineTime:]`, SHS HD 00058634: per line a
+clip translating from -width to 0 while the line counter-translates, `lineTime` 0.6 s from `startTypingAnimation:`,
+the next line's begin time stepped by `getDisplayLength(line) / drawRegion.width * lineTime`; `speedUpTyping` re-adds
+them at 0.2 s) and **Instant**. Their pages keep the clock running to the letters' end, which Autoplay waits for.
+Saves (version 45) add `text_mode`, `wipe_lines` (each visible line's wipe in ms at 0.6 s a width) and `wipe_ms`.
+
 **Saved state.** `engine.dialogue_animation` contains `text_length` (length of
 the remaining substring, or on iOS the page's), `portrait` and `previous` (nullable objects containing
 `character_id`, resolved `asset_id`, `mode`, `theme`), `changed`, `page_turn`,

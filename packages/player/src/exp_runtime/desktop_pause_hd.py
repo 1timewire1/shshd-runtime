@@ -180,14 +180,20 @@ TITLE_LOOK_NAMES = {'default': 'Default', 'auto': 'Auto', 'brew07': "'07", 'shw'
 PER_GAME_LABEL = 'Per-Game Settings'
 PAGE_TITLES = {'per_game': PER_GAME_LABEL}
 PAGE_PARENTS = {'options:per_game': 'options:addons'}
+# General's Text Animation (owner, 2026-11-22): a dialogue page's text letter by letter (Android's, the default), in the
+# iOS builds' line wipe, or at once (dialogue_animation.TEXT_ANIMATIONS)
+TEXT_ANIMATION_LABEL = 'Text Animation'
+TEXT_ANIMATION_NAMES = {'letters': 'Letter by Letter', 'wipe': 'Line Wipe', 'instant': 'Instant'}
 CHOICE_NAMES = {'aspect_ratio': ASPECT_NAMES, 'preferred_language': LANGUAGE_NAMES, 'start_in': START_IN_NAMES,
-                'controller_confirm': CONFIRM_NAMES,
+                'text_animation': TEXT_ANIMATION_NAMES, 'controller_confirm': CONFIRM_NAMES,
                 'grid_controls': GRID_CONTROLS_NAMES, 'title_music': TITLE_MUSIC_NAMES, 'title_look': TITLE_LOOK_NAMES,
                 'dsi_backgrounds': DSI_BACKGROUNDS_NAMES}
 CHOICE_LABELS = {'aspect_ratio': ASPECT_LABEL, 'preferred_language': PREFERRED_LANGUAGE_LABEL, 'start_in': START_IN_LABEL,
+                 'text_animation': TEXT_ANIMATION_LABEL,
                  'controller_confirm': CONFIRM_BUTTON_LABEL, 'grid_controls': GRID_CONTROLS_LABEL,
                  'title_music': TITLE_MUSIC_LABEL, 'title_look': TITLE_LOOK_LABEL, 'dsi_backgrounds': DSI_BACKGROUNDS_LABEL}
 CHOICE_PARENTS = {'aspect_ratio': 'options:general', 'preferred_language': 'options:general', 'start_in': 'options:general',
+                  'text_animation': 'options:general',
                   'controller_confirm': 'options:controller', 'grid_controls': 'options:controller',
                   'title_music': 'options:addons', 'title_look': 'options:addons', 'dsi_backgrounds': 'options:extras'}
 # Add-on choices the main menu keeps on Per-Game Settings rather than Add-Ons: their page's way back goes there.
@@ -919,6 +925,8 @@ class HdPauseMenu:
             # General's Vibration is the Controller page's when only a controller vibrates (settings['controller_vibration'])
             rows = [('switch', self.SWITCH_LABELS[key], key) for key in GENERAL_KEYS if key in settings
                     and not (key == 'device_vibration' and settings.get('controller_vibration'))]
+            if 'text_animation' in settings:
+                rows.append(('choice', TEXT_ANIMATION_LABEL, 'text_animation'))
             if 'aspect_ratio' in settings:
                 rows.append(('choice', ASPECT_LABEL, 'aspect_ratio'))
             if 'preferred_language' in settings:

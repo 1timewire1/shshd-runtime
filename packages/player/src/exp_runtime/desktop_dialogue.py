@@ -1210,6 +1210,36 @@ class DialogueRenderer:
         self._box_final = page.box
         return self._box_from
 
+    def draw_wipe(self, page, edges, notes, density):
+        """Text Animation's line wipe (DialogueAnimation.wipe_edges): each line drawn whole but clipped at its edge, a
+        share of the region's width from the line's own x (`setupTypingLayers` gives each line its layer, its clip
+        sliding across it). A line's band ends halfway between its lowest ink and the next line's highest (a line's
+        `y` is below its capitals' tops: bands split there showed the next line's tops under the one being wiped); the
+        first and last are open."""
+        k = self.scale
+        ox, oy = page.body_origin
+        width = getattr(page, 'body_width', 0) or page.box.width
+        lines = page.body.lines
+        kept = self.canvas.get_clip()
+        far = 10 ** 6
+        inks = []                                       # each line's (top, bottom) ink, layout units
+        for line in lines:
+            placed = [g for g in page.body.glyphs if line.start <= g.index < line.end and g.glyph.height]
+            inks.append((min(g.y for g in placed), max(g.y + g.glyph.height for g in placed)) if placed
+                        else (line.y, line.y))
+        splits = [(inks[i][1] + inks[i + 1][0]) / 2 for i in range(len(lines) - 1)]
+        for index, line in enumerate(lines):
+            share = edges[index] if index < len(edges) else 0
+            if share <= 0:
+                continue
+            top = -far if index == 0 else round((oy + splits[index - 1]) * k)
+            bottom = far if index == len(lines) - 1 else round((oy + splits[index]) * k)
+            right = round((ox + line.x + share * width) * k)
+            self.canvas.set_clip(pygame.Rect(-far, top, right + far, bottom - top).clip(kept))
+            self.text.draw_layout(self.canvas, page.body_font, page.body, ox * k, oy * k, scale=k,
+                                  inline=notes, inline_density=density)
+        self.canvas.set_clip(kept)
+
     def continue_progress(self, session):
         """0..1 through the pill's 250 ms expansion, counted from when this
         dialogue page first shows its text complete. Purely visual, so it
@@ -1385,9 +1415,13 @@ class DialogueRenderer:
             pack = getattr(page, 'note_pack', 155)
             notes = {NOTE_CODE: self.note_image(page.note_frame, getattr(page, 'note_tint', None), pack)}
             density = self.note_density(pack, page.note_frame)
-        self.text.draw_layout(self.canvas, page.body_font, page.body,
-                              page.body_origin[0] * k, page.body_origin[1] * k,
-                              scale=k, source_end=motion.revealed, inline=notes, inline_density=density)
+        edges = motion.wipe_edges() if hasattr(motion, 'wipe_edges') else None
+        if edges is None:
+            self.text.draw_layout(self.canvas, page.body_font, page.body,
+                                  page.body_origin[0] * k, page.body_origin[1] * k,
+                                  scale=k, source_end=motion.revealed, inline=notes, inline_density=density)
+        else:
+            self.draw_wipe(page, edges, notes, density)
         self.canvas.blit(faded(self.name_layer, motion.name_alpha), self._name_area.topleft, self._name_area)
         # Real-device confirmed (reference/football_star_beth_greeting_hd.webp):
         # the relationship icon sits above the box, the body text and the
