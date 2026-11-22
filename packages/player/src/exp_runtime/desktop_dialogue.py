@@ -1593,7 +1593,10 @@ class DialogueRenderer:
             if not waiting:
                 self.box(self.wide, Rect(box.x + m, box.y, box.width, box.height),
                          theme, alpha=self.box_alpha(), scale=k)
-            if self.skin is not None and (box.y, box.width) == (page.box.y, page.box.width):
+            # (The tab comes once the box's top and width are in place: within half a point, as the box is drawn on whole
+            # pixels and a taller frame's lift leaves its final place fractional.)
+            if (self.skin is not None and abs(box.y - page.box.y) < .5
+                    and abs(box.width - page.box.width) < .5):
                 self.draw_skin_tab(page, self.skin_tab_alpha(motion))
         # HD draws the portrait's rings under the body text: the third line's
         # top edge crosses the ring's bottom arc (white on the white box, so

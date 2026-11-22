@@ -55,6 +55,10 @@ class DialogueTests(unittest.TestCase):
             session.tick(elapsed - motion.elapsed_ms)
             self.assertEqual(motion.box_rect(box, None, old), Rect(20, 290, 280, height))
         self.assertEqual(motion.box_rect(box, None), box)
+        # Once there it is the box itself, fractional points and all (a taller frame's lift): a rounded copy never
+        # equalled it, and Claire Hart Dialogue's name tab, which waits for the box to settle, never came (g54, 2026-11-22).
+        lifted = Rect(20, 289.4, 280, 100)
+        self.assertIs(motion.box_rect(lifted, None, old), lifted)
 
     def test_bubble_clock_pauses_and_restores_without_replaying_the_vm(self):
         from exp_runtime.ui_assets import Rect

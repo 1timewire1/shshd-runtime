@@ -324,6 +324,11 @@ class DialogueAnimation:
             if self.changed or self.wobble_direction or previous is None or previous == box:
                 return box
             t = progress(self.elapsed_ms, BOX_RESIZE_MS)
+            if t >= 1:
+                # The box itself once there: a rounded copy never equalled a box at fractional points (a taller frame's
+                # lift), and Claire Hart Dialogue's name tab, which waits for the box to settle, never came (g54,
+                # 2026-11-22).
+                return box
             return Rect(*(round(a + (b - a) * t) for a, b in zip(
                 (previous.x, previous.y, previous.width, previous.height), (box.x, box.y, box.width, box.height))))
         elapsed = self.elapsed_ms - (self.name_delay_ms - BOX_TRAVEL_MS)

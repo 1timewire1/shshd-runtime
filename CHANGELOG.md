@@ -105,6 +105,10 @@
 
 ### Fixed
 
+- **Claire Hart Dialogue's name tab was missing on a portrait-less speaker** (owner, g54, 2026-11-22: Volume One's
+  "Television", after narration): the tab waits for the box to settle, and a box gliding from the last line's frame
+  ended on a rounded copy that never equalled a taller frame's fractional place, so only a tap brought the tab. The
+  glide now ends on the box itself (`DialogueAnimation.box_rect`), and the tab takes a box within half a point.
 - **The episode lists ran under a phone's status bar** (owner, g54, 2026-11-22; every game, worst in the Claire Hart
   skin, where the camera hole covered the "On" of Episodes On Demand): Now Airing's and Episodes On Demand's card, and
   Data Management's tick lists, now keep clear of the status and navigation bars as the text pages do
