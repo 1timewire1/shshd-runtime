@@ -23,6 +23,25 @@
 - **Options → Sound in the game chooser stopped the app** (reported on iOS 2026-11-22; every platform, since the
   iOS volume sliders): "AppCard.slider() got an unexpected keyword argument 'key'". The chooser's card takes the
   slider's key, and on iOS its UISliders and UISwitches now reach the chooser's Options (they went nowhere there).
+- **A saved game from a newer version was set aside as corrupt** (found in v1.1.1's full check, 2026-11-22): Continue
+  said "Save file was corrupt… Deleting save file." and moved it out of the way. A save in a format only a newer build
+  reads (a later version, or the Claire Hart development branch's 43 / 44) now stays where it is, and the message says
+  it was made by a newer version (`NewerSaveError`).
+- **Letters typed in one frame were lost in name entry** (found in v1.1.1's full check, 2026-11-22; inherited from
+  upstream): the app stops a frame's input when the screen changes, so a queued tap never lands on a new screen, and the
+  name being typed counted as a change, so after a frame's first letter the rest and its Enter were dropped ("Sam" came
+  out "S"). A keyboard's autocorrect or a suggestion sends several at once. The name no longer counts; a refused
+  letter's alert still does (`Desktop._screen_token`).
+- **A window raised from the side panels over the screen was hidden and could not be answered** (found in v1.1.1's full
+  check, 2026-11-22): with the Decision Tree and Faceplace wall over the screen (where there is no room beside the game:
+  a phone, a 3:4 window), the tree's "Locked" notice and a wall link's "Exit Game?" were drawn under the panels, and the
+  panels took every tap, so nothing seemed to happen until they were closed. The window now draws over them and takes
+  the input first.
+- **Test channel:** `set` passes a choice option (Text Animation, Word Grid Controls…) to the open story too, as its
+  pause menu does; `state` reports a dialogue page's `reveal` (its Text Animation, complete, letters out); `play` drives
+  football (a tap, or a play 0-8), the HD word game (an option) and the word grid (`play cells A B C`), whose reports
+  now say what they wait for (they read "time"); a notice's button reads OK, as drawn (the "Locked" notice's read as
+  the credits).
 - **A Cause of Death word quiz closed the app with Ask to Skip Mini-Games on** (found 2026-11-21; in v1.1.0): while its
   skip prompt's outcomes were worked out, Android's loading band read the scene's pan from a stand-in engine that had none.
   The stand-in now carries it (`Desktop._loading_view`).

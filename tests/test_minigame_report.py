@@ -95,6 +95,26 @@ class ChannelPlayTests(unittest.TestCase):
         self.play(channel, 'press')
         self.assertEqual(answers, [None])
 
+    def test_football_the_word_game_and_the_grid_take_their_own_input(self):
+        channel, answers, commands = self.channel('football')
+        self.play(channel, 'press')
+        self.play(channel, 'press 4')
+        self.assertEqual(answers, [None, 4])
+        self.assertFalse(self.play(channel, 'press 9')['ok'])
+        channel, answers, commands = self.channel('word_game')
+        channel.app.game.session.engine.word_game = SimpleNamespace(options=['cat', 'dog'])
+        self.play(channel, 'press 1')
+        self.assertEqual(commands, [('choose', 1)])
+        self.assertFalse(self.play(channel, 'press 2')['ok'])
+        channel, _, _ = self.channel('word_grid')
+        moves = []
+        channel.app.game.session.grid_pointer = lambda phase, cell: moves.append((phase, cell))
+        self.play(channel, 'cells 0 1 5')
+        self.assertEqual(moves, [('down', 0), ('move', 1), ('move', 5), ('up', 5)])
+        moves.clear()
+        self.play(channel, 'press')
+        self.assertEqual(moves, [('down', None), ('up', None)])
+
     def test_it_refuses_what_a_player_couldnt_do(self):
         channel, _, _ = self.channel('x360_slot', prompt=dict(options=['Win', 'Lose', 'Play']))
         self.assertIn('skip prompt', self.play(channel, 'press')['error'])

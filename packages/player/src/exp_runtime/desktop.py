@@ -2322,7 +2322,10 @@ class Desktop:
                 (dialogue.finish_requested, dialogue.complete) if dialogue else None,
                 tuple(picker.order) if picker else None,
                 (title.reveal_width == 320, title.ready) if title else None,
-                details.get('draft'), self.input_error, self.menu_open)
+                # (Not the name being typed: a frame's later keys were dropped after its first letter, as for a new
+                # screen, so "Sam" typed in one frame came out "S" and its Enter was lost; a keyboard's autocorrect or
+                # suggestion sends several at once. v1.1.1 check, 2026-11-22. A refused letter's alert still counts.)
+                self.input_error, self.menu_open)
 
     def _football(self):
         """HD's football art when an HD app bundle is imported, else the Android renderer."""
@@ -2833,8 +2836,14 @@ class Desktop:
                                                       round(FRAME_UNITS[1] * scale)), frame, self.BADGE_REGION)
         if hd_pause:
             self._draw_hd_pause(frame)
+        # A window raised from the side panels over the screen (the tree's "Locked", a Faceplace link's "Exit Game?") is
+        # drawn over them, after them below (v1.1.1 check, 2026-11-22: it was drawn under them, so a phone, whose panels
+        # go over the screen, showed nothing while the window waited for its answer).
+        notice_over_panels = (self.notice_stack is not None and bool(self.notice_stack.stack)
+                              and self.overlay_progress > 0)
         if self.notice_stack is not None and self.notice_stack.stack:
-            self._draw_notice(frame, dim=not hd_pause)
+            if not notice_over_panels:
+                self._draw_notice(frame, dim=not hd_pause)
         elif not hd_pause:
             self._tinted = None             # the next pause menu or notice tints the scene as it is then
         # Real device confirmed: panels occupy the window space *beside*
@@ -2884,6 +2893,8 @@ class Desktop:
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('DTView/Faceplace panel rendering stopped: %s', error)
+        if notice_over_panels:
+            self._draw_notice(frame, dim=not hd_pause)
         if zoom_mode is not None and not self.capture:
             self.tree_zoom.draw_tab(self.window, self.tree_zoom.tab_rect(zoom_mode, self.bg_viewport))
             if zoom_mode == 'portrait':
@@ -4287,9 +4298,12 @@ class Desktop:
         self._sync_text_input()
         if event.type == pygame.QUIT:
             return False
-        if (self.panels_overlay or self.overlay_progress > 0) and self._overlay_event(event):
+        notice_open = self.notice_stack is not None and bool(self.notice_stack.stack)
+        # (An open window goes first even over the panels over the screen, which raise two of them: v1.1.1 check,
+        # 2026-11-22, a "Locked" or "Exit Game?" raised from them could not be answered until they closed.)
+        if not notice_open and (self.panels_overlay or self.overlay_progress > 0) and self._overlay_event(event):
             return True                 # the panels over the screen take everything (Escape closes them)
-        if self.notice_stack is not None and self.notice_stack.stack:
+        if notice_open:
             # A native notice/confirm window (the wall's "Exit Game?" confirmation, or the Decision Tree's
             # "Locked" notice) is modal: it takes every event ahead of everything else below, including the
             # pause menu's own Escape handling right after this.

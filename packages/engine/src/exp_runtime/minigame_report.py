@@ -61,6 +61,16 @@ def describe(session, *, skippable=False):
         # '11's tutorial screens take an OK (a press with no cell); its rounds take cells.
         summary['waits_for'] = ('cell' if phase == 'play' else 'press' if live.tutorial or phase in OK_PHASES
                                 else 'time')
+    elif name == 'word_game':
+        summary.update(options=list(live.options), waits_for='an option (press N)')
+    elif name == 'word_grid':
+        # The board row by row and its width, for `play cells`; its rules pages and results take a tap off the board.
+        summary.update(board=''.join(live.board), width=live.problem.width,
+                       waits_for='cells (play cells A B C...)' if getattr(live, 'input_enabled', False) else 'press or time')
+    elif name == 'football':
+        # Its rules pages (phases 20-23) take a tap once shown a moment; its play (phase 3) one of the nine targets
+        # (`play press N`, 0-8); the rest runs by itself (v1.1.1 check, 2026-11-22: all read "time").
+        summary['waits_for'] = 'press' if 20 <= phase <= 23 else 'a play (press 0-8)' if phase == 3 else 'time'
     elif phase in OK_PHASES or name == 'brew_catch' and not live.started:
         summary['waits_for'] = 'press'      # a go-ahead, a tutorial page or the score screen's OK
     elif phase in ('running', None):
