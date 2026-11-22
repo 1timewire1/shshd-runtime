@@ -103,6 +103,10 @@
   without one, so Resume and Undo failed on 55 of Case 1's 169 lines. It now takes that narration, checked against its
   narrator.
 - The test channel's `rows` on Help & About no longer fails, and `state`'s `notice` is the toast only while it shows.
+- **Large add-ons import from a ZIP or RAR** (Claire Hart plan Stage 5, the g54, 2026-11-21): Claire Hart's tester ZIPs
+  were refused ("ZIP member exceeds supported size": `chc` is 480 MB, `chcrounds` 1.1 GB, past an episode's 64 MB). An
+  add-on past that size (8 GB at most) is now streamed to the library and hashed on the way, never held in memory, from a
+  ZIP, a RAR, Bulk Import or a loose file; an episode that large is still refused, saying only an add-on may be.
 
 ## 1.1.0 (shshd-runtime)
 

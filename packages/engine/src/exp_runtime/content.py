@@ -36,6 +36,11 @@ PROFILE = SHS_ANDROID
 IOS_PROFILE = SHS_IOS
 MAX_EPISODE_ZIP_MEMBERS = 10_000
 MAX_EPISODE_ZIP_BYTES = 2 * 1024 * 1024 * 1024
+# shshd-runtime: an add-on may be far larger than an episode (Claire Hart's rounds, 1.1 GB; the sequel's about 3 GB). One
+# past MAX_PAYLOAD is streamed to the library's staging folder and hashed on the way, never held in memory (a ZIP's or
+# RAR's member as a loose file's), and only an add-on may be that large (owner's g54, 2026-11-21: the tester ZIP was
+# refused, "ZIP member exceeds supported size"). Such members don't count toward MAX_EPISODE_ZIP_BYTES.
+MAX_ADDON_BYTES = 8 * 1024 * 1024 * 1024
 
 # Optional companion import: the SHS HD (iPad) app bundle, supplementing an Android APK library. Unlike the APK
 # (or a base-game IPA, which replaces it), this is never required -- it unlocks HD-native art: a handful of
@@ -347,6 +352,48 @@ class _StagedEpisodeInput:
         return data
 
 
+def _input_size(item) -> int:
+    """An import input's size in bytes: a loose file, a ZIP member or a RAR member staged on disk."""
+    if isinstance(item, _ZippedEpisodeInput):
+        return item.member.file_size
+    return (item.path if isinstance(item, _StagedEpisodeInput) else Path(item)).stat().st_size
+
+
+def _input_open(item):
+    """An import input as a binary stream (a ZIP member decompressed as it is read)."""
+    if isinstance(item, _ZippedEpisodeInput):
+        return item.package.open(item.member)
+    return (item.path if isinstance(item, _StagedEpisodeInput) else Path(item)).open('rb')
+
+
+@dataclass(frozen=True)
+class _LargeInput:
+    """An input past MAX_PAYLOAD (an add-on's, MAX_ADDON_BYTES at most): `_install_episodes` streams it to its staging
+    folder and hashes it on the way instead of reading it into memory."""
+    item: object
+    size: int
+
+    def stage(self, folder: Path):
+        """Copy it into `folder` as it is read: (the staged path, its SHA-256)."""
+        target = folder / f'incoming-{os.getpid()}-{id(self)}.exp'
+        hasher, copied = hashlib.sha256(), 0
+        try:
+            with _input_open(self.item) as source, target.open('wb') as output:
+                while chunk := source.read(1024 * 1024):
+                    copied += len(chunk)
+                    if copied > MAX_ADDON_BYTES:
+                        raise ContentError('An add-on exceeds the supported size')
+                    hasher.update(chunk)
+                    output.write(chunk)
+        except (BadZipFile, OSError, EOFError, ZlibError) as error:
+            target.unlink(missing_ok=True)
+            raise ContentError(f'Cannot read a large EXP: {error}') from error
+        except ContentError:
+            target.unlink(missing_ok=True)
+            raise
+        return target, hasher.hexdigest()
+
+
 def _episode_rar_inputs(path, catalog_name, stack):
     from .episode_catalog import MAX_CATALOG_BYTES
     from .rar import RarReader, RarError
@@ -359,14 +406,17 @@ def _episode_rar_inputs(path, catalog_name, stack):
                     raise ContentError('Episode RAR contains too many entries')
                 if member['size'] < 0:
                     raise ContentError('Episode RAR has an unknown member size')
-                # Solid archives may decode skipped entries to build their
-                # dictionary, so bound all declared data, including ignored files.
-                total += member['size']
-                if total > MAX_EPISODE_ZIP_BYTES:
-                    raise ContentError('Episode RAR exceeds the supported total size')
                 normalized = member['name'].replace('\\', '/')
                 parts, name = normalized.split('/'), normalized.rsplit('/', 1)[-1]
                 is_catalog = name.lower() == catalog_name
+                # Solid archives may decode skipped entries to build their
+                # dictionary, so bound all declared data, including ignored files
+                # (an add-on's large EXP is bounded by MAX_ADDON_BYTES instead).
+                large = name.lower().endswith('.exp') and MAX_PAYLOAD < member['size'] <= MAX_ADDON_BYTES
+                if not large:
+                    total += member['size']
+                if total > MAX_EPISODE_ZIP_BYTES:
+                    raise ContentError('Episode RAR exceeds the supported total size')
                 if (member['mode'] == stat.S_IFDIR or not name or name.startswith('._')
                         or any(part.casefold() == '__macosx' for part in parts)
                         or not (is_catalog or name.lower().endswith('.exp'))):
@@ -383,7 +433,7 @@ def _episode_rar_inputs(path, catalog_name, stack):
                 seen.add(normalized)
                 if member['encrypted']:
                     raise ContentError('Encrypted episode RARs are not supported; extract the EXP files first')
-                limit = MAX_CATALOG_BYTES if is_catalog else MAX_PAYLOAD
+                limit = MAX_CATALOG_BYTES if is_catalog else MAX_ADDON_BYTES
                 if member['size'] > limit:
                     raise ContentError(f'RAR member exceeds supported size: {name}')
                 destination = stage / str(index)  # Never the archive's pathname.
@@ -424,10 +474,11 @@ def _episode_zip_inputs(package, catalog_name):
         if normalized in seen:
             raise ContentError(f'Episode ZIP contains duplicate member names: {normalized}')
         seen.add(normalized)
-        limit = MAX_CATALOG_BYTES if is_catalog else MAX_PAYLOAD
+        limit = MAX_CATALOG_BYTES if is_catalog else MAX_ADDON_BYTES
         if member.file_size > limit:
             raise ContentError(f'ZIP member exceeds supported size: {member.filename}')
-        total += member.file_size
+        if member.file_size <= MAX_PAYLOAD:              # (a larger one is streamed: an add-on's)
+            total += member.file_size
         if total > MAX_EPISODE_ZIP_BYTES:
             raise ContentError('Episode ZIP exceeds the supported total size')
         source = _ZippedEpisodeInput(package, member, name)
@@ -1534,7 +1585,11 @@ class ContentLibrary:
                 for index, path in enumerate(candidates):
                     if progress:
                         progress(f'Episode {index + 1} of {len(candidates)}')
-                    yield path.read_bytes(), path.name, {}
+                    size = _input_size(path)
+                    if size > MAX_ADDON_BYTES:
+                        raise ContentError(f'{path.name} exceeds the supported size')
+                    # Past MAX_PAYLOAD only an add-on may go: streamed by _install_episodes, never held whole.
+                    yield (_LargeInput(path, size) if size > MAX_PAYLOAD else path.read_bytes()), path.name, {}
             return self._install_episodes(episodes(), catalog=catalog, store=store, replace_saved=replace_saved, keep=keep)
 
     def store_listing(self):
@@ -1635,6 +1690,32 @@ class ContentLibrary:
             asking = []                                     # older copies with saved games, when replace_saved is None
             listed = {record['id'] for record in self.episodes}     # in the library before this batch
             for data, name, source in episodes:
+                if isinstance(data, _LargeInput):
+                    staged, sha = data.stage(stage)
+                    try:
+                        addon = self._addon_entry(LazyExpArchive(staged), sha, name, addons)
+                    except ContentError:
+                        staged.unlink(missing_ok=True)
+                        raise
+                    if addon is None:
+                        staged.unlink(missing_ok=True)
+                        raise ContentError(f'{name} is larger than an episode may be ({MAX_PAYLOAD // 2 ** 20} MB); '
+                                           'only an add-on may be larger')
+                    held = next((a for a in self.addons if a['sha256'] == sha), None)
+                    if addon is not False:
+                        staged.replace(stage / (sha + '.exp'))
+                        addons[addon['addon']] = addon
+                        addon_additions.append(addon)
+                        for superseded in addon.get('supersedes', ()):
+                            addons.pop(superseded, None)
+                    elif (held is not None and sha not in repaired
+                          and not (self.directory / held['file']).is_file()):
+                        staged.replace(stage / (sha + '.exp'))      # (its missing file restored, as below)
+                        repairs.append(held)
+                        repaired.add(sha)
+                    else:
+                        staged.unlink(missing_ok=True)
+                    continue
                 sha = digest(data)
                 addon = self._addon_entry(data, sha, name, addons)
                 if addon is not None:
@@ -1753,9 +1834,10 @@ class ContentLibrary:
 
     def _addon_entry(self, data, sha, name, addons):
         """For `_install_episodes`: None when `data` is no addon; False for an addon the library already holds, or holds
-        at a higher revision; else the new addon's manifest record (a rebuild at the same revision replaces it)."""
+        at a higher revision; else the new addon's manifest record (a rebuild at the same revision replaces it). `data`
+        may be an archive already open (a LazyExpArchive of a large add-on staged on disk)."""
         try:
-            archive = ExpArchive(data)
+            archive = data if isinstance(data, LazyExpArchive) else ExpArchive(data)
             record = addon_record(archive)
         except ContentError as error:
             raise ContentError(f'{name}: {error}') from error

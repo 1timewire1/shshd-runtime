@@ -86,7 +86,9 @@ class EpisodeRarTests(unittest.TestCase):
                 with self.assertRaises(ContentError):
                     with _episode_inputs([rar], game='shs'):pass
             rar.write_bytes(raw)
-            for key in ('MAX_PAYLOAD', 'MAX_EPISODE_ZIP_BYTES', 'MAX_EPISODE_ZIP_MEMBERS'):
+            # shshd-runtime: a member past MAX_PAYLOAD may be an add-on (streamed, refused at install if it isn't one), so
+            # the members' bound here is MAX_ADDON_BYTES (test_large_addon_import.py).
+            for key in ('MAX_ADDON_BYTES', 'MAX_EPISODE_ZIP_BYTES', 'MAX_EPISODE_ZIP_MEMBERS'):
                 with patch('exp_runtime.content.' + key, 0), self.assertRaises(ContentError):
                     with _episode_inputs([rar], game='shs'):pass
 
