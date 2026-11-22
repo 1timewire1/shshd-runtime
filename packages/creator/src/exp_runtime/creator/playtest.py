@@ -3,18 +3,14 @@ from .model import ProjectError
 
 ENDS = {'episode_exit', 'finished'}
 STORY_INPUTS = {'choice', 'text_input', 'word_game', 'word_grid', 'football', 'character_picker'}
-# The translated mini-games, as the player plays them: a press (the go-ahead, then the game's own button), or a cell for SHS '11's;
-# New Rules' arena takes key codes on its frames (nr_arena.KEY_BITS), a pick from its menu and an OK on its info box.
-PRESS_GAMES = {'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle', 'brew_catch', 'cutscene'}
-CELL_GAMES = {'shs11_memory', 'shs11_reflex'}
-ARENA = {'arena_frame', 'arena_menu', 'arena_info', 'arena_skip'}
+# The translated mini-games and how each is played: exp_runtime.minigame_report (shared with the app's test channel).
+from exp_runtime.minigame_report import ARENA, CELL_GAMES, OK_PHASES, PRESS_GAMES, describe as describe_minigame  # noqa: E402
 INPUTS = STORY_INPUTS | PRESS_GAMES | CELL_GAMES | ARENA
 ACKNOWLEDGE = {'dialogue', 'presentation', 'message_panel', 'survey_confirmation'}
 TIMED = {'loading', 'arena_entrance', 'arena_exit'}      # screens that go on by themselves as time passes
 FRAMED = PRESS_GAMES | CELL_GAMES | {'word_grid', 'football', 'arena_frame', 'arena_entrance', 'arena_exit'}
 FRAME_MS = 16                   # a mini-game's time passes in frames, as a player's does (each caps a long one)
 SKIP_ALWAYS = {'word_game', 'word_grid', 'football'}     # the prompt the player shows the first time these are seen
-OK_PHASES = {'ready', 'tutorial', 'score', 'ended', 'goal', 'look', 'shown', 'bad'}  # a mini-game's screens a press goes on from
 
 
 class Playtest:
@@ -77,47 +73,9 @@ class Playtest:
         return result
 
     def minigame(self, raw):
-        """The open mini-game or cutscene as a player would read it: its score, time left, round and what it waits for."""
-        session = self.debugger.session
-        name = raw['action']
-        arena = session.engine.nr_arena
-        if name in ARENA | {'arena_entrance', 'arena_exit'} and arena is not None:
-            # New Rules' arena: its keys (nr_arena.KEY_BITS: -5 OK, -1 to -4 the joystick, 48-57 the number keys); after
-            # time's up, its score waits for OK.
-            waits = ('time' if name in ('arena_entrance', 'arena_exit') else 'ok (key -5) for the score' if arena.time_up == 2
-                     else 'keys' if name == 'arena_frame' else 'answer' if name == 'arena_menu' else 'continue')
-            return dict(kind='nr_arena', time_up=arena.time_up, labels=[l for l in arena.labels if l], waits_for=waits)
-        game = raw['minigames'].get(name)
-        if game is None: return None
-        live = getattr(session.engine, name)
-        summary = dict(kind=name, started=not session.minigame_unstarted if name != 'cutscene' else live.elapsed_ms > 0)
-        for key in ('phase', 'score', 'points', 'round', 'target', 'level', 'right', 'wrong', 'found', 'remaining'):
-            if key in game: summary[key] = game[key]
-        result = getattr(live, 'result', None)
-        if isinstance(result, int) and not isinstance(result, bool): summary['result'] = result
-        if name == 'x360_slot':
-            from exp_runtime.x360_games import DURATION_MS
-            summary['time_left_ms'] = DURATION_MS - live.clock_ms
-        elif name in CELL_GAMES: summary['time_left_ms'] = live.clock_ms
-        elif name in ('x360_puzzle', 'x360_diss', 'x360_battle'): summary['time_left_ms'] = live.total_time * 1000
-        elif name == 'cutscene':
-            summary.update(elapsed_ms=live.elapsed_ms, skip_ms=live.skip_ms, hold_ms=live.hold_ms, held=live.held)
-        phase = getattr(live, 'phase', None)
-        if name == 'cutscene':
-            summary['waits_for'] = 'press' if live.held else 'time or press'
-        elif self.skippable():
-            summary['waits_for'] = 'skip prompt or go-ahead'
-        elif name in CELL_GAMES:
-            # '11's tutorial screens take an OK (a press with no cell); its rounds take cells.
-            summary['waits_for'] = ('cell' if phase == 'play' else 'press' if live.tutorial or phase in OK_PHASES
-                                    else 'time')
-        elif phase in OK_PHASES or name == 'brew_catch' and not live.started:
-            summary['waits_for'] = 'press'      # a go-ahead, a tutorial page or the score screen's OK
-        elif phase in ('running', None):
-            summary['waits_for'] = 'press'
-        else:
-            summary['waits_for'] = 'time'       # an opening, countdown, time-up or closing
-        return summary
+        """The open mini-game or cutscene as a player would read it: its score, time left, round and what it waits for
+        (exp_runtime.minigame_report, which the app's test channel reads too)."""
+        return describe_minigame(self.debugger.session, skippable=raw['action'] is not None and self.skippable())
 
     def calendar(self):
         """The running calendar as a player would read it: its date, the clock and today's events (with whether each has run)."""

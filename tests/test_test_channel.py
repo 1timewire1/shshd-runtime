@@ -88,7 +88,7 @@ class TestChannelTests(unittest.TestCase):
                                 windows=windows, variables=lambda: {})
         channel = self.module.Commands(None, SimpleNamespace(shell=shell))
         self.assertEqual(channel._window_words(channel._window()),
-                         dict(title='Play with sound?', text='', buttons=['No', 'Yes'], ids=['25', '24']))
+                         dict(source='menu', title='Play with sound?', text='', buttons=['No', 'Yes'], ids=['25', '24']))
         with mock.patch.object(channel, '_idle', return_value=dict(ok=True)):
             self.assertTrue(channel.do_window('no')['ok'])
             self.assertTrue(channel.do_window('Yes')['ok'])
@@ -175,7 +175,7 @@ class TestChannelTests(unittest.TestCase):
         from exp_runtime.desktop_episode_list_hd import CHOICE_ACT, EpisodeChoice
         choosing = EpisodeChoice('Mark as Finished', 'Save', {'aaaaaaaa1', 'bbbbbbbb2'}, act_when_empty=True)
         commands = []
-        app = SimpleNamespace(picker=SimpleNamespace(choosing=choosing), picker_command=commands.append,
+        app = SimpleNamespace(screen='picker', picker=SimpleNamespace(choosing=choosing), picker_command=commands.append,
                               library=SimpleNamespace(episodes=[dict(id='aaaaaaaa1', titles=['Easter Egg Hunt']),
                                                                 dict(id='bbbbbbbb2', titles=['Football Star']),
                                                                 dict(id='cccccccc3', titles=['Not Listed'])]))

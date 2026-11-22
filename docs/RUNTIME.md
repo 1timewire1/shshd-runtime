@@ -430,6 +430,37 @@ working set, Linux's and Android's VmRSS/VmHWM, iOS's phys_footprint, the figure
 Python's and the host's drawing time). `open` waits for the requested story itself, so opening one from inside another
 no longer replies with the old one's screen.
 
+Mini-games run by command too (owner, 2026-11-21). `state` adds `minigame` when one is open: the same report the
+Creator's playtests give (`minigame_report.py`: kind, score, time left, phase and `waits_for`); a Claire Hart round
+also lists its names (slot, name, object, found), the count, score, multiplier, clock, misclicks and lock, the hint and
+each Power-Up's uses left, the markers shown and `view` (zoom and centre). `play press [VALUE]` is the player's press:
+the go-ahead or the game's button, a cell for SHS '11's Memory and Reflex, a key code (`nr_arena.KEY_BITS`) or menu pick
+on New Rules' arena. In a round, `play find NAME|SLOT` taps a pixel of that listed object where it shows (the view
+centres on it first if it's off screen), `play miss` taps where nothing is, `play hint` taps the hint orb,
+`play powerup focus|locator|clairvoyance|time_warp` a Power-Up's segment, `play pick SLOT` a listed name (the Psychic
+Locator's choice) and `play continue` the Level Summary's Continue; `pinch` in a round zooms it about its centre. All
+are real pointer events through the round's own hit tests, refused while a skip prompt is up or what's asked isn't
+there to tap (a name not listed); a spent Power-Up or an unready hint is tapped as a player would, and the round
+ignores it (the reply's `minigame` shows nothing changed).
+
+Everything else a player can reach runs by command too (owner, 2026-11-21: the channel should see and drive all of it).
+`state`'s `window` is the window on top, whichever drew it: a story's own ("Exit Game?" from a Faceplace link, the
+Decision Tree's "Locked", Connection Error), the app's message card ("Added 3 episodes.") and Update Available, the
+episode picker's info card and Restore answer, the chooser's Options' question, or the menus' windows; `window` presses
+any of them. In a story `state` also gives the pause menu's `page`, a name the game turned down (`input_error`), the look
+picker's portraits (`picker`), the toast only while it shows, and `panels` where an episode has a Decision Tree or
+Faceplace wall (beside the game or over the screen, the corner button, the Faceplace alert, the warp lock, the posts).
+`panels open|close` opens or closes them as Tab does; `tree` lists the tree's scenes (serial, label, current, which a
+warp reaches) and `tree warp SERIAL|LABEL`, `tree rewind` and `tree forward` tap them through the tree's own handling
+(`Desktop._tree_target`), the panels open as a player's would be; `wall` lists the posts and `wall link N` taps one's
+link (`Desktop._wall_link`). Help & About's list and its text pages read through `rows` (a text page's title, text and
+links). `picker` lists the episode picker's rows and tiles and taps a tile, the New Game / Continue popup's buttons, an
+info button, Restore or Back. The game chooser (`game chooser`) takes `options`, `rows`, `press` and `window` as the main
+menu's Options do, and its Episodes lists `ticks`, `pick` and `act`. Screens outside a story and the HD menus (the
+chooser, Setup's Open Library, Bulk Import, the file browser, the menus of a game without HD art) list their buttons with
+`buttons` and take `button WORDS` (a browser's `button file NAME` reaches files scrolled out of view); `type` fills their
+fields, and `key NAME MS` holds a key.
+
 Sync Devices runs by command too (owner, 2026-11-19: the device passes drove it by taps, screenshots and coordinates):
 `sync receive` and `sync send [shs|cod|both] [nobackup]` open Data Management's Sync Devices where a player reaches it
 (the open game's Options over its main menu, or the chooser's) and start Receive, or Send with every switch on and Find

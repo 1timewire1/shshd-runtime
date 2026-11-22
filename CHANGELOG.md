@@ -9,6 +9,14 @@
   `SHSTextLayer`: each line wiped in over 0.6 s a text width, the next once its text is out; a tap hurries the rest to
   0.2 s) or **Instant**. With Autoplay Dialogue a page still waits as long as its letters would have taken. Saves are
   version 45 and keep a page's mode; older saves load as Letter by Letter. See docs/MAIN_MENU.md.
+- **The test channel reaches every screen** (brought from the Claire Hart branch for v1.1.1's full check;
+  [RUNTIME.md](docs/RUNTIME.md#test-channel-this-fork)): `window` sees and presses a story's own windows ("Exit Game?",
+  "Locked"), the app's message card and Update Available, the picker's info card and the chooser's questions; `panels`,
+  `tree` (warp, Rewind, Fast Forward) and `wall` (posts, links) for the side panels; `picker` for the episode picker and its
+  New Game / Continue popup; Help's pages and text through `rows`; the game chooser's Options and tick lists (`game
+  chooser`, `ticks`); `buttons` / `button` for the chooser, Setup, the file browser and the menus without HD art; held keys.
+  `state` adds the open mini-game (the Creator's playtest report, now shared as `minigame_report.py`), the look picker's
+  portraits, a refused name, the in-story Options page and the side panels; `play` presses, picks a cell or an arena key.
 
 ### Fixed
 
