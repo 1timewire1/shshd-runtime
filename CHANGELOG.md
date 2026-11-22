@@ -37,6 +37,9 @@
   a phone, a 3:4 window), the tree's "Locked" notice and a wall link's "Exit Game?" were drawn under the panels, and the
   panels took every tap, so nothing seemed to happen until they were closed. The window now draws over them and takes
   the input first.
+- **Backups made in the same second could list in the wrong order** (v1.1.1's Windows CI, 2026-11-22): a backup's
+  `created` stamp was to the second, and Windows' file times tie too, so a restore's "(before restore)" backup could
+  list below the one it was made from. Stamped to the microsecond now.
 - **Test channel:** `set` passes a choice option (Text Animation, Word Grid Controls…) to the open story too, as its
   pause menu does; `state` reports a dialogue page's `reveal` (its Text Animation, complete, letters out); `play` drives
   football (a tap, or a play 0-8), the HD word game (an option) and the word grid (`play cells A B C`), whose reports
