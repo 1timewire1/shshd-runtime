@@ -1855,9 +1855,8 @@ class Commands:
         points = sorted(((px, py) for py in range(0, h, step) for px in range(0, w, step)
                          if pixel_hit(lambda ax, ay: sprite.get_at((ax, ay))[3], w, h, px, py)),
                         key=lambda p: (p[0] - w / 2) ** 2 + (p[1] - h / 2) ** 2)
-        from .desktop_claire_round import TOP_BAR
         wanted = [o for o in game.listed if o not in game.found]
-        top_bar, bar_top = TOP_BAR * renderer.k, renderer.bar_top()
+        top_bar, bar_top = renderer.top_bar_bottom(), renderer.bar_top()
         for recentred in (False, True):
             if recentred:
                 renderer.view.centre_on(left + w / 2, top + h / 2)    # (as the hint's marker brings an object into view)
@@ -1900,8 +1899,7 @@ class Commands:
         if verb == 'miss':
             # The emptiest point of the play area: where no object's sprite is under the tap.
             width = renderer.canvas.get_width()
-            from .desktop_claire_round import TOP_BAR
-            for y in range(round(TOP_BAR * renderer.k + 10), round(renderer.bar_top() - 10), 23):
+            for y in range(round(renderer.top_bar_bottom() + 10), round(renderer.bar_top() - 10), 23):
                 for x in range(10, width - 10, 37):
                     if renderer.hit(round_, x, y) == ('scene', []):
                         return self._claire_tap(x, y)

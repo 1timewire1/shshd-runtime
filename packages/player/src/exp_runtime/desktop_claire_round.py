@@ -22,6 +22,7 @@ CHC, ROMIC, ROMIC_BOLD = 'chc', 28004, 28005
 PILL, PILL_PRESSED = 29106, 29107          # chc's Play Now button (Claire Hart Dialogue's Continue): the summary's Continue
 DESIGN_WIDTH = 800
 TOP_BAR, BOTTOM_BAR = 41, 131              # cmp_UIbar_top, cmp_UIbar_bottom: Classic's own design-size bars
+BAR_LEFT, BAR_RIGHT = 95, 145              # the bottom bar's menu socket and wheel socket, from either end (R7)
 HI_RES = 1 / 1.5625                        # the HUD's large pieces (ui-top-combobar...) to design units
 SEGMENT_SCALE = 0.576
 SEGMENTS = {cr.CLAIRVOYANCE: ('extraobjs', (690, 6)), cr.FOCUS: ('zoom', (755, 6)), cr.TIME_WARP: ('time', (662, 37)),
@@ -35,7 +36,7 @@ LIST_CENTRE = (382, 89)                    # the six names' node, from the botto
 LABELS = ((-175, 5), (-175, -15), (0, 5), (0, -15), (175, 17), (175, -3))      # activeobjectlist.labelPositions (y up)
 FOUND_LINE = (287, 51)
 COMBO_SLOT = (21, 6, 182, 23)              # the combo bar in the top bar: x, y, width, height
-NAME_PLATE, SCORE_AT, STAR_AT = (400, 19), (651, 19), (579, 19)
+NAME_PLATE, SCORE_AT = (400, 19), (651, 19)     # (the score's star is the top bar art's own: R7 dropped a second)
 MENU_AT = (25, 91)
 TEXT, NAME_TEXT, LIST_TEXT, BLUE_TEXT = (110, 50, 20), (110, 50, 20), (239, 236, 226), (18, 224, 188)
 SCORE_TEXT, VALUE_TEXT = (255, 255, 255), (255, 236, 90)
@@ -236,12 +237,56 @@ class ClaireRoundRenderer:
         """Canvas pixels a design unit."""
         return self.canvas.get_width() / DESIGN_WIDTH
 
+    # Taller frames (rounds plan R7, the owner's B, 2026-11-21): Classic's HUD, drawn for 800 x 600, would shrink with the
+    # width. From 3:4 (Classic's size) to 20:9 and taller it grows: the bottom bar to TALL_BAR times its height (its menu
+    # and wheel sockets scaled with it, its middle stretched across what's left of the width), the names and count and
+    # the top bar to TALL_TEXT, the Level Summary from Classic's 57.5% of the width to TALL_SUMMARY.
+    TALL_BAR, TALL_TEXT, TALL_SUMMARY = 1.45, 1.3, 0.88
+    top_pad = 0                            # canvas pixels of the top under a phone's status bar (Desktop._sync_story_scale)
+
+    def tallness(self):
+        """0 at 3:4 (or wider) to 1 at 20:9 (or taller)."""
+        width, height = self.canvas.get_size()
+        return clamp((height / width - 4 / 3) / (20 / 9 - 4 / 3))
+
+    def grown(self, most):
+        return 1 + (most - 1) * self.tallness()
+
+    @property
+    def kb(self):
+        """The bottom bar's pieces (its sockets, the menu, the wheel and orb): canvas pixels a design unit."""
+        return self.k * self.grown(self.TALL_BAR)
+
+    @property
+    def kt(self):
+        """The top bar's height and the HUD's text (the names, the count, the plate, the score)."""
+        return self.k * self.grown(self.TALL_TEXT)
+
+    def bar_slices(self):
+        """The bottom bar drawn in three: (its menu socket's width, its middle's, its wheel socket's), canvas pixels."""
+        left, right = BAR_LEFT * self.kb, BAR_RIGHT * self.kb
+        return left, self.canvas.get_width() - left - right, right
+
     def bar_top(self):
-        return self.canvas.get_height() - BOTTOM_BAR * self.k
+        return self.canvas.get_height() - BOTTOM_BAR * self.kb
+
+    def top_bar_bottom(self):
+        """Where the top bar ends: below a phone's status bar, at the grown height."""
+        return self.top_pad + TOP_BAR * self.kt
 
     def design(self, x, y, bottom=False):
-        """A design point (from the top bar's top, or the bottom bar's) in canvas pixels."""
-        return x * self.k, (self.bar_top() if bottom else 0) + y * self.k
+        """A design point (from the top bar's top, or the bottom bar's) in canvas pixels. On the bottom bar, a point in a
+        socket keeps to its corner and one in the middle stretches with it (bar_slices)."""
+        if not bottom:
+            return x * self.k, self.top_pad + y * self.kt
+        left, middle, _ = self.bar_slices()
+        if x < BAR_LEFT:
+            px = x * self.kb
+        elif x >= DESIGN_WIDTH - BAR_RIGHT:
+            px = self.canvas.get_width() - (DESIGN_WIDTH - x) * self.kb
+        else:
+            px = left + (x - BAR_LEFT) / (DESIGN_WIDTH - BAR_LEFT - BAR_RIGHT) * middle
+        return px, self.bar_top() + y * self.kb
 
     def scaled(self, surface, factor):
         size = (max(1, round(surface.get_width() * factor)), max(1, round(surface.get_height() * factor)))
@@ -261,13 +306,13 @@ class ClaireRoundRenderer:
     def arrows(self):
         """The two edge arrows' rectangles (left, right), at the scene's middle height between the bars."""
         w, h = ARROW_SIZE[0] * self.k * 800 / 768, ARROW_SIZE[1] * self.k * 800 / 768
-        middle = (TOP_BAR * self.k + self.bar_top()) / 2
+        middle = (self.top_bar_bottom() + self.bar_top()) / 2
         return (pygame.Rect(0, round(middle - h / 2), round(w), round(h)),
                 pygame.Rect(round(self.canvas.get_width() - w), round(middle - h / 2), round(w), round(h)))
 
     def orb_rect(self):
         cx, cy = self.design(*ORB_CENTRE, bottom=True)
-        r = ORB_DIAMETER * self.k / 2
+        r = ORB_DIAMETER * self.kb / 2
         return pygame.Rect(round(cx - r), round(cy - r), round(2 * r), round(2 * r))
 
     def segment(self, name):
@@ -284,7 +329,7 @@ class ClaireRoundRenderer:
         out = {}
         for powerup, (name, (x, y)) in SEGMENTS.items():
             piece = self.segment(name)
-            w, h = piece.get_width() * SEGMENT_SCALE * self.k, piece.get_height() * SEGMENT_SCALE * self.k
+            w, h = piece.get_width() * SEGMENT_SCALE * self.kb, piece.get_height() * SEGMENT_SCALE * self.kb
             px, py = self.design(x, y, bottom=True)
             out[powerup] = pygame.Rect(round(px), round(py), round(w), round(h))
         return out
@@ -295,7 +340,8 @@ class ClaireRoundRenderer:
 
     def label_rect(self, slot):
         x, y = self.label_point(slot)
-        return pygame.Rect(round(x - 80 * self.k), round(y - 10 * self.k), round(160 * self.k), round(20 * self.k))
+        half = 80 * self.k * self.bar_slices()[1] / ((DESIGN_WIDTH - BAR_LEFT - BAR_RIGHT) * self.k)   # (its column's)
+        return pygame.Rect(round(x - half), round(y - 10 * self.kt), round(2 * half), round(20 * self.kt))
 
     # -- the scene --------------------------------------------------------------------------------------------------------------
     def scene_picture(self, game):
@@ -397,8 +443,9 @@ class ClaireRoundRenderer:
         if game.over:
             self.draw_summary(game)
 
-    def text(self, text, bold, size, colour, centre, outline=None):
-        font = self.font(bold, round(size * self.k))
+    def text(self, text, bold, size, colour, centre, outline=None, scale=None):
+        """`size` in design units, at `scale` canvas pixels a unit (the width's, `k`, unless given: kb, kt, a panel's)."""
+        font = self.font(bold, round(size * (self.k if scale is None else scale)))
         surface = font.render(text, True, colour)
         rect = surface.get_rect(center=(round(centre[0]), round(centre[1])))
         if outline is not None:
@@ -408,35 +455,55 @@ class ClaireRoundRenderer:
         self.canvas.blit(surface, rect)
         return rect
 
+    STRIP_DARK = 235                       # the faded strip's darkness at the screen's top (0-255)
+
     def draw_top(self, game):
-        k = self.k
-        self.canvas.blit(self.scaled(self.hud('cmp_UIbar_top'), k), (0, 0))
+        """The top bar (Classic's: the combo, the scene's name, the score), its height grown in a taller frame (R7) and below
+        a phone's status bar, the strip above it the bar's own colour run up under the status bar and fading darker
+        toward the screen's edge (owner, 2026-11-21). The score's star is the bar art's own (the renderer drew a second,
+        icn_star, beside it)."""
+        k, kt, pad = self.k, self.kt, round(self.top_pad)
+        art = self.hud('cmp_UIbar_top')
+        width = self.canvas.get_width()
+        key = ('top bar', width, round(TOP_BAR * kt), pad)
+        drawn = self._images.get(key)
+        if drawn is None:
+            drawn = pygame.Surface((width, pad + round(TOP_BAR * kt)), pygame.SRCALPHA)
+            drawn.fill((0, 0, 0, 0))
+            if pad:
+                row = art.subsurface((0, 3, art.get_width(), 2))
+                drawn.blit(pygame.transform.smoothscale(row, (width, pad)), (0, 0))
+                shade = pygame.Surface((width, pad), pygame.SRCALPHA)
+                for y in range(pad):
+                    shade.fill((0, 0, 0, round(self.STRIP_DARK * (1 - y / pad) ** 0.8)), (0, y, width, 1))
+                drawn.blit(shade, (0, 0))
+            drawn.blit(pygame.transform.smoothscale(art, (width, round(TOP_BAR * kt))), (0, pad))
+            self._images[key] = drawn
+        self.canvas.blit(drawn, (0, 0))
         x, y, w, h = COMBO_SLOT
         if game.combo > 0:
             bar = self.hud('ui-top-combobarfrozen' if game.time_warp else 'ui-top-combobar')
-            fitted = pygame.transform.smoothscale(bar, (max(1, round(w * k)), max(1, round(h * k))))
+            fitted = pygame.transform.smoothscale(bar, (max(1, round(w * k)), max(1, round(h * kt))))
             shown = max(1, round(w * k * game.combo))
-            self.canvas.blit(fitted, (round(x * k), round(y * k)), pygame.Rect(0, 0, shown, fitted.get_height()))
+            self.canvas.blit(fitted, (round(x * k), round(pad + y * kt)), pygame.Rect(0, 0, shown, fitted.get_height()))
         if game.combo_running:
-            self.text(f'Combo x{game.multiplier}', True, 15, TEXT, self.design(x + w / 2, y + h / 2))
-        self.text(self.spec_name(game), True, 17, NAME_TEXT, self.design(*NAME_PLATE))
-        star = self.scaled(self.hud('icn_star'), 0.6 * k)
-        self.canvas.blit(star, star.get_rect(center=tuple(round(v) for v in self.design(*STAR_AT))))
-        self.text(str(game.score), True, 18, SCORE_TEXT, self.design(*SCORE_AT))
+            self.text(f'Combo x{game.multiplier}', True, 15, TEXT, self.design(x + w / 2, y + h / 2), scale=kt)
+        self.text(self.spec_name(game), True, 17, NAME_TEXT, self.design(*NAME_PLATE), scale=kt)
+        self.text(str(game.score), True, 18, SCORE_TEXT, self.design(*SCORE_AT), scale=kt)
 
     def spec_name(self, game):
         """The scene's name as its plate shows it (the round's own scene name, given by the service; else the folder's)."""
         return getattr(game, 'title', None) or game.scene
 
     def draw_bottom(self, game):
-        k = self.k
+        kb, kt = self.kb, self.kt
         top = self.bar_top()
-        self.canvas.blit(self.scaled(self.hud('cmp_UIbar_bottom'), k), (0, round(top)))
+        self.canvas.blit(self.bottom_bar(), (0, round(top)))
         grow = 1.0
         if self._expanded_at is not None and self.clock - self._expanded_at < COUNT_EXPAND_MS:
             grow = 1 + 0.35 * math.sin(math.pi * (self.clock - self._expanded_at) / COUNT_EXPAND_MS)   # (itemCountExpand)
         self.text(f'{game.found_count}/{game.to_find} Items Found', True, round(16 * grow), TEXT if grow == 1.0 else BLUE_DARK,
-                  self.design(*FOUND_LINE, bottom=True))
+                  self.design(*FOUND_LINE, bottom=True), scale=kt)
         for slot, obj in enumerate(game.slots):
             if obj == cr.NO_OBJECT:
                 continue
@@ -450,17 +517,37 @@ class ClaireRoundRenderer:
                 colour = VALUE_TEXT                                                 # (the Psychic Locator's glow)
             if game.focus_target == obj and (self.clock // 300) % 2:
                 colour = VALUE_TEXT                                                 # (Focus: its name blinks)
-            font = self.font(False, round(17 * k))
+            font = self.font(False, round(17 * kt))
             surface = font.render(name, True, colour)
             surface.set_alpha(alpha)
             x, y = self.label_point(slot)
             self.canvas.blit(surface, surface.get_rect(center=(round(x), round(y))))
-        menu = self.scaled(self.hud('icn_menu'), 0.75 * k)
+        menu = self.scaled(self.hud('icn_menu'), 0.75 * kb)
         self.canvas.blit(menu, menu.get_rect(center=tuple(round(v) for v in self.design(*MENU_AT, bottom=True))))
         self.draw_wheel(game)
 
+    def bottom_bar(self):
+        """The bottom bar's art at this frame: its menu and wheel sockets scaled by kb, its middle stretched between them
+        (bar_slices; at 3:4 Classic's bar as it is). Made once a size."""
+        width = self.canvas.get_width()
+        height = round(BOTTOM_BAR * self.kb)
+        key = ('bottom bar', width, height)
+        found = self._images.get(key)
+        if found is None:
+            art = self.hud('cmp_UIbar_bottom')
+            left, middle, right = self.bar_slices()
+            found = pygame.Surface((width, height), pygame.SRCALPHA)
+            found.fill((0, 0, 0, 0))
+            for x0, x1, at, size in ((0, BAR_LEFT, 0, left), (BAR_LEFT, DESIGN_WIDTH - BAR_RIGHT, left, middle),
+                                     (DESIGN_WIDTH - BAR_RIGHT, DESIGN_WIDTH, left + middle, right)):
+                piece = art.subsurface((x0, 0, x1 - x0, art.get_height()))
+                found.blit(pygame.transform.smoothscale(piece, (max(1, round(at + size) - round(at)), height)),
+                           (round(at), 0))
+            self._images[key] = found
+        return found
+
     def draw_wheel(self, game):
-        k = self.k
+        k = self.kb
         for powerup, rect in self.segment_rects().items():
             name = SEGMENTS[powerup][0]
             piece = self.scaled(self.segment(name), SEGMENT_SCALE * k)
@@ -473,7 +560,7 @@ class ClaireRoundRenderer:
             if left:
                 fx, fy = COUNT_AT[powerup]
                 self.text(str(left), True, 13, VALUE_TEXT, (rect.x + fx * rect.width, rect.y + fy * rect.height),
-                          outline=(60, 40, 0))
+                          outline=(60, 40, 0), scale=k)
         orb = self.orb_rect()
         back = self.scaled(self.hud('hint_empty_back'), orb.width / 84)
         self.canvas.blit(back, back.get_rect(center=orb.center))
@@ -488,7 +575,8 @@ class ClaireRoundRenderer:
         self.canvas.blit(fill, fill.get_rect(center=orb.center))
         glass = self.scaled(self.hud('hint_glass_reflection'), orb.width / 84)
         self.canvas.blit(glass, glass.get_rect(center=orb.center))
-        self.text('HINT', True, 22, (226, 255, 200) if game.hint_ready else (150, 170, 150), orb.center, outline=(20, 110, 40))
+        self.text('HINT', True, 22, (226, 255, 200) if game.hint_ready else (150, 170, 150), orb.center, outline=(20, 110, 40),
+                  scale=k)
 
     def green_fill(self, number):
         """The orb's fill: vfx_HintFill's frames are pink smoke, which Classic tints green (its orb is green glass, UI-FULL)."""
@@ -683,22 +771,31 @@ class ClaireRoundRenderer:
             cx, cy = self.view.to_canvas(x + w / 2, y + h / 2)
             self.canvas.blit(shown, shown.get_rect(center=(round(cx), round(cy))))
 
+    @property
+    def ku(self):
+        """The centred panels' (the Level Summary's, "Clicking Too Fast"'s) canvas pixels a design unit: the width's at 3:4
+        (the summary 460 of Classic's 800), growing to TALL_SUMMARY of the width at 20:9 (R7)."""
+        share = 460 / DESIGN_WIDTH
+        return self.canvas.get_width() * (share + (self.TALL_SUMMARY - share) * self.tallness()) / 460
+
     def draw_spam_popup(self):
-        panel = self.scaled(self.hud('panel_background'), 0.62 * self.k)
+        u = self.ku
+        panel = self.scaled(self.hud('panel_background'), 0.62 * u)
         rect = panel.get_rect(center=(self.canvas.get_width() // 2, self.canvas.get_height() // 2))
         self.canvas.blit(panel, rect)
-        self.text('Clicking Too Fast', True, 24, TEXT, (rect.centerx, rect.y + 24 * self.k))
-        self.text("Claire can't focus with all", False, 19, LIST_TEXT, (rect.centerx, rect.centery))
-        self.text('those clicks happening!', False, 19, LIST_TEXT, (rect.centerx, rect.centery + 26 * self.k))
+        self.text('Clicking Too Fast', True, 24, TEXT, (rect.centerx, rect.y + 24 * u), scale=u)
+        self.text("Claire can't focus with all", False, 19, LIST_TEXT, (rect.centerx, rect.centery), scale=u)
+        self.text('those clicks happening!', False, 19, LIST_TEXT, (rect.centerx, rect.centery + 26 * u), scale=u)
 
     def summary_rects(self):
         panel = self.hud('panel_summary')
-        scale = 460 / 372 * self.k
+        u = self.ku
+        scale = 460 / 372 * u
         size = (round(panel.get_width() * scale), round(panel.get_height() * scale))
         rect = pygame.Rect(0, 0, *size)
         rect.center = (self.canvas.get_width() // 2, round(self.canvas.get_height() * 0.45))
-        button = pygame.Rect(0, 0, round(210 * self.k), round(57 * self.k))
-        button.center = (rect.centerx, round(rect.bottom - 32 * self.k * 460 / 372))
+        button = pygame.Rect(0, 0, round(210 * u), round(57 * u))
+        button.center = (rect.centerx, round(rect.bottom - 32 * u * 460 / 372))
         return rect, scale, button
 
     def draw_summary(self, game):
@@ -709,8 +806,8 @@ class ClaireRoundRenderer:
         self.canvas.blit(self.scaled(self.hud('panel_summary'), scale), rect)
         s = self.summary_values(game)
         u = rect.width / 460                                  # chc_07's panel, 460 wide in its 800 x 600
-        self.text('Level Summary', True, 27, TEXT, (rect.centerx, rect.y + 28 * u))
-        self.text('Your Performance', False, 19, LIST_TEXT, (rect.centerx, rect.y + 84 * u))
+        self.text('Level Summary', True, 27, TEXT, (rect.centerx, rect.y + 28 * u), scale=u)
+        self.text('Your Performance', False, 19, LIST_TEXT, (rect.centerx, rect.y + 84 * u), scale=u)
         star = self.hud('STAR')
         size = round(40 * u)
         whole = self.scaled(star, size / star.get_width())
@@ -726,14 +823,14 @@ class ClaireRoundRenderer:
         rows = (('Level Score', s['score'], 178), ('Time Bonus', s['time_bonus'], 212), ('Skill Bonus', s['skill_bonus'], 246),
                 ('Total Score', s['total'], 306))
         for label, value, y in rows:
-            self.text(label, False, 19, LIST_TEXT, (rect.x + 150 * u, rect.y + y * u))
-            self.text(str(value), True, 19, VALUE_TEXT, (rect.x + 350 * u, rect.y + y * u))
+            self.text(label, False, 19, LIST_TEXT, (rect.x + 150 * u, rect.y + y * u), scale=u)
+            self.text(str(value), True, 19, VALUE_TEXT, (rect.x + 350 * u, rect.y + y * u), scale=u)
         pygame.draw.line(self.canvas, (90, 220, 200), (rect.x + 22 * u, rect.y + 278 * u), (rect.right - 22 * u, rect.y + 278 * u),
                          max(1, round(2 * u)))
         pill = self.image(('chc', PILL_PRESSED if self.pressed == 'continue' else PILL),
                           lambda: self.addon(CHC, PILL_PRESSED if self.pressed == 'continue' else PILL))
         self.canvas.blit(pygame.transform.smoothscale(pill, button.size), button)
-        self.text('Continue', True, 24, (255, 251, 236), button.center, outline=(20, 70, 30))
+        self.text('Continue', True, 24, (255, 251, 236), button.center, outline=(20, 70, 30), scale=u)
 
     def summary_values(self, game):
         return game.summary()
@@ -764,7 +861,7 @@ class ClaireRoundRenderer:
         for side, rect in zip((-1, 1), self.arrows()):
             if rect.collidepoint(x, y) and self.arrow_shown(side):
                 return ('arrow', side)
-        if y >= self.bar_top() + 20 * self.k or y < TOP_BAR * self.k:
+        if y >= self.bar_top() + 20 * self.kb or y < self.top_bar_bottom():
             if self.orb_rect().collidepoint(x, y):
                 return ('hint',)
             for powerup, rect in self.segment_rects().items():
@@ -774,7 +871,7 @@ class ClaireRoundRenderer:
                 if self.label_rect(slot).collidepoint(x, y):
                     return ('label', slot)
             menu = self.design(*MENU_AT, bottom=True)
-            if math.hypot(x - menu[0], y - menu[1]) < 40 * self.k:
+            if math.hypot(x - menu[0], y - menu[1]) < 40 * self.kb:
                 return ('menu',)
             return None
         return ('scene', self.objects_at(game, x, y))

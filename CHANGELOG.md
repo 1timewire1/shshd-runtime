@@ -116,6 +116,11 @@
   are read and drawn ahead a few milliseconds a frame while its prompt shows (`ClaireRoundRenderer.preload_steps`); and
   Cause of Death's HD dialogue and choice skins, derived from SHS HD's in pure Python at every start (the 1.8 s: any CoD
   story's first choice paid it), are kept in the library's `derived` folder once made, and made at launch on a thread.
+- **Claire Hart rounds on taller phones** (rounds plan R7, the owner's choice, 2026-11-21): the top bar now sits below a
+  phone's status bar, the bar's colour run up under it and fading darker toward the screen's edge; in frames taller than
+  3:4 the HUD grows toward 20:9 (the bottom bar 1.45x, its menu and wheel sockets with it and its middle stretched; the
+  top bar, names and count 1.3x; the Level Summary to 88% of the width), and taps follow. At 3:4 it's Classic's as
+  before. The score showed two stars (the bar art's and a second the renderer drew): one now.
 
 ## 1.1.0 (shshd-runtime)
 

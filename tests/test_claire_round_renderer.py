@@ -146,6 +146,42 @@ class RendererTests(unittest.TestCase):
         r.draw_game(game, 16)                                              # the Level Summary
         self.assertEqual(r.hit(game, *r.summary_rects()[2].center), ('continue',))
 
+    def test_a_taller_frame_grows_the_hud_and_every_piece_still_takes_its_tap(self):
+        """Rounds plan R7 (owner, 2026-11-21, B): Classic's HUD as it was at 3:4; at 20:9 the bottom bar, the wheel, the
+        names and the summary grow, the top bar sits below a phone's status bar, and taps find each piece where it's drawn."""
+        from exp_runtime.desktop_claire_round import BOTTOM_BAR, TOP_BAR
+        r, game = self.renderer, self.game
+        r.frame_units = (384, 512)
+        r.draw_game(game, 16)
+        k = r.k
+        self.assertEqual((r.kb, r.kt, r.ku), (k, k, k))                  # (3:4: Classic's sizes, unchanged)
+        self.assertAlmostEqual(r.bar_top(), r.canvas.get_height() - BOTTOM_BAR * k)
+        self.assertAlmostEqual(r.design(400, 50, bottom=True)[0], 400 * k)
+        r.frame_units, r.top_pad = (384, 853), 47
+        r.draw_game(game, 16)
+        self.assertGreater(r.kb, 1.4 * k)
+        self.assertGreater(r.kt, 1.25 * k)
+        self.assertAlmostEqual(r.summary_rects()[0].width / r.canvas.get_width(), 0.88, delta=0.01)    # (Classic's 57.5%)
+        self.assertAlmostEqual(r.top_bar_bottom(), 47 + TOP_BAR * r.kt)
+        self.assertEqual(r.hit(game, 300, 20), None)                       # (the strip under the status bar: no scene tap)
+        self.assertEqual(r.hit(game, *r.orb_rect().center), ('hint',))
+        for powerup, rect in r.segment_rects().items():
+            self.assertEqual(r.hit(game, *rect.center), ('powerup', powerup))
+        for slot in range(len(game.slots)):
+            self.assertEqual(r.hit(game, *r.label_rect(slot).center), ('label', slot))
+        self.assertEqual(r.hit(game, *r.design(25, 91, bottom=True)), ('menu',))
+        self.assertTrue(all(rect.right <= r.canvas.get_width() for rect in r.segment_rects().values()))
+
+    def test_the_score_shows_the_bar_arts_star_only(self):
+        """R7, seen in passing: the top bar's art has the score's star, and the renderer drew a second beside it."""
+        r, game = self.renderer, self.game
+        asked = []
+        hud = r.hud
+        r.hud = lambda name: (asked.append(name), hud(name))[1]
+        r.frame_units = (384, 512)
+        r.draw_game(game, 16)
+        self.assertNotIn('icn_star', asked)
+
     def test_a_preloaded_round_decodes_nothing_on_its_first_frame(self):
         """Owner, 2026-11-21: the round's art read while its skip prompt shows, a piece a step (the g54 held ~200 ms)."""
         from unittest import mock

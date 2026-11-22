@@ -2034,7 +2034,8 @@ class Desktop:
         window_w, window_h = self.usable_size()     # (the frame keeps above a phone's navigation bar)
         scale = min(window_w / width, window_h / tall) if window_w > 0 and window_h > 0 else 1.
         self._top_pad = max(0., self.top_inset * window_h - (window_h - tall * scale) / 2) / scale
-        for game in (getattr(self, 'football_hd', None), getattr(self, 'word_hd', None), getattr(self, 'shs11_hd', None)):
+        for game in (getattr(self, 'football_hd', None), getattr(self, 'word_hd', None), getattr(self, 'shs11_hd', None),
+                     getattr(self, 'claire_round_renderer', None)):     # (a Claire Hart round's top bar too: R7)
             if game is not None:
                 game.top_pad = round(self._top_pad * 768 / width)       # (in its canvas's points)
         from .desktop_nr_arena import NATIVE
