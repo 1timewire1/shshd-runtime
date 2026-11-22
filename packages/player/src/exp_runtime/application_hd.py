@@ -800,9 +800,13 @@ class HdShell:
             self.stack.press(self.data.action(command[1]))
         elif kind == 'pause_open':
             if command[1] == 'privacy':
-                self.stack.queue(self.PRIVACY_MENU)
+                self.open_legal_page()
             else:
                 self.pause.open(command[1])
+        elif kind == 'pause_action' and str(command[1]).startswith('legal:'):
+            # A row of the legal page: the window's own item ("Exit Game?" before the link, as the window had it).
+            self.body_scroll = 0.0
+            self.stack.press(self.data.action(int(command[1][6:])))
         elif kind == 'pause_back':
             if self.pause.back():
                 self.pause_open = False
@@ -971,6 +975,18 @@ class HdShell:
         """Open menu-engine window `menu` with its entrance (it zooms in, as `showInter`'s windows do)."""
         self.stack.queue(menu)
         self.window_ms = 0
+
+    LEGAL_PAGE = 'help:legal'
+
+    def open_legal_page(self):
+        """Help & About's Privacy Policy / EULA / Terms & Conditions: the game's own window (PRIVACY_MENU), its title and
+        items as a page of the menu card, sliding in as Help's other pages do and dressed as they are (the Claire Hart
+        skin too); each row presses the window's item, so its "Exit Game?" and link are as before (owner, 2026-11-22:
+        it was the lone window among the card's pages, unskinned and unslid). Back returns to Help."""
+        windows, menu = self.windows, self.data.menu(self.PRIVACY_MENU)
+        rows = [(f'legal:{action.id}', windows.item_label(action, None))
+                for action in windows.items(self.PRIVACY_MENU) if not action.is_footer_button]
+        self.pause.show_rows(self.LEGAL_PAGE, windows.text_for(menu.title), rows, 'help')
 
     def confirm_new_game(self, title, callback):
         """Ask "Delete Saved Game?" before starting over an episode that has a save."""

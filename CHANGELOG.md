@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- **Help & About's Privacy Policy / EULA / Terms & Conditions is a page of the menu card** (owner, 2026-11-22): it opened
+  the game's own window (SHS HD's menu 16, CoD's 15), the one Help page that didn't slide in and out and, in Cause of
+  Death's Claire Hart skin, the one left in CoD's look. Its title and items are now a page of the card
+  (`HdShell.open_legal_page`), dressed and slid as Help's other pages are; each row presses the window's own item, so
+  its "Exit Game?" and the link are as before, and back returns to Help.
 - **The episode lists ran under a phone's status bar** (owner, g54, 2026-11-22; worst in the Claire Hart branch's skin,
   where the camera hole covered the "On" of Episodes On Demand): Now Airing's and Episodes On Demand's card, and Data
   Management's tick lists, now keep clear of the status and navigation bars as the text pages do
