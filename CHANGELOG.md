@@ -110,6 +110,9 @@
 - **A Claire Hart case closed the app in a frame taller than 3:4** (the g54 at 20:9, 2026-11-21): its frame backdrop's
   strip is at the picture's very top, and lengthening it grew the empty part above by empty rows, so the picture came out
   short (`backdrop_fit.lengthen`). That part now grows from the picture's first row.
+- **A Cause of Death word quiz closed the app with Ask to Skip Mini-Games on** (found 2026-11-21; in v1.1.0): while its
+  skip prompt's outcomes were worked out, Android's loading band read the scene's pan from a stand-in engine that had none.
+  The stand-in now carries it (`Desktop._loading_view`).
 - **Entering a Claire Hart round no longer holds the screen** (Claire Hart plan Stage 5, owner, 2026-11-21): on the g54 a
   round's skip prompt held a frame ~200 ms, and 1.8 s the first time. The rounds spec (2.4 MB) is now parsed once per
   library, while the case opens, not twice at its first round (`ContentLibrary.addon_json`); the round's scene and bars

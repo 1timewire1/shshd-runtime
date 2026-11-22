@@ -1466,6 +1466,14 @@ class Desktop:
         return (action is not None and action.name == 'claire_round' and not self.menu_open and not self.error
                 and self.host_prompt is None and self.claire_round_renderer.view is not None)
 
+    def _loading_view(self, loading):
+        """The stand-in a skip prompt's loading band draws from: the state service 91's band reads. The scene's pan too:
+        Android's band places its background by it (a CoD word quiz's skip prompt closed the app while its outcomes were
+        worked out without it, Ask to Skip on: found 2026-11-21)."""
+        engine = self.session.engine
+        return SimpleNamespace(engine=SimpleNamespace(panel=engine.panel, loading=loading,
+                                                      background_pan=engine.background_pan))
+
     def _warm_claire_rounds(self, session):
         """A Claire Hart case (one needing `chc`) opening with the rounds add-on in: its spec parsed now, behind the opening,
         once for the library (ContentLibrary.addon_json), not at the case's first round (owner, 2026-11-21: ~200 ms a
@@ -2123,7 +2131,7 @@ class Desktop:
             renderer = self.loading_hd if self.loading_hd.available() else self.loading_renderer
             loading = LoadingScreen(blocking=False, elapsed_ms=min(3000, elapsed))
             loading.elapsed_ms = elapsed                    # (its own clock, past service 91's 3 s cap: the runner keeps running)
-            view = SimpleNamespace(engine=SimpleNamespace(panel=self.session.engine.panel, loading=loading))
+            view = self._loading_view(loading)
             buttons = renderer.draw(self.canvas, view) or [((-32, 422, 92, 58), ('menu',))]     # (the gear: the pause menu)
             if getattr(renderer, 'hd_layer', False):
                 self.story_layer = renderer.canvas

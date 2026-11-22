@@ -299,3 +299,21 @@ class BackgroundTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SkipPromptLoadingBandTests(unittest.TestCase):
+    def test_the_bands_stand_in_carries_the_scenes_pan(self):
+        """2026-11-21: a CoD word quiz's skip prompt closed the app while its outcomes were worked out (Ask to Skip on):
+        Android's loading band places its background by the scene's pan, which the band's stand-in engine lacked."""
+        import os
+        os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+        from types import SimpleNamespace
+        from exp_runtime.background import BackgroundPan
+        from exp_runtime.desktop import Desktop
+        from exp_runtime.desktop_dialogue import DialogueRenderer
+        game = Desktop.__new__(Desktop)
+        game.session = SimpleNamespace(engine=SimpleNamespace(panel=object(), background_pan=BackgroundPan()))
+        view = game._loading_view(loading='the band')
+        picture = SimpleNamespace(get_size=lambda: (640, 480))
+        self.assertEqual(DialogueRenderer.background_origin(picture, view.engine)[1], 180)
+        self.assertEqual(view.engine.loading, 'the band')
