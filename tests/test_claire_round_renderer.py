@@ -146,6 +146,26 @@ class RendererTests(unittest.TestCase):
         r.draw_game(game, 16)                                              # the Level Summary
         self.assertEqual(r.hit(game, *r.summary_rects()[2].center), ('continue',))
 
+    def test_a_preloaded_round_decodes_nothing_on_its_first_frame(self):
+        """Owner, 2026-11-21: the round's art read while its skip prompt shows, a piece a step (the g54 held ~200 ms)."""
+        from unittest import mock
+        r, game = self.renderer, self.game
+        steps = list(r.preload_steps(game))
+        self.assertGreater(len(steps), len(self.names))                    # (a step a sprite, and more)
+        real, loads = pygame.image.load, []
+
+        def counted(*args, **kwargs):
+            loads.append(args)
+            return real(*args, **kwargs)
+        with mock.patch.object(pygame.image, 'load', counted):
+            r.draw_game(game, 16)
+        self.assertEqual(loads, [])
+        self.assertIsNotNone(r.view)
+        fresh = type(r)(r.resources)                                       # (without the preload, the first frame reads it all)
+        with mock.patch.object(pygame.image, 'load', counted):
+            fresh.draw_game(game, 16)
+        self.assertGreater(len(loads), len(self.names))
+
 
 if __name__ == '__main__':
     unittest.main()

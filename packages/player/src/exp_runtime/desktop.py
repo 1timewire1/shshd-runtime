@@ -626,6 +626,7 @@ class Desktop:
         self.shs11_reflex_renderer._glyphs = self.shs11_memory_renderer._glyphs
         self.brew_catch_renderer = BrewCatchRenderer(session.resources)
         self.claire_round_renderer = ClaireRoundRenderer(session.resources)
+        self._warm_claire_rounds(session)
         self.x360_leash_renderer = X360LeashRenderer(session.resources)
         self.x360_puzzle_renderer = X360PuzzleRenderer(session.resources)
         self.cutscene_renderer = CutsceneRenderer(session.resources)
@@ -1465,6 +1466,47 @@ class Desktop:
         return (action is not None and action.name == 'claire_round' and not self.menu_open and not self.error
                 and self.host_prompt is None and self.claire_round_renderer.view is not None)
 
+    @staticmethod
+    def _warm_claire_rounds(session):
+        """A Claire Hart case (one needing `chc`) opening with the rounds add-on in: its spec parsed now, behind the opening,
+        once for the library (ContentLibrary.addon_json), not at the case's first round (owner, 2026-11-21: ~200 ms a
+        parse on the g54, and both the engine and the renderer parsed it)."""
+        library = getattr(session.resources, 'library', None)
+        record = getattr(session.resources, 'record', None)
+        if not getattr(session.engine, 'claire_rounds_ready', False) or library is None or record is None:
+            return
+        try:
+            if any(addon == 'chc' for addon, _ in library.episode_requires(record)):
+                library.addon_json('chcrounds', 26000)
+        except (ContentError, OSError, ValueError, AttributeError) as error:
+            logging.warning('Claire Hart rounds spec not read ahead: %s', error)
+
+    CLAIRE_PRELOAD_MS = 6                   # a frame's share of a round's preload while its skip prompt shows
+    CLAIRE_PRELOAD_AFTER_MS = 350           # (after the prompt's own entrance: those frames stay smooth)
+    _claire_preload = None                  # (the round, its preload steps or None once done)
+
+    def _preload_claire(self):
+        """While a round's skip prompt shows: its first frame's art read and drawn ahead (ClaireRoundRenderer.preload_steps),
+        CLAIRE_PRELOAD_MS a frame, so Play opens on a ready scene."""
+        game = self.session.engine.claire_round
+        if game is None or self.choice_renderer.age_ms < self.CLAIRE_PRELOAD_AFTER_MS:
+            return
+        current = self._claire_preload
+        if current is None or current[0] is not game:
+            current = self._claire_preload = (game, self.claire_round_renderer.preload_steps(game))
+        steps = current[1]
+        if steps is None:
+            return
+        end = pygame.time.get_ticks() + self.CLAIRE_PRELOAD_MS
+        try:
+            while pygame.time.get_ticks() < end:
+                next(steps)
+        except StopIteration:
+            self._claire_preload = (game, None)
+        except (ContentError, pygame.error, OSError, ValueError, KeyError, IndexError) as error:
+            logging.warning('Claire Hart round not read ahead: %s', error)     # (its first frame reads it, as before)
+            self._claire_preload = (game, None)
+
     def _claire_sounds(self, renderer):
         """Play the sounds the round's renderer queued (Classic's, from chcrounds)."""
         due, renderer.sounds = renderer.sounds, []
@@ -2195,6 +2237,8 @@ class Desktop:
                 logging.error('Panel rendering stopped: %s', error)
         # The skip prompt (`_minigame_ask`) is drawn as a choice, from a stand-in for the session.
         source = ask['session'] if ask else self._choice_source()
+        if ask and not ask.get('loading') and action is not None and action.name == 'claire_round' and not self.error:
+            self._preload_claire()              # (the round behind it read ahead, a little a frame)
         if (action and (action.name in ('choice', 'word_game') or ask) and not self.error and not closed
                 and not (ask and ask.get('loading'))
                 and hasattr(self.session.resources, 'read_asset')):

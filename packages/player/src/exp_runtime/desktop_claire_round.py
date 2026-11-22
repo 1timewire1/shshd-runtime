@@ -157,8 +157,36 @@ class ClaireRoundRenderer:
 
     def spec(self):
         if self._spec is None:
-            self._spec = json.loads(self.addon(ADDON, SPEC))
+            shared = getattr(self.resources.library, 'addon_json', None)     # (parsed once for the library, the engine's too)
+            self._spec = shared(ADDON, SPEC) if shared is not None else None
+            if self._spec is None:
+                self._spec = json.loads(self.addon(ADDON, SPEC))
         return self._spec
+
+    def preload_steps(self, game):
+        """What the round's first frame reads and draws, a piece at a time (a generator: one piece a step), so the player can
+        spread it over the frames its skip prompt shows (owner, 2026-11-21: entering a round held a frame ~200 ms on the
+        g54, 1.8 s the first time). The scene's base, each sprite still to find, the composed and scaled scene, then both
+        bars once into the canvas (their pieces and text sizes cached). Nothing here changes the round."""
+        entry = self.spec()['scenes'][game.scene]
+        yield
+        self.image(('base', game.scene), lambda: self.addon(ADDON, entry['base']))
+        yield
+        for index, (_, normal, _, _) in enumerate(entry['objects']):
+            if index not in game.found:
+                self.sprite(game.scene, normal[0])
+                yield
+        self.scene_picture(game)
+        yield
+        size = self.canvas_size()
+        if self.canvas is None or self.canvas.get_size() != size:
+            self.canvas = pygame.Surface(size).convert()
+            self._scaled = None
+        self.draw_scene(game)
+        yield
+        self.draw_top(game)
+        yield
+        self.draw_bottom(game)
 
     def image(self, key, data_source):
         found = self._images.get(key)

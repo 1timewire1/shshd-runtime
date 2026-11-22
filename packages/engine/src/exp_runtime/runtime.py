@@ -157,9 +157,13 @@ def claire_round_source(resources):
 
     def source(key):
         if 'spec' not in cache:
-            import json
-            data = read('chcrounds', 26000)
-            cache['spec'] = json.loads(data) if data else None
+            shared = getattr(library, 'addon_json', None)          # (parsed once for the library: the renderer's too)
+            if shared is not None:
+                cache['spec'] = shared('chcrounds', 26000)
+            else:
+                import json
+                data = read('chcrounds', 26000)
+                cache['spec'] = json.loads(data) if data else None
         spec = cache['spec']
         if spec is None:
             return None

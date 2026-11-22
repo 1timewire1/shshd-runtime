@@ -110,6 +110,12 @@
 - **A Claire Hart case closed the app in a frame taller than 3:4** (the g54 at 20:9, 2026-11-21): its frame backdrop's
   strip is at the picture's very top, and lengthening it grew the empty part above by empty rows, so the picture came out
   short (`backdrop_fit.lengthen`). That part now grows from the picture's first row.
+- **Entering a Claire Hart round no longer holds the screen** (Claire Hart plan Stage 5, owner, 2026-11-21): on the g54 a
+  round's skip prompt held a frame ~200 ms, and 1.8 s the first time. The rounds spec (2.4 MB) is now parsed once per
+  library, while the case opens, not twice at its first round (`ContentLibrary.addon_json`); the round's scene and bars
+  are read and drawn ahead a few milliseconds a frame while its prompt shows (`ClaireRoundRenderer.preload_steps`); and
+  Cause of Death's HD dialogue and choice skins, derived from SHS HD's in pure Python at every start (the 1.8 s: any CoD
+  story's first choice paid it), are kept in the library's `derived` folder once made, and made at launch on a thread.
 
 ## 1.1.0 (shshd-runtime)
 

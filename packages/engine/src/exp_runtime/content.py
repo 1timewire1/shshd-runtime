@@ -982,8 +982,61 @@ class ContentLibrary:
         hd = self.shs_hd_resource(155)
         if hd is None:
             return None
-        from .cod.hd_art import derived_common
-        return derived_common(self.android_asset(126), hd)
+        return self._derived(*self._cod_hd_job('common', 126, hd))
+
+    def _cod_hd_job(self, kind, cod_id, hd):
+        """(kind, inputs, compute) of one derived CoD HD pack: CoD's own pack `cod_id` and SHS HD's `hd`, read now."""
+        from .cod.hd_art import derived_common, derived_pack
+        cod = self.android_asset(cod_id)
+        derive = derived_common if kind == 'common' else derived_pack
+        return kind, (cod, hd), lambda: derive(cod, hd)
+
+    def cod_hd_jobs(self):
+        """shshd-runtime: every derived CoD HD pack as (kind, inputs, compute), its inputs read now, so a thread can make
+        them while the launch screens show (application_cod.warm_hd_art) through `_derived`."""
+        if self.game_id != 'cod' or self.shs_hd_art is None:
+            return []
+        from .cod.hd_art import SKIN_PACKS
+        jobs = []
+        hd = self.shs_hd_resource(155)
+        if hd is not None:
+            jobs.append(self._cod_hd_job('common', 126, hd))
+        for resource_id, hd_id in SKIN_PACKS.items():
+            hd = self.shs_hd_resource(hd_id)
+            if hd is not None:
+                jobs.append(self._cod_hd_job(f'skin{resource_id}', resource_id, hd))
+        return jobs
+
+    DERIVED = 'derived'
+
+    def _derived(self, kind, inputs, compute):
+        """shshd-runtime: art derived from the library's own files (Cause of Death's HD skins from SHS HD's, cod/hd_art.py),
+        made once and kept in the library's `derived` folder by a hash of its inputs and the method's version. Made in pure
+        Python, a choice's skin held a CoD story's first choice 1.9 s at every start (the Claire Hart skip prompt, 2026-11-21).
+        A library opened without writing (the Creator's) makes it and keeps it in memory only."""
+        from .cod.hd_art import DERIVE_VERSION
+        digest_ = hashlib.sha256(f'{kind}:{DERIVE_VERSION}'.encode())
+        for part in inputs:
+            digest_.update(hashlib.sha256(part).digest())
+        key = digest_.hexdigest()[:40]
+        held = self.__dict__.setdefault('_derived_art', {})
+        if key in held:
+            return held[key]
+        path = self.directory / self.DERIVED / f'{kind}-{key}.bin'
+        try:
+            data = path.read_bytes()
+        except OSError:
+            data = compute()
+            if self.remember_checks:
+                try:
+                    path.parent.mkdir(exist_ok=True)
+                    staged = path.with_name(f'{path.name}.{threading.get_ident()}.part')   # (the warm-up thread's too)
+                    staged.write_bytes(data)
+                    staged.replace(path)
+                except OSError as error:
+                    logging.warning('Derived art not kept: %s', error)
+        held[key] = data
+        return data
 
     def add_shs_hd_art(self, source: Path) -> bool:
         """Link the SHS HD (iPad) IPA to a CoD library as its HD art source, transactionally (cod/hd_art.py)."""
@@ -1076,10 +1129,10 @@ class ContentLibrary:
             # Only CoD's own verified map, from the SHS HD art source (cod/hd_art.py); nothing by number alone.
             if self.shs_hd_art is None:
                 return None
-            from .cod.hd_art import IDENTICAL, SKIN_PACKS, derived_pack
+            from .cod.hd_art import IDENTICAL, SKIN_PACKS
             if resource_id in SKIN_PACKS:
                 hd = self.shs_hd_resource(SKIN_PACKS[resource_id])
-                return None if hd is None else derived_pack(self.android_asset(resource_id), hd)
+                return None if hd is None else self._derived(*self._cod_hd_job(f'skin{resource_id}', resource_id, hd))
             if resource_id in IDENTICAL:
                 return self.shs_hd_resource(IDENTICAL[resource_id])
             return None
@@ -1180,6 +1233,23 @@ class ContentLibrary:
             return read_file_resource(self._content_path(record, '.exp'), resource_id)
         except (ContentError, OSError):
             return None
+
+    def addon_json(self, addon_id: str, resource_id: int):
+        """shshd-runtime: an addon's JSON resource, parsed once for the library (Claire Hart's rounds spec: 2.4 MB, which the
+        engine and the round's renderer each parsed at a case's first round, ~200 ms a parse on the g54, 2026-11-21), or
+        None. The parsed value is shared: callers must not change it."""
+        record = next((a for a in self.addons if a['addon'] == addon_id), None)
+        if record is None:
+            return None
+        cache = self.__dict__.setdefault('_addon_json', {})
+        key = (record['id'], resource_id)
+        if key not in cache:
+            data = self.addon_resource(addon_id, resource_id)
+            try:
+                cache[key] = json.loads(data) if data else None
+            except (ValueError, UnicodeError) as error:
+                raise ContentError(f'{addon_id} resource {resource_id} is not valid JSON: {error}') from error
+        return cache[key]
 
     def addon(self, addon_id: str):
         """shshd-runtime: the imported addon `addon_id` as (its manifest record, its archive), or None. An addon that

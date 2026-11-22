@@ -13,6 +13,9 @@ from functools import lru_cache
 
 from ..ui_assets import ImagePack
 
+# The derived packs' method: raise it when a change here changes their pixels, so libraries remake what they keep
+# (content.ContentLibrary._derived).
+DERIVE_VERSION = 1
 # CoD (= SHS Android) skin pack -> its SHS HD counterpart (content.HD_ASSET_MAP).
 SKIN_PACKS = {204: 247, 220: 263, 236: 279, 252: 295}
 # The portrait mask is byte-identical to SHS Android's 268, so SHS HD's 311 is its HD version as it stands.
