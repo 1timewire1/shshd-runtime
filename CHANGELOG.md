@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased (shshd-runtime)
+
+### Fixed
+
+- **A Cause of Death word quiz closed the app with Ask to Skip Mini-Games on** (found 2026-11-21; in v1.1.0): while its
+  skip prompt's outcomes were worked out, Android's loading band read the scene's pan from a stand-in engine that had none.
+  The stand-in now carries it (`Desktop._loading_view`).
+
 ## 1.1.0 (shshd-runtime)
 
 ### Added
