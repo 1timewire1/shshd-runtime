@@ -134,5 +134,70 @@ class ChWindowTests(unittest.TestCase):
         plain.assert_called_once()
 
 
+class ChChoiceTests(unittest.TestCase):
+    """The choice (and the skip prompt, the quiz) in the skin: CoD's rows and taps, Classic's art."""
+
+    @classmethod
+    def setUpClass(cls):
+        pygame.init()
+        pygame.display.set_mode((1, 1))
+
+    def page(self, timed=False, scored=False):
+        from exp_runtime.hd_choice import COD_GEOMETRY, HdChoicePage, HdRow
+        from exp_runtime.ui_assets import Rect
+        rows = tuple(HdRow(i, i, Rect(23, 150 + 44 * i, 274, 44), None, (35, 160 + 44 * i)) for i in range(3))
+        footer = 150 + 44 * 3
+        return HdChoicePage(theme=0, top=90, header_widget=7, header_height=30, tall_title=False, description_height=30,
+                            rows_top=150, rows_height=132, footer_widget=3, footer_top=footer,
+                            footer_height=60 if timed or scored else 20, title_font='', title=None, title_origin=(0, 0),
+                            description=None, description_origin=(30, 125), description_font='', rows=rows,
+                            portrait=None, portrait_clip=None, max_scroll=0, table=Rect(23, 150, 274, 132),
+                            timer_center=(161, footer + 30) if timed or scored else None, row_colors=((0,) * 4,) * 3,
+                            scored=scored, geometry=COD_GEOMETRY)
+
+    def renderer(self, page, details):
+        from exp_runtime.desktop_choice import ChoiceRenderer
+        resources, _ = a_chc()
+        art = SimpleNamespace(game_id=lambda: 'cod', image=lambda background: None,
+                              background_origin=lambda background, engine: (160, 180))
+        renderer = ChoiceRenderer(resources, SimpleNamespace(), art, scale=2)
+        renderer.cached_page, renderer.cached_details, renderer.age_ms = page, details, 5000
+        return renderer
+
+    def session(self, details, remaining=None, game=None):
+        return SimpleNamespace(pending=SimpleNamespace(details=details), remaining_ms=remaining,
+                               engine=SimpleNamespace(word_game=game, panel=SimpleNamespace(background_id=-1)))
+
+    def test_a_choice_keeps_cods_rows_and_taps_and_lights_the_focused_row(self):
+        details = dict(title='What do you say?', text='Where were you?', options=['Home', 'Out', 'No comment'],
+                       timeout_ms=0)
+        page = self.page()
+        renderer = self.renderer(page, details)
+        _, buttons = renderer.draw_hd(None, self.session(details), page, 0, None, None, False, focus=1)
+        self.assertEqual([command for _, command in buttons], [('choose', 0), ('choose', 1), ('choose', 2), ('menu',)])
+        self.assertEqual([(r.x, r.y, r.w, r.h) for r, _ in buttons[:3]], [(23, 150 + 44 * i, 274, 44) for i in range(3)])
+        self.assertIn(('ch', 'Out', (540, 80), True), renderer._labels)          # (the focused row's label, lit)
+        self.assertIn(('ch', 'Home', (540, 80), False), renderer._labels)
+        self.assertGreater(renderer.canvas.get_at((320, 120 * 2)).a, 200)       # (the panel under the description)
+        self.assertEqual(renderer.overlay.get_at((320, (282 + 30) * 2)).a, 0)   # (no timer on an untimed choice)
+
+    def test_a_timed_choice_runs_the_combo_bar_and_the_quiz_scores_on_the_capsule(self):
+        details = dict(title='Quick!', text='Now.', options=['A', 'B', 'C'], timeout_ms=10000)
+        page = self.page(timed=True)
+        renderer = self.renderer(page, details)
+        renderer.draw_hd(None, self.session(details, remaining=5000), page, 0, None, None, False)
+        bar, _ = renderer.skin_footer(renderer.ch_ui(page), page, False)
+        self.assertGreater(renderer.overlay.get_at(bar.center).a, 200)         # (the bar, outside the menu's fades)
+        game = SimpleNamespace(options=['A', 'B', 'C'], duration_ms=20000, remaining_ms=4000, selected=-1, fly_off_ms=0,
+                               fly_off_row=-1, shown_ms=5000, score=7, effect_ms=500, last_delta=1, HD_EFFECT_MS=1000,
+                               HD_FLY_OFF_MS=500)
+        page = self.page(scored=True)
+        renderer = self.renderer(page, dict(details, timeout_ms=20000))
+        renderer.draw_hd(None, self.session(details, game=game), page, 0, None, None, False)
+        bar, capsule = renderer.skin_footer(renderer.ch_ui(page), page, True)
+        self.assertLess(bar.right, capsule.left)                                # (the bar shortened for the capsule)
+        self.assertGreater(renderer.canvas.get_at(capsule.center).a, 200)
+
+
 if __name__ == '__main__':
     unittest.main()

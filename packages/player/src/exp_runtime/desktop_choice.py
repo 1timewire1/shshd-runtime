@@ -134,7 +134,7 @@ class ChoiceRenderer:
                 page = self.layout.page(details, theme=theme, has_portrait=has_portrait,
                                         text_history=getattr(session, 'bitmap_history', None),
                                         timer_panel=not self.hd_timer())
-            self.cached_page = page
+            self.cached_page, self.cached_details = page, details
             # The key before a density change (set_story_scale): the same choice laid out again, not a new one, keeps
             # its age (2026-11-18: a saved game's 3:4 screenshot at 9:20 drew the choice faded out, and so did the frame after).
             previous = self.cached_key if self.cached_key is not None else self.__dict__.pop('rescaled_key', None)
@@ -498,6 +498,7 @@ class ChoiceRenderer:
         # frame on a phone (more at a narrow frame's 2.4 pixels a unit), most of a frame's budget.
         game = session.engine.word_game if page.scored else None
         timed = page.timer_center is not None and session.remaining_ms is not None
+        ui = self.ch_ui(page)
         rest = None
         # shshd-runtime: a timed menu and the quiz too, while only their timer moves (the wheel and the running man are
         # on the overlay, redrawn alone): the whole panel every frame was about 26 ms of the quiz's frame on a phone
@@ -516,11 +517,11 @@ class ChoiceRenderer:
                     for row in page.rows)
             hints = (tuple(hint.kind for hint in self.hints) if choice_hints and self.hint_key == self.cached_key
                      else None)
-            rest = (id(page), scroll, downs, hints, id(self.wide), k, timed, game is not None and game.score)
+            rest = (id(page), scroll, downs, hints, id(self.wide), k, timed, game is not None and game.score, id(ui))
             if rest == self.__dict__.get('_rest_key') and self.__dict__.get('_rest_buttons') is not None:
                 if game is not None or timed:
                     self.overlay.fill((0, 0, 0, 0))
-                    self._draw_hd_clock(page, session, game)
+                    self._draw_hd_clock(page, session, game, ui)
                 return page, list(self._rest_buttons)
         self._rest_key = self._rest_buttons = None
 
@@ -533,6 +534,9 @@ class ChoiceRenderer:
         self.overlay.fill((0, 0, 0, 0))
         self.pending_background = self.art.image(session.engine.panel.background_id)
         self.pending_background_origin = self.art.background_origin(self.pending_background, session.engine)
+        if ui is not None:
+            buttons = self.draw_skinned(ui, session, page, scroll, pointer, pressed, choice_hints, focus, game)
+            return self._finish_hd(target, session, page, scroll, game, buttons, rest, ui)
         theme = page.theme
         # drawSelf: header, description, its separator, title, description text, footer, side strips.
         tall = (HEADER_NORMAL_ROOT,), (HEADER_TALL_ROOT,)
@@ -594,11 +598,24 @@ class ChoiceRenderer:
             if scroll < page.max_scroll - .5:
                 self.draw_hd_more(table, up=False)
         self.canvas.set_clip(None)
+        return self._finish_hd(target, session, page, scroll, game, buttons, rest, None)
+
+    def _finish_hd(self, target, session, page, scroll, game, buttons, rest, ui):
+        """The menu's portrait, timer, quiz score, footer hint and scroll bar (CoD's, or the Claire Hart skin's), then
+        the frame handed over."""
+        k = self.scale
+
+        def px(rect):
+            return pygame.Rect(round(rect.x * k), round(rect.y * k), round(rect.width * k), round(rect.height * k))
+
         if page.portrait is not None:
-            self.draw_hd_portrait(session, page)
-        self._draw_hd_clock(page, session, game)
+            self.draw_hd_portrait(session, page, ui)
+        self._draw_hd_clock(page, session, game, ui)
         if game is not None:
-            self.draw_hd_quiz(page, game)
+            if ui is not None:
+                self.draw_skin_score(ui, page, game)
+            else:
+                self.draw_hd_quiz(page, game)
         # initActionMenu calls setTimed: the quiz shows the timed hint (CoD IMG_0516-0521).
         timed = session.remaining_ms is not None or page.scored
         hint = 'Touch choice before time runs out' if timed else 'Touch the best choice'
@@ -608,10 +625,10 @@ class ChoiceRenderer:
         if page.max_scroll:
             # A desktop affordance: the table view scrolls, as native, but has no visible indicator here otherwise.
             track = Rect(page.table.x + page.table.width - 4, page.table.y + 2, 3, page.table.height - 4)
-            pygame.draw.rect(self.canvas, (100, 100, 100), px(track))
+            pygame.draw.rect(self.canvas, (100, 100, 100) if ui is None else (8, 30, 27), px(track))
             thumb = max(20, track.height * page.table.height / (page.table.height + page.max_scroll))
             y = track.y + (track.height - thumb) * scroll / page.max_scroll
-            pygame.draw.rect(self.canvas, (225, 225, 225), px(Rect(track.x, y, track.width, thumb)))
+            pygame.draw.rect(self.canvas, (225, 225, 225) if ui is None else ui.GOLD, px(Rect(track.x, y, track.width, thumb)))
         buttons.append((pygame.Rect(-32, 422, 92, 58), ('menu',)))
         if target is not None:
             target.blit(pygame.transform.smoothscale(self.canvas, target.get_size()), (0, 0))
@@ -619,6 +636,165 @@ class ChoiceRenderer:
         if rest is not None:
             self._rest_key, self._rest_buttons = rest, list(buttons)
         return page, buttons
+
+    # -- the Claire Hart skin (desktop_ch_ui.ChUi; CLAIRE_HART_SKIN_PLAN.md, owner 2026-11-21) ------------------------------
+    # CoD's places stay (the panel's, the rows', the table's scrolling and taps, the timer's footer); its art and text
+    # become Classic's: the panel with its title on the tab, dark rows with the gold-edged highlight on the picked one,
+    # Romic Bold, the combo bar running down for a timer, the quiz's score on the teal capsule. In CoD points (one a
+    # column unit): the pieces' art scale, the title / description / option sizes, the bar's height and side margin,
+    # the capsule, and the gap round a row.
+    SKIN_ART, SKIN_TITLE, SKIN_TEXT, SKIN_OPTION = .3, 17, 14, 14
+    SKIN_BAR, SKIN_BAR_MARGIN, SKIN_CAPSULE, SKIN_ROW_GAP = 12, 30, (58, 20), 2
+    SKIN_TEAL = (14, 56, 50)                        # the panel's middle (the "more" fade)
+
+    def ch_ui(self, page):
+        """The Claire Hart skin's pieces for this choice (CoD's panel only), or None: CoD's own look."""
+        if page.geometry.density != 1 or not self.cod():
+            return None
+        from .desktop_ch_ui import ChUi
+        return ChUi.of(self.resources)
+
+    def skin_rect(self, ui, page):
+        """The panel in canvas pixels: CoD's, but its top Classic's header above the description (CoD's header is sized
+        for its large title face, up to two lines: on the tab the title is one line of Romic), and grown at the bottom
+        where Classic's footer band is taller than CoD's footer."""
+        k, g = self.scale, page.geometry
+        s = self.SKIN_ART * k
+        top = (page.top + page.header_height) * k - ui.header_height(s)
+        bottom = max((page.footer_top + page.footer_height) * k, page.footer_top * k + ui.footer_height(s))
+        return pygame.Rect(round(g.panel_x * k), round(top), round(g.panel_width * k), round(bottom - top))
+
+    def skin_footer(self, ui, page, quiz):
+        """(bar, capsule) in canvas pixels: the combo bar across the footer (above Classic's footer band where CoD's
+        timed footer leaves it room, else in the band), the quiz's score capsule at its right."""
+        k = self.scale
+        rect = self.skin_rect(ui, page)
+        band = rect.bottom - ui.footer_height(self.SKIN_ART * k)
+        height = self.SKIN_BAR * k
+        room = band - page.footer_top * k
+        centre = (page.footer_top * k + band) / 2 if room >= height + 4 * k else (band + rect.bottom) / 2
+        margin = self.SKIN_BAR_MARGIN * k
+        cw, ch = (v * k for v in self.SKIN_CAPSULE)
+        width = rect.width - 2 * margin - (cw + 8 * k if quiz else 0)
+        bar = pygame.Rect(round(rect.x + margin), round(centre - height / 2), round(width), round(height))
+        capsule = pygame.Rect(round(rect.right - margin - cw), round(centre - ch / 2), round(cw), round(ch))
+        return bar, capsule
+
+    def draw_skinned(self, ui, session, page, scroll, pointer, pressed, choice_hints, focus, game):
+        """The panel, its title, description and rows in the skin; the taps CoD's."""
+        k, g = self.scale, page.geometry
+        s = self.SKIN_ART * k
+        details = getattr(self, 'cached_details', None) or session.pending.details
+        rect = self.skin_rect(ui, page)
+        title = details.get('title') or ''
+        title_px = self.SKIN_TITLE * k
+        while title_px > 10 * k and ui.font(title_px).size(title)[0] > rect.width - 40 * k:
+            title_px -= k / 2
+        ui.draw_panel(self.canvas, rect, s, title, title_px)
+        # The description: its CoD region (below the header, beside a portrait), centred in it.
+        top = (page.top + page.header_height) * k
+        left, right = rect.x + 14 * k, rect.right - 14 * k
+        if page.portrait is not None:
+            housing = page.portrait
+            if housing.centerx < g.panel_x + g.panel_width / 2:
+                left = max(left, (housing.x + housing.width) * k - 8 * k)
+            else:
+                right = min(right, housing.x * k + 8 * k)
+        height = page.description_height * k
+        text = details.get('text') or ''
+        if text:
+            px, lines = ui.fit(text, self.SKIN_TEXT * k, right - left, height - 6 * k)
+            pitch = ui.pitch(px)
+            y = top + height / 2 - pitch * (len(lines) - 1) / 2
+            for line in lines:
+                if line:
+                    ui.text(self.canvas, line, px, ui.TEXT, (round((left + right) / 2), round(y)))
+                y += pitch
+        # The rows: CoD's cells, scrolled and clipped to its table.
+        buttons = []
+        table = pygame.Rect(round(page.table.x * k), round(page.table.y * k), round(page.table.width * k),
+                            round(page.table.height * k))
+        self.canvas.set_clip(table)
+        options = details.get('options') or ()
+        gap = max(1, round(self.SKIN_ROW_GAP * k))
+        for row in page.rows:
+            cell = Rect(row.rect.x, row.rect.y - scroll, row.rect.width, row.rect.height)
+            area = pygame.Rect(round(cell.x * k), round(cell.y * k), round(cell.width * k), round(cell.height * k))
+            hit = pygame.Rect(cell.x, cell.y, cell.width, cell.height).clip(
+                pygame.Rect(page.table.x, page.table.y, page.table.width, page.table.height))
+            hint = (self.hints[row.index].kind if choice_hints and self.hint_key == self.cached_key
+                    and row.index < len(self.hints) else 'unknown')
+            hint_color = HINT_COLORS.get(hint)
+            if game is not None:
+                down = game.selected == row.index or game.selected < 0 and focus == row.index
+            else:
+                down = (pressed == ('choose', row.index) or focus == row.index
+                        or pointer is not None and hit.collidepoint(pointer))
+            band = area.inflate(-2 * gap, -2 * gap)
+            if band.width > 0 and band.height > 0:
+                self.canvas.blit(ui.row(band.size, s, lit=down), band.topleft)
+                if hint_color:
+                    tint = pygame.Surface(band.size, pygame.SRCALPHA)
+                    tint.fill(tuple(hint_color[:3]) + (70,))
+                    self.canvas.blit(tint, band.topleft)
+                words = options[row.index] if row.index < len(options) else ''
+                self.draw_skin_label(ui, words, band, self.label_home(row, game), g, down)
+            if hit.height > 0:
+                buttons.append((hit, ('choose', row.index)))
+        if page.max_scroll:
+            if scroll > .5:
+                self.draw_hd_more(table, up=True, colour=self.SKIN_TEAL, chevron=ui.GOLD)
+            if scroll < page.max_scroll - .5:
+                self.draw_hd_more(table, up=False, colour=self.SKIN_TEAL, chevron=ui.GOLD)
+        self.canvas.set_clip(None)
+        return buttons
+
+    def draw_skin_label(self, ui, words, band, home, geometry, lit):
+        """An option in Romic Bold, centred on its row (gold on the lit one), flying on as CoD's two labels do."""
+        from .hd_choice import label_offsets
+        k = self.scale
+        key = ('ch', words, band.size, lit)
+        cache = self.__dict__.setdefault('_labels', {})
+        if key not in cache:
+            if len(cache) > 32:
+                cache.clear()
+            label = pygame.Surface(band.size, pygame.SRCALPHA).convert_alpha()
+            label.fill((0, 0, 0, 0))
+            px, lines = ui.fit(words, self.SKIN_OPTION * k, band.width - 16 * k, band.height - 4 * k)
+            pitch = ui.pitch(px)
+            y = band.height / 2 - pitch * (len(lines) - 1) / 2
+            for line in lines:
+                if line:
+                    ui.text(label, line, px, ui.LIT if lit else ui.TEXT, (band.width // 2, round(y)))
+                y += pitch
+            cache[key] = label, faded(label, 128)
+        whole, half = cache[key]
+        offsets = label_offsets(home, geometry)
+        if home >= 1:
+            self.canvas.blit(whole, band.topleft)
+            return
+        for offset in offsets:                    # (two half-alpha labels in flight, as CoD's)
+            self.canvas.blit(half, (round(band.x + offset / geometry.density * k), band.y))
+
+    def draw_skin_score(self, ui, page, game):
+        """The quiz's score on the teal capsule, at the combo bar's right."""
+        _, capsule = self.skin_footer(ui, page, True)
+        self.canvas.blit(ui.capsule(capsule.size, capsule.height / ui.picture(ui.ui['capsule']['picture']).get_height()),
+                         capsule.topleft)
+        ui.text(self.canvas, str(game.score), capsule.height * .72, ui.TEXT, capsule.center)
+
+    def _draw_skin_effect(self, ui, page, game):
+        """The score's "+n" (teal) or "-n" (red) rising from the capsule, timed as CoD's doScoreEffectAnimation."""
+        if not game.effect_ms:
+            return
+        k = self.scale
+        _, capsule = self.skin_footer(ui, page, True)
+        t = 1 - game.effect_ms / game.HD_EFFECT_MS
+        alpha = t / .1 if t < .1 else 1 if t < .9 else (1 - t) / .1
+        delta = game.last_delta
+        y = capsule.y - 8 * k - page.geometry.effect_rise * t * k
+        ui.text(self.overlay, f'+{delta}' if delta >= 0 else str(delta), 14 * k, ui.TEAL if delta >= 0 else ui.WRONG,
+                (capsule.centerx, round(y)), alpha=round(255 * max(0., min(1., alpha))))
 
     def label_home(self, row, game):
         """How far `row`'s labels have flown home (hd_choice.fly_on / fly_off)."""
@@ -667,36 +843,42 @@ class ChoiceRenderer:
 
     MORE_FADE, MORE_CHEVRON = 22, (84, 92, 112)     # the fade's height (units) and the chevron's colour
 
-    def draw_hd_more(self, table, *, up):
-        """shshd-runtime: a choice's rows go on past the table's top (`up`) or bottom: the edge fades to white and a chevron
-        points the way the hidden rows are (owner, 2026-11-09: on a phone the scroll bar alone didn't say so)."""
+    def draw_hd_more(self, table, *, up, colour=(255, 255, 255), chevron=None):
+        """shshd-runtime: a choice's rows go on past the table's top (`up`) or bottom: the edge fades to white (the Claire
+        Hart skin: its panel's teal) and a chevron points the way the hidden rows are (owner, 2026-11-09: on a phone the
+        scroll bar alone didn't say so)."""
         k = self.scale
         height = max(1, round(self.MORE_FADE * k))
-        key = (table.width, height, up)
+        chevron = chevron or self.MORE_CHEVRON
+        key = (table.width, height, up, tuple(colour), tuple(chevron))
         cache = self.__dict__.setdefault('_more', {})
         if key not in cache:
             band = pygame.Surface((table.width, height), pygame.SRCALPHA).convert_alpha()
             for y in range(height):
                 t = (height - y) / height if up else (y + 1) / height
-                band.fill((255, 255, 255, round(230 * t ** 1.5)), (0, y, table.width, 1))
+                band.fill((*colour[:3], round(230 * t ** 1.5)), (0, y, table.width, 1))
             cx, cy, w, h, t = table.width / 2, height * (.38 if up else .62), 9 * k, 4.5 * k, max(2, round(1.6 * k))
             d = -1 if up else 1                     # the chevron's point: up, or down
             points = [(cx - w, cy - d * h / 2), (cx, cy + d * h / 2), (cx + w, cy - d * h / 2),
                       (cx + w, cy - d * h / 2 - d * t), (cx, cy + d * h / 2 - d * t), (cx - w, cy - d * h / 2 - d * t)]
-            pygame.draw.polygon(band, self.MORE_CHEVRON + (255,), points)
+            pygame.draw.polygon(band, tuple(chevron[:3]) + (255,), points)
             cache[key] = band
         self.canvas.blit(cache[key], (table.x, table.y if up else table.bottom - height))
 
-    def draw_hd_portrait(self, session, page):
-        """The menu's SHSPortraitLayer: ring clipped by clipPortraitHousing, disc, then the expression-zero art."""
+    def draw_hd_portrait(self, session, page, ui=None):
+        """The menu's SHSPortraitLayer: ring clipped by clipPortraitHousing, disc, then the expression-zero art. Under the
+        Claire Hart skin (`ui`) the ring and disc are the dialogue skin's, at CoD's sizes."""
         k, m = self.scale, self.margin
         cx, cy = page.portrait.center
-        ring = self.art.ring_frame(k).copy()
+        skin = ui is not None and 'ring' in ui.spec and 'disc' in ui.spec
+        ring = (ui.sized(ui.spec['ring'], (round(128 * k),) * 2) if skin else self.art.ring_frame(k)).copy()
         left, top = round(cx * k) - ring.get_width() // 2, round(cy * k) - ring.get_height() // 2
         pygame.draw.polygon(ring, (0, 0, 0, 0), [(x * k - left, y * k - top) for x, y in page.portrait_clip])
         center = (round(cx * k) + m, round(cy * k))
         self.wide.blit(ring, ring.get_rect(center=center))
         disc = self.art.disc_frame(page.theme, k)
+        if skin:
+            disc = ui.sized(ui.spec['disc'], disc.get_size())
         self.wide.blit(disc, disc.get_rect(center=center))
         details = session.pending.details
         asset = session.engine.character_art_variants[details['character_id']][0]
@@ -730,9 +912,24 @@ class ChoiceRenderer:
                                                                  16)))
         return self._quiz_fonts
 
-    def _draw_hd_clock(self, page, session, game):
-        """What moves on the overlay (outside the menu's fades): the circle timer and, in the quiz, the running man."""
+    def _draw_hd_clock(self, page, session, game, ui=None):
+        """What moves on the overlay (outside the menu's fades): the circle timer and, in the quiz, the running man (the
+        Claire Hart skin: Classic's combo bar running down, and the score's effect)."""
         g = page.geometry
+        if ui is not None:
+            if game is not None:
+                fraction = max(0, game.remaining_ms) / game.duration_ms if game.duration_ms else 0
+            elif page.timer_center is not None and session.remaining_ms is not None:
+                total = session.pending.details.get('timeout_ms') or 0
+                fraction = max(0, session.remaining_ms) / total if total else 0
+            else:
+                return
+            bar, _ = self.skin_footer(ui, page, game is not None)
+            back = ui.picture(ui.ui['timer']['back']).get_height()
+            self.overlay.blit(ui.timer(bar.size, bar.height / back, fraction), bar.topleft)
+            if game is not None:
+                self._draw_skin_effect(ui, page, game)
+            return
         if game is not None:
             self.draw_hd_timer(page.timer_center, max(0, game.remaining_ms), game.duration_ms, g)
             k, d, cod = self.scale, g.density, g.density == 1

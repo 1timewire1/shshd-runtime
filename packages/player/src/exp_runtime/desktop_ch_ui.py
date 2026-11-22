@@ -196,6 +196,15 @@ class ChUi:
             surface.blit(fill, (0, 0), pygame.Rect(0, 0, shown, fill.get_height()))
         return surface
 
+    def sized(self, resource, size):
+        """A chc picture scaled whole to `size` (the dialogue skin's portrait ring and disc)."""
+        key = ('sized', resource, round(size[0]), round(size[1]))
+        found = self._made.get(key)
+        if found is None:
+            found = self._made[key] = pygame.transform.smoothscale(self.picture(resource),
+                                                                   (max(1, round(size[0])), max(1, round(size[1]))))
+        return found
+
     def popup(self, size):
         """Classic's Yes/No popup backing, scaled whole (its sides are curved)."""
         key = ('popup', round(size[0]), round(size[1]))
@@ -222,6 +231,16 @@ class ChUi:
     def pitch(self, px):
         """A line's height for Romic Bold at `px`: its file's own line size is too tight (lines overlapped), so 1.3 x."""
         return max(self.font(px).get_linesize(), round(px * 1.3))
+
+    def fit(self, words, px, width, height, smallest=None):
+        """(px, lines): `words` wrapped to `width` at `px`, made smaller (down to `smallest`, two thirds of `px` by
+        default) until its lines' pitch fits `height`."""
+        smallest = smallest or px * 2 / 3
+        while True:
+            lines = self.wrap(words, px, width)
+            if px <= smallest or self.pitch(px) * len(lines) <= height:
+                return px, lines
+            px = max(smallest, px - max(1, px / 14))
 
     def wrap(self, words, px, width):
         """Lines of `words` at `px` that fit `width` pixels; explicit newlines break."""
