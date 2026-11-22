@@ -124,7 +124,7 @@
   3:4 the HUD grows toward 20:9 (the bottom bar 1.45x, its menu and wheel sockets with it and its middle stretched; the
   top bar, names and count 1.3x; the Level Summary to 88% of the width), and taps follow. At 3:4 it's Classic's as
   before. The score showed two stars (the bar art's and a second the renderer drew): one now.
-- **Claire Hart Dialogue on CoD's other screens, begun** (`CLAIRE_HART_SKIN_PLAN.md`; the owner's choices 2026-11-21:
+- **Claire Hart UI: Claire Hart Dialogue on CoD's other screens** (`CLAIRE_HART_SKIN_PLAN.md`; the owner's choices 2026-11-21:
   Classic's panel with its title tab, dark rows with a gold-edged highlight, Classic's bar as the timer, Romic Bold):
   chc revision 2 adds Classic's UI pieces (29109 on: the panel, its Yes/No popup, the rows, the capsule, the combo bar, the
   close button; `ch_dialogue_skin.py`), the cases still needing revision 1; `desktop_ch_ui.ChUi` draws them for any screen
@@ -138,8 +138,12 @@
   values under their labels, the back and value buttons as the Play Now pill, a gold tick; UIKit's switches and slider
   kept), **text entry** (`InputRenderer._draw_cod_skinned`: the name in the teal capsule, a gold caret; the refused name's
   alert as Classic's popup) and the **portrait picker** (`CodCharacterPickerRenderer`: the panel, the skin's rings, the
-  check button as the pill) follow, their places and taps CoD's. A library
-  with chc revision 1 keeps CoD's own look. The test channel's `state` reports the scene badge (`badge`).
+  check button as the pill) follow, their places and taps CoD's. The setting is now **Claire Hart UI** (owner, 2026-11-22),
+  its All Episodes now **Everywhere**: every episode and the main menu's screens too (`ContentLibrary.menu_skin`): the title
+  screen's buttons as Play Now pills in Romic, Options, Help & About and Data Management (its tick lists, the file browser),
+  Now Airing and Episodes On Demand's list with its New Game / Continue and info cards, the prompts ("Play with sound?",
+  Update Available) and the busy card as Classic's popup (`ChUi.window`); the episode grid and the game chooser keep their
+  looks, and Claire Hart Cases leaves the menus CoD's. A library with chc revision 1 keeps CoD's own look. The test channel's `state` reports the scene badge (`badge`).
 
 ## 1.1.0 (shshd-runtime)
 

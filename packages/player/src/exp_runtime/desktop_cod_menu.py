@@ -141,17 +141,18 @@ class CodMenuWindows(CodButtons, HdMenuWindows):
     def fallback_piece(self, frame):
         return self.art.frame_scaled(16, frame, 2 * S)
 
-    # -- Claire Hart Dialogue (CLAIRE_HART_SKIN_PLAN.md; owner, 2026-11-21): an alert or a notice ("Exit Game?", Connection
-    # Error) as Classic's own Yes/No popup: its curved backing scaled whole, the title in its gold, the message in off-white,
-    # its Play Now pills for the buttons; in frame points. Lists and info pages keep CoD's card.
-    POPUP_W = 640
-    POPUP_TITLE, POPUP_BODY, POPUP_LABEL = 40, 25, 27
-    POPUP_PILL = (230, 64)
-    POPUP_GAP = 260                         # between two buttons' centres
+    # -- Claire Hart UI (CLAIRE_HART_SKIN_PLAN.md; owner, 2026-11-21): an alert or a notice ("Exit Game?", Connection
+    # Error) as Classic's own Yes/No popup (desktop_ch_ui.ChUi.window): its curved backing scaled whole, the title in its
+    # gold, the message in off-white, its Play Now pills for the buttons. Lists and info pages keep CoD's card. With
+    # Everywhere the main menu's prompts (a message, Update Available) take it too (draw_prompt).
+
+    def skin(self):
+        from .desktop_ch_ui import ChUi
+        resources = getattr(self.art, 'resources', None)
+        return ChUi.of(resources) if resources is not None else ChUi.of(self.library)
 
     def draw(self, layer, menu_id, *, variables=None, pressed=None, body_scroll=0):
-        from .desktop_ch_ui import ChUi
-        ui = ChUi.of(self.art.resources) if getattr(self.art, 'resources', None) is not None else None
+        ui = self.skin()
         menu = self.data.menu(menu_id)
         if ui is None or self.kind_of(menu) not in ('alert', 'notice'):
             return super().draw(layer, menu_id, variables=variables, pressed=pressed, body_scroll=body_scroll)
@@ -160,42 +161,21 @@ class CodMenuWindows(CodButtons, HdMenuWindows):
     def draw_popup(self, ui, layer, menu_id, variables, pressed):
         menu, items = self.data.menu(menu_id), self.items(menu_id)
         kind = self.kind_of(menu)
-        spec = ui.ui['popup']
-        art_w, art_h = spec['size']
-        k = self.POPUP_W / art_w                                # frame points an art pixel
         title = self.text_for(menu.title, variables)
         message = self.text_for(menu.message, variables) if menu.message != NO_STRING else ''
-        body_px = self.POPUP_BODY * S
-        lines = ui.wrap(message, body_px, round(self.POPUP_W * 0.74 * S)) if message else []
-        pitch = ui.pitch(body_px) / S
-        room = (spec['text'][1] - spec['text'][0]) * k          # the backing's text band, frame points
-        height = art_h * k + max(0., pitch * len(lines) - room)   # (a long message stretches the backing a little)
-        top = (layer.get_height() / S - height) / 2
-        left = (FRAME[0] - self.POPUP_W) / 2
-        stretch = height / (art_h * k)
-        backing = ui.popup((round(self.POPUP_W * S), round(height * S)))
-        layer.blit(backing, (round(left * S), round(top * S)))
-        ui.text(layer, title, self.POPUP_TITLE * S, ui.GOLD, (round(FRAME[0] / 2 * S), round((top + spec['title'] * k * stretch) * S)))
-        y = top + spec['text'][0] * k * stretch + (room * stretch - pitch * len(lines)) / 2 + pitch / 2
-        for line in lines:
-            if line:
-                ui.text(layer, line, body_px, ui.TEXT, (round(FRAME[0] / 2 * S), round(y * S)))
-            y += pitch
-        self.hits, self.body_rect = [], None
         buttons = list(items) if kind == 'alert' else items[:1]
         labels = [self.item_label(a, variables) for a in buttons] if kind == 'alert' else [self.strings()[154]]
-        centres = ([FRAME[0] / 2] if len(buttons) == 1
-                   else [FRAME[0] / 2 + self.POPUP_GAP * (i - (len(buttons) - 1) / 2) for i in range(len(buttons))])
-        middle = top + spec['buttons'] * k * stretch
-        w, h = self.POPUP_PILL
-        for action, label, centre in zip(buttons, labels, centres):
-            rect = pygame.Rect(round(centre - w / 2), round(middle - h / 2), w, h)
-            state = 'pressed' if pressed == ('item', action.id) else 'idle'
-            piece = ui.pill((w * S, h * S), h * S / 57, state)
-            layer.blit(piece, (rect.x * S, rect.y * S))
-            ui.text(layer, label, self.POPUP_LABEL * S, ui.TEXT, (rect.centerx * S, rect.centery * S + S))
-            self.hits.append((rect, ('item', action.id)))
+        held = next((i for i, a in enumerate(buttons) if pressed == ('item', a.id)), None)
+        rects, top, height, lines = ui.window(layer, S, FRAME[0], title, message, labels, pressed=held)
+        self.hits, self.body_rect = [(rect, ('item', action.id)) for rect, action in zip(rects, buttons)], None
         return dict(menu=menu, kind=kind, title=[title], message=lines, items=items, rows=[], top=top, total=height)
+
+    def draw_prompt(self, canvas, title, text, labels):
+        """The main menu's prompt (a message, Update Available): Classic's popup under Everywhere, else CoD's card."""
+        ui = self.skin()
+        if ui is None:
+            return super().draw_prompt(canvas, title, text, labels)
+        return ui.window(canvas, S, FRAME[0], title, text, labels, dense=True)[0]
 
     def draw_card(self, layer, top, total):
         """CoD's card at HD's size: blue-bordered over the top 112 points and the footer's 86, grey-edged between."""

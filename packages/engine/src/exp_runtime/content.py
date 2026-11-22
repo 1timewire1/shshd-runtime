@@ -1251,6 +1251,25 @@ class ContentLibrary:
                 raise ContentError(f'{addon_id} resource {resource_id} is not valid JSON: {error}') from error
         return cache[key]
 
+    def menu_skin(self):
+        """shshd-runtime (Add-Ons' Claire Hart UI set to Everywhere, `ch_dialogue` 'all'; owner, 2026-11-22): the skin's spec
+        (EpisodeResources.dialogue_skin's) for the screens with no episode, the main menu's; else None. The same dict while
+        the add-on stays, so what is kept for it (desktop_ch_ui.ChUi.of) is kept."""
+        entry = getattr(GAMES.get(self.game_id), 'DIALOGUE_SKIN', None)
+        if entry is None or getattr(self, 'ch_dialogue', 'cases') != 'all':
+            return None
+        try:
+            spec = self.addon_json(entry[0], entry[1])
+        except ContentError as error:
+            logging.warning('The dialogue skin in %s %s is unreadable: %s', entry[0], entry[1], error)
+            return None
+        if not isinstance(spec, dict) or spec.get('version') != 1:
+            return None
+        kept = self.__dict__.get('_menu_skin')
+        if kept is None or kept[0] is not spec:
+            kept = self._menu_skin = spec, dict(spec, addon=entry[0])
+        return kept[1]
+
     def addon(self, addon_id: str):
         """shshd-runtime: the imported addon `addon_id` as (its manifest record, its archive), or None. An addon that
         supersedes it stands in, its record's revision the one it stands in at."""

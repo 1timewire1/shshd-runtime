@@ -808,6 +808,8 @@ class ChooserList:
         from .menu import MenuState
         self.app, self.kind, self.game = app, kind, game
         self.library = ContentLibrary(app.library_path(game), remember_checks=True)
+        # (Claire Hart UI reaches this copy too: its list takes the skin with Everywhere, as the open library's menus do)
+        self.library.ch_dialogue = getattr(getattr(app, 'state', None), 'ch_dialogue', 'cases')
         try:
             state = MenuState(self.library, shared=app.settings)
             self.allowed = app.choice_allowed(kind, self.library)
@@ -1311,10 +1313,20 @@ class AppScreens:
     # -- cards over a screen -----------------------------------------------------------------------------------
 
     def window(self, layer, title, text, labels, commands, *, note=None, spinner=False):
-        """A centred window: `title`, `text` (and a gray `note`), then orange buttons in a row; dims what is under."""
+        """A centred window: `title`, `text` (and a gray `note`), then orange buttons in a row; dims what is under. Over a
+        game whose card wears Claire Hart UI (Everywhere), Classic's popup instead."""
         dim = pygame.Surface(layer.get_size(), pygame.SRCALPHA)
         dim.fill((0, 0, 0, 120))
         layer.blit(dim, (0, 0))
+        game = self.game_card(self.app) if self.app is not None else None
+        ui = game.skin() if game is not None and hasattr(game, 'skin') else None
+        if ui is not None:
+            held = next((i for i, command in enumerate(commands) if self.card.pressed == command), None)
+            words = f'{text}\n\n{note}' if note else text
+            rects, *_ = ui.window(layer, S, FRAME[0], title, words, labels, pressed=held,
+                                  spinner=time.monotonic() * 2.5 if spinner else None, dense=True)
+            self.buttons.extend(zip(rects, commands))
+            return
         card = self.card
         height = 30 + self.text_height(text, 28) + (16 + self.text_height(note, 22) if note else 0) + (60 if spinner else 0) + 20
         foot = FOOT if labels else SHORT_FOOT

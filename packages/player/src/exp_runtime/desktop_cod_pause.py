@@ -107,9 +107,26 @@ class CodPauseMenu(HdPauseMenu):
         return ui
 
     def see_through(self, color):
+        """A fill on the card; in the skin, solid, and a light page's (the file browser's path, a text page's body) the
+        sunken teal."""
         if self.ui is not None:
-            return tuple(color[:3]) + (255,)
+            return (self.SKIN_PAGE if sum(color[:3]) > 600 else tuple(color[:3])) + (255,)
         return HdPauseMenu.see_through(color)
+
+    def rect(self, layer, color, box, radius=0, width=0):
+        """HdPauseMenu.rect; in the skin, the app screens' grey rules (SEPARATOR) the skin's dark one."""
+        from .desktop_pause_hd import SEPARATOR
+        if self.ui is not None and tuple(color[:3]) == SEPARATOR:
+            color = self.SKIN_RULE
+        return super().rect(layer, color, box, radius, width)
+
+    def text(self, layer, text, x, y, points, color=None, *, center=False, font=None):
+        """HdPauseMenu.text; in the skin, dark or blue text (the app screens' BLUE and GRAY) off-white on the teal."""
+        from .desktop_pause_hd import BLUE
+        color = BLUE if color is None else color
+        if self.ui is not None and sum(color[:3]) < 450:
+            color = self.ui.TEXT
+        return super().text(layer, text, x, y, points, color, center=center, font=font)
 
     def title_lines(self, text):
         return [text] if self.ui is not None else super().title_lines(text)
@@ -161,11 +178,7 @@ class CodPauseMenu(HdPauseMenu):
         box = pygame.Rect(PANEL_X + BACK[0], bottom - BACK[1] - 58, 156, 58)
         pill = self.ui.pill((box.width * S, box.height * S), box.height * S / 57, 'pressed' if lit else 'idle')
         layer.blit(pill, (box.x * S, box.y * S))
-        cx, cy = (box.centerx - 4) * S, (box.centery - 1) * S          # Classic's back: a white arrow, pointing left
-        arrow = [(cx - 22 * S, cy), (cx - 4 * S, cy - 15 * S), (cx - 4 * S, cy - 6 * S), (cx + 24 * S, cy - 6 * S),
-                 (cx + 24 * S, cy + 6 * S), (cx - 4 * S, cy + 6 * S), (cx - 4 * S, cy + 15 * S)]
-        pygame.draw.polygon(layer, (0, 0, 0, 110), [(x + 2 * S, y + 3 * S) for x, y in arrow])
-        pygame.draw.polygon(layer, self.ui.TEXT + (255,), arrow)
+        self.ui.arrow(layer, ((box.centerx - 4) * S, (box.centery - 1) * S), S)
         return box
 
     def cycle_button(self, layer, box, label, *, pressed=False):

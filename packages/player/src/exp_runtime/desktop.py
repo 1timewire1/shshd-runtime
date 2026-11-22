@@ -391,7 +391,7 @@ class Desktop:
     ch_portraits = True             # CoD with its portrait addon: the CH "HD Portraits in CoD" switch (set_ch_portraits)
     ch_backdrop = True              # ...and its "Backdrop", in place of SHS HD's collage (_window_backdrop)
     dim_backdrops = True            # Claire Hart's translations: the "Dim Backdrops" switch (backdrop_dim)
-    _ch_dialogue = 'cases'          # Claire Hart Dialogue: Off, Claire Hart Cases or All Episodes (set_ch_dialogue)
+    _ch_dialogue = 'cases'          # Claire Hart UI: Off, Claire Hart Cases or Everywhere (set_ch_dialogue)
     _claire_powerups = 'once'       # Claire Hart's rounds' Power-Ups: Once Each Round, Unlimited or Off
     _arena_minigames = True         # translated episodes: the "Use Translated Mini-Games" switch (arena_minigames)
     x360_tutorial = None            # a tutorial taken in the X360 look: the game's music request it began under

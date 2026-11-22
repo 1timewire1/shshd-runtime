@@ -87,9 +87,11 @@ WORD_GRID_SKIN_LABEL = 'Use Word Grid Skin'     # ...their minigames in the HD w
 CH_PORTRAITS_LABEL = 'HD Portraits in CoD'      # CoD with its portrait addon: Claire Hart's sharper originals
 CH_BACKDROP_LABEL = 'Backdrop'                  # ...and Claire Hart's green backdrop, in place of SHS HD's collage
 DIM_BACKDROPS_LABEL = 'Dim Backdrops'           # Claire Hart's translations: backdrops darkened as the game drew them
-# Claire Hart Dialogue (owner, 2026-11-19): CoD's dialogue in Claire Hart's speech bubbles and Romic, with CoD's ring.
-CH_DIALOGUE_LABEL = 'Claire Hart Dialogue'
-CH_DIALOGUE_NAMES = {'off': 'Off', 'cases': 'Claire Hart Cases', 'all': 'All Episodes'}
+# Claire Hart UI (owner, 2026-11-19 as Claire Hart Dialogue; renamed 2026-11-22 when it took CoD's other screens): CoD's
+# dialogue in Claire Hart's speech bubbles and Romic, its choices, windows and pause menu in Classic's dress. Everywhere ('all')
+# is every episode and the main menu's screens too (but the episode grid); Claire Hart Cases leaves the menus CoD's.
+CH_DIALOGUE_LABEL = 'Claire Hart UI'
+CH_DIALOGUE_NAMES = {'off': 'Off', 'cases': 'Claire Hart Cases', 'all': 'Everywhere'}
 CLAIRE_POWERUPS_LABEL = 'Power-Ups'           # Claire Hart's rounds' four power-ups (R2, owner, 2026-11-20)
 CLAIRE_POWERUPS_NAMES = {'once': 'Once Each Round', 'unlimited': 'Unlimited', 'off': 'Off'}
 ARENA_MINIGAMES_LABEL = 'Use Translated Mini-Games'      # translated episodes' real minigames, else timed choices

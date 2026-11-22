@@ -303,5 +303,77 @@ class ChScreenTests(unittest.TestCase):
         self.assertGreater(renderer.canvas.get_at((240 * U, 366 * U)).a, 200)
 
 
+class ChMenuTests(unittest.TestCase):
+    """Claire Hart UI's Everywhere (owner, 2026-11-22): the main menu's screens find the skin through the library."""
+
+    @classmethod
+    def setUpClass(cls):
+        pygame.init()
+        pygame.display.set_mode((1, 1))
+
+    def library(self, choice='all', ui=True):
+        from exp_runtime.content import ContentLibrary
+        resources, spec = a_chc(ui=ui)
+        library = ContentLibrary.__new__(ContentLibrary)
+        library.game_id, library.ch_dialogue = 'cod', choice
+        library.addon_json = lambda addon, rid: spec if (addon, rid) == ('chc', 29100) else None
+        library.addon_resource = resources.library.addon_resource
+        return library
+
+    def test_only_everywhere_gives_the_menus_the_skin(self):
+        from exp_runtime.desktop_ch_ui import ChUi
+        from exp_runtime.desktop_pause_hd import CH_DIALOGUE_LABEL, CH_DIALOGUE_NAMES
+        self.assertEqual((CH_DIALOGUE_LABEL, CH_DIALOGUE_NAMES['all']), ('Claire Hart UI', 'Everywhere'))
+        library = self.library()
+        self.assertIs(library.menu_skin(), library.menu_skin())         # (the same dict: what is kept for it stays)
+        self.assertEqual(library.menu_skin()['addon'], 'chc')
+        self.assertIsNotNone(ChUi.of(library))                          # (the main menu's art: the library itself)
+        self.assertIsNotNone(ChUi.of(SimpleNamespace(library=library)))     # (the main menu's pause card)
+        for choice in ('cases', 'off'):
+            self.assertIsNone(self.library(choice).menu_skin())
+        self.assertIsNone(ChUi.of(self.library(ui=False)))              # (chc revision 1: CoD's menus)
+
+    def test_the_window_lays_out_its_pills_and_returns_their_taps(self):
+        from exp_runtime.desktop_ch_ui import ChUi
+        from exp_runtime.hd_ui import FRAME, S
+        ui = ChUi.of(self.library())
+        layer = pygame.Surface((FRAME[0] * S, FRAME[1] * S), pygame.SRCALPHA)
+        rects, top, height, lines = ui.window(layer, S, FRAME[0], 'Update Available', 'A new version.', ('No', 'Yes'),
+                                              dense=True)
+        self.assertEqual(len(rects), 2)
+        self.assertLess(rects[0].right, FRAME[0] / 2)
+        self.assertGreater(rects[1].left, FRAME[0] / 2)
+        self.assertTrue(top < rects[0].top < top + height)
+        self.assertEqual(ui.window(layer, S, FRAME[0], 'Busy', 'Reading.', (), spinner=1.0)[0], [])
+
+    def test_the_title_screens_buttons_become_pills_with_romic_labels(self):
+        from exp_runtime.desktop_cod_main import CodMainMenu
+        from exp_runtime.hd_ui import S
+        menu = CodMainMenu.__new__(CodMainMenu)
+        menu.library = self.library()
+        (pill, place), = menu.piece((100, 30))
+        self.assertEqual(place, (0, 0, 200, 60))
+        self.assertEqual(pill.get_size(), (200 * S, 60 * S))
+        self.assertGreater(menu.label('Now Airing', 0).get_width(), 0)
+        menu.library = self.library('cases')
+        with mock.patch('exp_runtime.desktop_main_hd.HdMainMenu.piece', return_value='CoD') as plain:
+            self.assertEqual(menu.piece((100, 30)), 'CoD')
+        plain.assert_called_once()
+
+    def test_the_episode_list_takes_the_skins_colours_and_romics_pitch_and_gives_them_back(self):
+        from exp_runtime.desktop_cod_episodes import CodEpisodeList
+        listing = CodEpisodeList.__new__(CodEpisodeList)
+        listing.library, listing.card = self.library(), None
+        ui = listing.skin()
+        self.assertIsNotNone(ui)
+        self.assertEqual(listing.TEXT_ROW_COLOR, ui.TEXT)
+        self.assertEqual(listing.ICON_RING_COLOR, ui.GOLD)
+        self.assertGreaterEqual(listing.line_height(28), listing.font(28).get_linesize() / 2 - 1)
+        listing.library = self.library('off')
+        self.assertIsNone(listing.skin())
+        self.assertNotIn('TEXT_ROW_COLOR', listing.__dict__)
+        self.assertEqual(listing.TEXT_ROW_COLOR, (0, 0, 0))             # (CoD's black again)
+
+
 if __name__ == '__main__':
     unittest.main()

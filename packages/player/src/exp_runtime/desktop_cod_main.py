@@ -260,13 +260,58 @@ class CodMainMenu(HdMainMenu):
                 self.fonts, self.font_scale = [MenuFont.parse(read_ui(self.library, i)) for i in FONTS], 2
         return self.fonts
 
-    @lru_cache(maxsize=16)
     def label(self, text, variant):
+        ui = self.skin()
+        if ui is not None:
+            return self.skin_label(ui, text, variant)
+        return self.glyph_label(text, variant)
+
+    @lru_cache(maxsize=16)
+    def glyph_label(self, text, variant):
         image = super().label(text, variant)
         factor = getattr(self, 'font_scale', 1)
         if factor == 1:
             return image
         return pygame.transform.smoothscale(image, (image.get_width() * factor, image.get_height() * factor))
+
+    # -- Claire Hart UI's Everywhere (desktop_ch_ui.ChUi.of(library); owner, 2026-11-22) -----------------------------------
+    # The title screen's buttons as Classic's Play Now pill (the gear's too), their labels in Romic Bold, off-white;
+    # the painting, the wedge, the info button, the buttons' places, motion and taps stay CoD's. A busy card (an import,
+    # a Data Management job) is Classic's popup with the dots running.
+    SKIN_LABEL = (25, 21)                       # a label's points: Play/Resume and the rest, the game switch's
+
+    def skin(self):
+        from .desktop_ch_ui import ChUi
+        return ChUi.of(self.library)
+
+    @lru_cache(maxsize=16)
+    def skin_label(self, ui, text, variant):
+        font = ui.font(self.SKIN_LABEL[1 if variant else 0] * S)
+        surface = font.render(text, True, ui.TEXT)
+        plate = pygame.Surface((surface.get_width() + 3 * S, surface.get_height() + 3 * S), pygame.SRCALPHA)
+        shade = font.render(text, True, (0, 0, 0))
+        shade.set_alpha(150)
+        plate.blit(shade, (S, 2 * S))
+        plate.blit(surface, (0, 0))
+        return plate
+
+    def piece(self, size_units, pressed=False):
+        ui = self.skin()
+        if ui is None:
+            return super().piece(size_units, pressed)
+        w, h = size_units[0] * 2, size_units[1] * 2            # (points: the layout's units are half points)
+        pill = ui.pill((round(w * S), round(h * S)), h * S / 57 * .9, 'pressed' if pressed else 'idle')
+        return [(pill, (0, 0, w, h))]
+
+    def draw_busy(self, canvas, title, text):
+        ui = self.skin()
+        if ui is None:
+            return super().draw_busy(canvas, title, text)
+        import time
+        shade = pygame.Surface(canvas.get_size(), pygame.SRCALPHA)
+        shade.fill((0, 0, 0, 110))
+        canvas.blit(shade, (0, 0))
+        ui.window(canvas, S, FRAME[0], title, text, (), spinner=time.monotonic() * 2.5, dense=True)
 
 
 class CodBootScreen(HdUi):

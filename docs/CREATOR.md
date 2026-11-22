@@ -202,7 +202,7 @@ in formatted lines, title cards with the date first, word games of three words, 
 **Choose a look** node then takes up to ten characters; seven to nine use the ten-photo layout's shape, six wrap round the
 chosen one, and three sit either side of it). Those four are SHS's (the BREW games'). A Cause of Death project has one of its
 own: **Narration shows the narrator's portrait**, the narrator (set with a **Player / narrator** node) speaking in a small box
-attached to its portrait, as Claire Hart's cases do; with Claire Hart Dialogue on, in Claire Hart's narrator box and ring.
+attached to its portrait, as Claire Hart's cases do; with Claire Hart UI on, in Claire Hart's narrator box and ring.
 
 Every episode made in the Creator keeps the Creator's own names table, apart from the smartphone stories' and every translation's
 (a name typed in one is the one the others use). It shows in the episode lists as itself, not as the primary's game. Projects using

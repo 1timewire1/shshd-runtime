@@ -29,14 +29,18 @@ class ChUi:
 
     @classmethod
     def of(cls, resources):
-        """The skin's pieces for this episode's screens, or None: the switch off for it, or chc without them (revision 1)."""
+        """The skin's pieces for this episode's screens, or None: the switch off for it, or chc without them (revision 1).
+        Resources with no episode (the main menu's: a bare `library`) take the menus' skin (Claire Hart UI's Everywhere:
+        ContentLibrary.menu_skin)."""
+        episode = getattr(resources, 'dialogue_skin', None)
+        # (the main menu's art holds the library itself as its resources)
+        library = resources if episode is None and hasattr(resources, 'menu_skin') else getattr(resources, 'library', None)
         try:
-            spec = resources.dialogue_skin()
-        except Exception:                                   # (a resources stand-in without the method, a damaged spec)
+            spec = episode() if episode is not None else library.menu_skin()
+        except Exception:                                   # (a stand-in without either, a damaged spec)
             return None
         if not spec or 'ui' not in spec:
             return None
-        library = getattr(resources, 'library', None)
         key = id(spec)
         cache = library.__dict__.setdefault('_ch_ui', {}) if library is not None and hasattr(library, '__dict__') else {}
         found = cache.get(key)
@@ -217,6 +221,66 @@ class ChUi:
         if shown:
             surface.blit(fill, (0, 0), pygame.Rect(0, 0, shown, fill.get_height()))
         return surface
+
+    # Classic's Yes/No popup as a window, in a layer's frame points (HD's 768-point frame): its width, the title / body /
+    # button sizes, a button pill and the gap between two buttons' centres.
+    POPUP_W, POPUP_TITLE, POPUP_BODY, POPUP_LABEL, POPUP_PILL, POPUP_GAP = 640, 40, 25, 27, (230, 64), 260
+
+    def window(self, layer, unit, frame_width, title, message, labels, *, pressed=None, spinner=None, dense=False):
+        """Classic's popup centred on `layer` (`unit` pixels a frame point, the frame `frame_width` points wide): its
+        curved backing scaled whole (stretched a little for a long message), the title in gold, the message off-white,
+        a Play Now pill for each label (`pressed`: the index held down), or three pulsing dots at `spinner` (a phase).
+        `dense`: the glass drawn twice, for a window over a list whose rows would show through it (the main menu's).
+        Returns (the pills' rectangles, the backing's top and height, all in frame points; the message's lines)."""
+        spec = self.ui['popup']
+        art_w, art_h = spec['size']
+        k = self.POPUP_W / art_w                                # frame points an art pixel
+        body_px = self.POPUP_BODY * unit
+        lines = self.wrap(message, body_px, round(self.POPUP_W * 0.74 * unit)) if message else []
+        pitch = self.pitch(body_px) / unit
+        room = (spec['text'][1] - spec['text'][0]) * k          # the backing's text band, frame points
+        height = art_h * k + max(0., pitch * len(lines) - room)
+        top = (layer.get_height() / unit - height) / 2
+        left = (frame_width - self.POPUP_W) / 2
+        stretch = height / (art_h * k)
+        backing = self.popup((round(self.POPUP_W * unit), round(height * unit)))
+        for _ in range(2 if dense else 1):
+            layer.blit(backing, (round(left * unit), round(top * unit)))
+        middle_x = round(frame_width / 2 * unit)
+        self.text(layer, title, self.POPUP_TITLE * unit, self.GOLD, (middle_x, round((top + spec['title'] * k * stretch) * unit)))
+        y = top + spec['text'][0] * k * stretch + (room * stretch - pitch * len(lines)) / 2 + pitch / 2
+        for line in lines:
+            if line:
+                self.text(layer, line, body_px, self.TEXT, (middle_x, round(y * unit)))
+            y += pitch
+        middle = top + spec['buttons'] * k * stretch
+        if spinner is not None:
+            for i in range(3):
+                bright = .35 + .65 * max(0., 1 - abs(((spinner - i * .35) % 3) - 1))
+                colour = tuple(round(c * bright) for c in self.GOLD)
+                pygame.draw.circle(layer, colour, (round((frame_width / 2 - 32 + 32 * i) * unit), round(middle * unit)),
+                                   round(8 * unit))
+        rects = []
+        centres = ([frame_width / 2] if len(labels) == 1
+                   else [frame_width / 2 + self.POPUP_GAP * (i - (len(labels) - 1) / 2) for i in range(len(labels))])
+        w, h = self.POPUP_PILL
+        for index, (label, centre) in enumerate(zip(labels, centres)):
+            rect = pygame.Rect(round(centre - w / 2), round(middle - h / 2), w, h)
+            piece = self.pill((w * unit, h * unit), h * unit / 57, 'pressed' if pressed == index else 'idle')
+            layer.blit(piece, (rect.x * unit, rect.y * unit))
+            self.text(layer, label, self.POPUP_LABEL * unit, self.TEXT, (rect.centerx * unit, rect.centery * unit + unit))
+            rects.append(rect)
+        return rects, top, height, lines
+
+    def arrow(self, target, centre, unit):
+        """Classic's back arrow, white with a soft shadow, pointing left, centred on `centre` (`unit` pixels a point of
+        the 156 x 58 back button)."""
+        cx, cy = centre
+        u = unit
+        shape = [(cx - 22 * u, cy), (cx - 4 * u, cy - 15 * u), (cx - 4 * u, cy - 6 * u), (cx + 24 * u, cy - 6 * u),
+                 (cx + 24 * u, cy + 6 * u), (cx - 4 * u, cy + 6 * u), (cx - 4 * u, cy + 15 * u)]
+        pygame.draw.polygon(target, (0, 0, 0, 110), [(x + 2 * u, y + 3 * u) for x, y in shape])
+        pygame.draw.polygon(target, self.TEXT + (255,), shape)
 
     def sized(self, resource, size):
         """A chc picture scaled whole to `size` (the dialogue skin's portrait ring and disc)."""

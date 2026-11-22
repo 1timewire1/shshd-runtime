@@ -478,7 +478,7 @@ python tools/translate/claire_hart.py places --mirror CLAIRE_HART_DIR --out clai
 | 27000–27644 | The 645 story-object pictures, Classic's own PNGs |
 | 28000–28005, 29000–29001 | chslim revision 1's, kept (the map, the backdrop, the speech bubbles, the Romic fonts, CoD's two edits) |
 | 28010–28844 | All 835 portraits, each at 28010 + its place in the sorted list (chslim's rule): CoD's matches framed as chslim's, the rest whole at the same scale |
-| 29100 | Claire Hart Dialogue's spec, JSON (`tools/translate/ch_dialogue_skin.py`): its density, text and emphasis colours, fonts, and where each picture is cut |
+| 29100 | Claire Hart UI's spec, JSON (`tools/translate/ch_dialogue_skin.py`): its density, text and emphasis colours, fonts, and where each picture is cut |
 | 29101–29108 | Its art: the speaker body (the tail side mirrored away), the name tab, the narrator box, the new portrait ring and disc, the Play Now button (Continue, at rest and pressed) and the story-object square |
 
 Importing it removes chslim, and an episode or switch asking for chslim gets `chc` (it stands in for chslim's revision 2).
@@ -489,13 +489,19 @@ under their scenes (the cod profile's `TRANSLATED_FRAME_BACKDROP`), and name the
 the picture its spec at 26998 (`looks`: 185 looks, a face a look lacks given as its Normal) names there
 (`EpisodeResources._look_bank`). An episode's own resource at such an ID wins.
 
-**Claire Hart Dialogue** (Add-Ons, CH tag; owner, 2026-11-19): CoD's dialogue in Claire Hart's speech bubbles with CoD's
-attached portrait ring, for **Off**, **Claire Hart Cases** (the default: pack 31500) or **All Episodes**. The text and names are
+**Claire Hart UI** (Add-Ons, CH tag; owner, 2026-11-19 as Claire Hart Dialogue, renamed 2026-11-22): CoD's dialogue in Claire
+Hart's speech bubbles with CoD's attached portrait ring, for **Off**, **Claire Hart Cases** (the default: pack 31500) or
+**Everywhere** (every episode, and the main menu's screens). The text and names are
 Romic Bold (28005; Romic, 28004, lacks `/`, `&` and most accented letters) in Claire Hart's dark red, emphasis in its gold;
 narration is Romic Bold slanted by the player (Classic ships no italic, and Romic is a commercial ITC face);
 the name sits in the bubble's tab beside the ring; no tail; Continue is the Play Now button. Narration takes the narrator box,
 with the ring when the narrator has a portrait. The CoD profile's `DIALOGUE_SKIN`; `content.EpisodeResources.dialogue_skin`.
-Choices, message panels and title cards keep CoD's look for now (ROADMAP 4.1a).
+With chc revision 2 (29109 on: Classic's panel, popup, rows, capsule, combo bar; the spec's `ui`) CoD's other screens follow
+(`desktop_ch_ui.ChUi`; CLAIRE_HART_SKIN_PLAN.md): choices and the rounds' skip prompt, the word quiz, text entry, the portrait
+picker, message panels, the pause menu and the story's windows; with Everywhere also the main menu's (its buttons, Options,
+Help & About, Data Management with its lists and file browser, Now Airing and Episodes On Demand's list with its cards, the
+prompts and busy card: `ContentLibrary.menu_skin`), but not the episode grid or the game chooser. Their places and taps stay
+CoD's. Title cards keep CoD's look.
 
 Its backdrops stay at full brightness, as the rounds need them. The player darkens them as it draws a case's story, to 110/255 as
 Classic did (its backdrop node's colour; the cod profile's `TRANSLATED_BACKDROP_DIM`), while the shared **Dim Backdrops** switch is

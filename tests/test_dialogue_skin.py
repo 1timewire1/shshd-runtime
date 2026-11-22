@@ -1,5 +1,5 @@
 """Claire Hart Dialogue (Claire Hart plan Stage 0; owner, 2026-11-19): CoD's dialogue in Claire Hart's speech bubbles and Romic,
-with CoD's attached ring; Off, Claire Hart Cases (pack 31500) or All Episodes."""
+with CoD's attached ring; Off, Claire Hart Cases (pack 31500) or Everywhere (Claire Hart UI)."""
 import json
 from types import SimpleNamespace
 import unittest
@@ -30,7 +30,7 @@ class SkinChoiceTests(unittest.TestCase):
         from exp_runtime.cod import profile
         self.assertEqual(profile.DIALOGUE_SKIN, ('chc', 29100, (31500,)))
         self.assertEqual(episode(31500).dialogue_skin()['addon'], 'chc')
-        self.assertIsNone(episode(30000).dialogue_skin())                    # CoD's own: only with All Episodes
+        self.assertIsNone(episode(30000).dialogue_skin())                    # CoD's own: only with Everywhere
         self.assertEqual(episode(30000, 'all').dialogue_skin()['tab']['base'], 104)
         self.assertIsNone(episode(31500, 'off').dialogue_skin())
         self.assertIsNone(episode(31500, spec=False).dialogue_skin())        # an older chc: CoD's own look
@@ -39,7 +39,7 @@ class SkinChoiceTests(unittest.TestCase):
         from exp_runtime.desktop_pause_hd import CH_DIALOGUE_NAMES, PER_GAME_CHOICES
         from exp_runtime.menu import SHARED_PREFERENCES
         self.assertEqual(SHARED_PREFERENCES['ch_dialogue'], ('off', 'cases', 'all'))
-        self.assertEqual(list(CH_DIALOGUE_NAMES.values()), ['Off', 'Claire Hart Cases', 'All Episodes'])
+        self.assertEqual(list(CH_DIALOGUE_NAMES.values()), ['Off', 'Claire Hart Cases', 'Everywhere'])
         self.assertIn('ch_dialogue', PER_GAME_CHOICES)
 
 
