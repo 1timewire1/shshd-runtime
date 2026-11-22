@@ -141,6 +141,13 @@ class HdEpisodeList(HdEpisodePicker):
         """(top, header, bottom) of the menu card, in frame points."""
         from .desktop_pause_hd import HEADER, TALL
         top, bottom = TALL[0], TALL[1] + self.extra
+        # Clear of a phone's status and navigation bars, as the text pages keep (HdPauseMenu.page_bounds): the card ran
+        # under the g54's status bar and its camera hole covered the title's "On" (owner, 2026-11-22).
+        gap = getattr(self.card, 'BAR_GAP', self.BAR_GAP)
+        if self.top_pad:
+            top = max(top, self.top_pad + gap)
+        if self.bottom_pad:
+            bottom = min(bottom, self.height - self.bottom_pad - gap)
         header = HEADER + 40 if len(self.card.title_lines(self.title_text())) > 1 else HEADER
         return top, header, bottom
 

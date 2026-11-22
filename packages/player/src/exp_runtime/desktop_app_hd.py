@@ -948,7 +948,13 @@ class AppScreens:
             run()
 
     def draw_choice(self, app, layer):
-        layer.blit(self.choice.picker.draw(backdrop=False), (0, 0))
+        picker = self.choice.picker
+        if getattr(picker, 'grows', False):
+            # The chooser's frame, and clear of a phone's bars, as the game's own list (Application.render_picker).
+            picker.height = self.height
+            if hasattr(app, 'menu_top_pad'):
+                picker.top_pad, picker.bottom_pad = app.menu_top_pad(self.height), app.menu_bottom_pad(self.height)
+        layer.blit(picker.draw(backdrop=False), (0, 0))
 
     def __init__(self, app=None):
         self.card = AppCard()

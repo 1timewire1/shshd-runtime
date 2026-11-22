@@ -3025,9 +3025,9 @@ class Application:
         picker = self.ensure_picker(self.picker_style)
         if getattr(picker, 'grows', False):
             picker.height = self.menu_frame()[1]        # (General's Aspect Ratio: more rows in a taller frame)
-            if self.picker_style == 'tile':
-                picker.top_pad = self.menu_top_pad(picker.height)
-                picker.bottom_pad = self.menu_bottom_pad(picker.height)
+            # The tile grid's rows and buttons, and the list's card (card_layout), keep clear of a phone's bars.
+            picker.top_pad = self.menu_top_pad(picker.height)
+            picker.bottom_pad = self.menu_bottom_pad(picker.height)
         picker.saved = self.saved
         picker.finished = self.finished
         pending = picker.alert

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased (shshd-runtime)
+
+### Fixed
+
+- **The episode lists ran under a phone's status bar** (owner, g54, 2026-11-22; worst in the Claire Hart branch's skin,
+  where the camera hole covered the "On" of Episodes On Demand): Now Airing's and Episodes On Demand's card, and Data
+  Management's tick lists, now keep clear of the status and navigation bars as the text pages do
+  (`HdEpisodeList.card_layout`; the app gives the list the bars' pads, which only the tile grid had). The game chooser's
+  tick list also takes the frame's height on a tall screen.
+
 ## 1.1.1 (shshd-runtime)
 
 ### Added
