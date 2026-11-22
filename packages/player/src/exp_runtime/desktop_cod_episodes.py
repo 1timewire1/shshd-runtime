@@ -111,11 +111,76 @@ class CodPickerStyle(CodButtons):
         return title_backdrop(self.library, height)
 
 
-class CodEpisodePicker(CodPickerStyle, HdEpisodePicker):
-    """Play/Resume: SHS HD's tile grid of title-card previews, CoD's backdrop and buttons."""
+class CodSkinnedCards:
+    """The Claire Hart skin's popup card and buttons (Claire Hart UI's Everywhere), shared by the list and the grid: CoD's
+    card Classic's popup, its buttons the Play Now pill. `ui` is the skin's pieces for this frame, or None."""
+    ui = None
+    SKIN_TEXT = .9                                       # Romic Bold against Arial Rounded's points (it runs wider)
+    SKIN_CARD_GROW = (130, 90)                  # points Classic's popup is drawn wider and taller than CoD's card
+
+    def draw_card(self, layer):
+        """CoD's popup card (New Game / Continue, an episode's info, an alert); in the skin Classic's popup, grown round
+        the card so its curved glass clears the tiles and text laid out for CoD's card."""
+        if self.ui is None:
+            return super().draw_card(layer)
+        from .desktop_episode_picker import CARD
+        gw, gh = self.SKIN_CARD_GROW
+        left, top = self.card_top_left
+        backing = self.ui.popup(((CARD[0] + gw) * S, (CARD[1] + gh) * S))
+        for _ in range(2):                      # (twice: the glass denser, the rows less through it)
+            layer.blit(backing, (round((left - gw / 2) * S), round((top - gh / 2) * S)))
+
+    def draw_button(self, layer, x, y, orange=False, label=None, pressed=False):
+        if self.ui is None:
+            return super().draw_button(layer, x, y, orange=orange, label=label, pressed=pressed)
+        from .desktop_episode_picker import BUTTON_SIZE
+        width, height = BUTTON_SIZE
+        pill = self.ui.pill((width * S, height * S), height * S / 57, 'pressed' if pressed else 'idle')
+        layer.blit(pill, (round(x * S), round(y * S)))
+        centre = (round((x + width / 2) * S), round((y + height / 2 - 1) * S))
+        if label:
+            self.ui.text(layer, label, 24 * S, self.ui.TEXT, centre)
+        else:
+            self.ui.arrow(layer, (centre[0] - 4 * S, centre[1]), S)
 
 
-class CodEpisodeList(CodPickerStyle, HdEpisodeList):
+class CodEpisodePicker(CodSkinnedCards, CodPickerStyle, HdEpisodePicker):
+    """Play/Resume: SHS HD's tile grid of title-card previews, CoD's backdrop and buttons. In the Claire Hart skin its
+    back and Restore buttons, and its New Game / Continue, info and alert cards, take the list's skin; the grid itself
+    (the tiles, the rows' labels) keeps CoD's look (owner, 2026-11-22)."""
+    _overlay = False                            # drawing the card over the grid: the skin's text there only
+
+    def skin(self):
+        from .desktop_ch_ui import ChUi
+        ui = ChUi.of(self.library)
+        if ui is not self.ui:
+            self.ui = ui
+            self.__dict__.pop('_card', None)
+        return ui
+
+    def draw(self, *, backdrop=True):
+        self.skin()
+        return super().draw(backdrop=backdrop)
+
+    def draw_overlay_card(self, layer, strings):
+        if self.ui is None:
+            return super().draw_overlay_card(layer, strings)
+        self._overlay = True
+        self.TEXT_COLOR, self.FOCUS_TEXT_COLOR = self.ui.TEXT, self.ui.LIT
+        try:
+            return super().draw_overlay_card(layer, strings)
+        finally:
+            self._overlay = False
+            for name in ('TEXT_COLOR', 'FOCUS_TEXT_COLOR'):
+                self.__dict__.pop(name, None)
+
+    def font(self, points):
+        if self.ui is not None and self._overlay:
+            return self.ui.font(points * S * self.SKIN_TEXT)
+        return super().font(points)
+
+
+class CodEpisodeList(CodSkinnedCards, CodPickerStyle, HdEpisodeList):
     """Episodes On Demand and Now Airing: SHS HD's list, CoD's colours."""
     TITLE_COLOR, BORDER_COLOR = (0, 0, 0), BORDER
     HEADER_COLOR = MEGA_HEADER_COLOR = BORDER
@@ -126,9 +191,7 @@ class CodEpisodeList(CodPickerStyle, HdEpisodeList):
     # The list (Now Airing, Episodes On Demand, Data Management's tick lists; not the grid) in Classic's dress: its card is
     # the skinned CodPauseMenu's, the rows dark teal with Romic Bold in off-white, the category bands darker, the play /
     # pause icons and tick boxes gold, the buttons the Play Now pill, and the New Game / Continue and info cards
-    # Classic's popup. The places and taps stay. `ui` is set for each frame (the setting may change between two).
-    ui = None
-    SKIN_TEXT = .9                                       # Romic Bold against Arial Rounded's points (it runs wider)
+    # Classic's popup (CodSkinnedCards). The places and taps stay. `ui` is set for each frame (the setting may change).
     SKIN_STYLE = dict(TEXT_COLOR=None, FOCUS_TEXT_COLOR=None, TEXT_ROW_COLOR=None, ICON_RING_COLOR=None,
                       ROW_COLORS=((13, 50, 45), (9, 41, 37)), SELECTED_COLOR=(28, 78, 68), SEPARATOR_COLOR=(4, 22, 20),
                       LIST_FILL=(9, 41, 37), HEADER_COLOR=(4, 26, 23), MEGA_HEADER_COLOR=(4, 26, 23),
@@ -191,30 +254,3 @@ class CodEpisodeList(CodPickerStyle, HdEpisodeList):
         if self.ui is not None:
             return self.ui.pitch(points * S * self.SKIN_TEXT) / S
         return super().line_height(points)
-
-    SKIN_CARD_GROW = (130, 90)                  # points Classic's popup is drawn wider and taller than CoD's card
-
-    def draw_card(self, layer):
-        """CoD's popup card (New Game / Continue, an episode's info, an alert); in the skin Classic's popup, grown round
-        the card so its curved glass clears the tiles and text laid out for CoD's card."""
-        if self.ui is None:
-            return super().draw_card(layer)
-        from .desktop_episode_picker import CARD
-        gw, gh = self.SKIN_CARD_GROW
-        left, top = self.card_top_left
-        backing = self.ui.popup(((CARD[0] + gw) * S, (CARD[1] + gh) * S))
-        for _ in range(2):                      # (twice: the glass denser, the list's rows less through it)
-            layer.blit(backing, (round((left - gw / 2) * S), round((top - gh / 2) * S)))
-
-    def draw_button(self, layer, x, y, orange=False, label=None, pressed=False):
-        if self.ui is None:
-            return super().draw_button(layer, x, y, orange=orange, label=label, pressed=pressed)
-        from .desktop_episode_picker import BUTTON_SIZE
-        width, height = BUTTON_SIZE
-        pill = self.ui.pill((width * S, height * S), height * S / 57, 'pressed' if pressed else 'idle')
-        layer.blit(pill, (round(x * S), round(y * S)))
-        centre = (round((x + width / 2) * S), round((y + height / 2 - 1) * S))
-        if label:
-            self.ui.text(layer, label, 24 * S, self.ui.TEXT, centre)
-        else:
-            self.ui.arrow(layer, (centre[0] - 4 * S, centre[1]), S)

@@ -388,6 +388,28 @@ class ChMenuTests(unittest.TestCase):
             self.assertEqual(menu.piece((100, 30)), 'CoD')
         plain.assert_called_once()
 
+    def test_the_grid_keeps_its_tiles_but_its_buttons_and_cards_take_the_skin(self):
+        # Owner, 2026-11-22: the grid's back and Restore buttons and its New Game / Continue card were CoD's.
+        from exp_runtime.desktop_cod_episodes import CodEpisodePicker
+        grid = CodEpisodePicker.__new__(CodEpisodePicker)
+        grid.library = self.library()
+        ui = grid.skin()
+        self.assertIsNotNone(ui)
+        with mock.patch.object(type(ui), 'pill', wraps=ui.pill) as pill:
+            grid.draw_button(pygame.Surface((400, 200), pygame.SRCALPHA), 10, 10, orange=True, label='Restore')
+        pill.assert_called_once()
+        with mock.patch('exp_runtime.desktop_episode_picker.HdEpisodePicker.font', return_value='CoD') as plain:
+            self.assertEqual(grid.font(28), 'CoD')                          # the grid's own text: CoD's
+            seen = []
+            with mock.patch('exp_runtime.desktop_episode_picker.HdEpisodePicker.draw_overlay_card',
+                            lambda self, layer, strings: seen.append((self.font(28), self.TEXT_COLOR))):
+                grid.draw_overlay_card(None, {})
+        self.assertIsNot(seen[0][0], 'CoD')                                  # the card's: the skin's Romic
+        self.assertEqual(seen[0][1], ui.TEXT)
+        self.assertNotIn('TEXT_COLOR', grid.__dict__)                       # (given back after the card)
+        grid.library = self.library('cases')
+        self.assertIsNone(grid.skin())
+
     def test_the_episode_list_takes_the_skins_colours_and_romics_pitch_and_gives_them_back(self):
         from exp_runtime.desktop_cod_episodes import CodEpisodeList
         listing = CodEpisodeList.__new__(CodEpisodeList)

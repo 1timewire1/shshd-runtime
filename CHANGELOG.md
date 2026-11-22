@@ -168,7 +168,9 @@
   After the g54 pass (owner, 2026-11-22): **Choice Hints read on the skin** (CoD's pastel row tints washed out to one
   grey-green on the dark rows; each kind now takes a stronger tint of its own and a bar of its colour down the row's left
   edge, `SKIN_HINT_COLORS`), the **switches' OFF** keeps the control's grey (the skin's text colouring had turned it
-  off-white on the white track), and the **episode lists' tags** are Options' gold badge at its size.
+  off-white on the white track), and the **episode lists' tags** are Options' gold badge at its size. The **episode
+  grid's** back and Restore buttons are the pill and its New Game / Continue, info and alert cards Classic's popup, as
+  the list's (`CodSkinnedCards`), while the grid itself (its tiles, its rows' labels) keeps CoD's look (owner, 2026-11-22).
 
 ## 1.1.1 (shshd-runtime)
 
