@@ -20,6 +20,15 @@
 
 ### Fixed
 
+- **iOS stopped the app after a first Bulk Import** (found in v1.1.1's full check on the iPad, 2026-11-22): drawing a
+  library's grid previews left about 1 GB behind (1153 MB for SHS's 146; 1.36 GB idle after a Bulk Import), so the
+  next large job crossed iOS's memory limit and the app closed with no report. The iOS drawing backend's cache of
+  pixels made into surfaces (`ImageAPI.frombytes`) was bounded by entries only, and each preview's title card added
+  about 11 MB it never asked for again; it is now bounded to 32 MB as well. Rebuilding SHS's 191 previews peaks at
+  221 MB. Desktop and Android draw with pygame and were not affected.
+- **Delete Library left a folder that Bulk Import took for a library** (found on the iPad, 2026-11-22; every
+  platform since v1.1.0): the imports' checks (`content_checks.json`) and the ended saves' cache (`ended_saves.json`)
+  stayed, and Bulk Import said "… already has a library. Nothing was imported." Both now go with the library.
 - **Options → Sound in the game chooser stopped the app** (reported on iOS 2026-11-22; every platform, since the
   iOS volume sliders): "AppCard.slider() got an unexpected keyword argument 'key'". The chooser's card takes the
   slider's key, and on iOS its UISliders and UISwitches now reach the chooser's Options (they went nowhere there).
