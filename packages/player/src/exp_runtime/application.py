@@ -42,7 +42,7 @@ from .menu import (EPISODE_HEADER_HEIGHT, EPISODE_ROW_HEIGHT, MenuState,
                    SHARED_PREFERENCES, default_library, group_episodes, preference_defaults, remember_library,
                    shared_preference)
 from .minigames import MINIGAMES
-from .runtime import SaveError, Session
+from .runtime import NewerSaveError, SaveError, Session
 from .settings import AppSettings
 from . import frame_shape
 from .frame_shape import CHOICES as ASPECT_RATIOS
@@ -2334,6 +2334,12 @@ class Application:
                 path = self.state.resume_path(episode) if resume else None
                 try:
                     session = self.state.session(episode, resume=resume)
+                except NewerSaveError:
+                    # A newer build's save (v1.1.1 check, 2026-11-22: it was set aside as corrupt): kept where it is, for
+                    # that build, and said so; New Game is still there.
+                    self.message = ('This saved game was made by a newer version of SHSHD Runtime. Update to continue '
+                                    'it; the save is kept.')
+                    return
                 except SaveError:
                     if path is None:
                         raise

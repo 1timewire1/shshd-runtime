@@ -508,6 +508,11 @@ class Commands:
             out.update({key: action.details[key] for key in TEXT_KEYS if key in action.details})
             if action.name == 'text_input' and getattr(game, 'input_error', None):
                 out['input_error'] = str(game.input_error)      # a name the game turned down, as its alert says
+            motion = getattr(session.engine, 'dialogue_animation', None)
+            if action.name == 'dialogue' and motion is not None:
+                # The page's Text Animation and how far it is out (dialogue_animation.TEXT_ANIMATIONS).
+                out['reveal'] = dict(mode=getattr(motion, 'text_mode', 'letters'), complete=motion.complete,
+                                     revealed=motion.revealed, length=motion.text_length)
             picker = getattr(session.engine, 'character_picker', None)
             if action.name == 'character_picker' and picker is not None:
                 # The portraits by their original place (`answer N` brings one to the front, `continue` confirms).
@@ -1095,6 +1100,8 @@ class Commands:
             state.persist()
             if key.startswith('dsi_') or key == 'preferred_language':
                 self.app.apply_dsi()
+            elif self.app.game is not None and hasattr(self.app.game, key):
+                setattr(self.app.game, key, value.strip())     # (the open story's too, as its pause menu's page sets it)
             return dict(ok=True, key=key, value=getattr(state, key))
         if key == 'start_in':
             # General's Start In (settings.json, the app's own): auto, games, shs or cod.

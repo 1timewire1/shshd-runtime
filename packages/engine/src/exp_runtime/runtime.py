@@ -46,6 +46,11 @@ class SaveError(ValueError):
     pass
 
 
+class NewerSaveError(SaveError):
+    """shshd-runtime: a save in a format this build does not read but a newer one does (a later version, or 43 / 44: the
+    Claire Hart development branch's). It is not corrupt: the player keeps it where it is (v1.1.1 check, 2026-11-22)."""
+
+
 def transition_class(resources):
     """The game's queued-transition model: HD_SCENE_TRANSITION with an HD bundle (SHS HD's SHSFadeLayer), else
     SCENE_TRANSITION, or None."""
@@ -1524,8 +1529,11 @@ class Session:
     @classmethod
     def from_snapshot(cls, resources: EpisodeResources, state: dict):
         try:
-            if state['format'] != 'shs-runtime-save' or state['version'] not in (*range(1, 43), 45):
+            if (state['format'] == 'shs-runtime-save' and type(state['version']) is int
+                    and (state['version'] > 45 or state['version'] in (43, 44))):
                 # (43 and 44 are the Claire Hart development branch's, which this build does not read.)
+                raise NewerSaveError('This save was made by a newer version of SHSHD Runtime')
+            if state['format'] != 'shs-runtime-save' or state['version'] not in (*range(1, 43), 45):
                 raise SaveError('Unsupported save format or version')
             # Version 45 gives a dialogue page its Text Animation (General's, dialogue_animation.TEXT_ANIMATIONS): an older
             # save's page types letter by letter, as it did.
