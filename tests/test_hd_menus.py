@@ -303,6 +303,24 @@ class EpisodeListCardTests(unittest.TestCase):
         self.assertEqual(picker.list_area().top, TALL[0] + HEADER + 40 + 1)
         self.assertEqual(picker.list_height(), picker.list_area().height)
 
+    def test_the_lists_card_keeps_clear_of_a_phones_bars(self):
+        # Owner, g54, 2026-11-22: the card ran under the status bar and the camera hole covered the title's "On".
+        from exp_runtime.desktop_episode_list_hd import HdEpisodeList
+        from exp_runtime.desktop_pause_hd import HdPauseMenu, TALL
+        picker = HdEpisodeList.__new__(HdEpisodeList)
+        picker.model = SimpleNamespace(chronological=True)
+        picker.strings = lambda: {83: 'Episodes On Demand', 119: 'Now Airing'}
+        picker.card = SimpleNamespace(title_lines=lambda text: [text], BAR_GAP=HdPauseMenu.BAR_GAP)
+        picker.height = 1707
+        top, _, bottom = picker.card_layout()
+        self.assertEqual((top, bottom), (TALL[0], TALL[1] + 1707 - 1024))         # (a computer: no bars)
+        picker.top_pad, picker.bottom_pad = 70, 48
+        top, _, bottom = picker.card_layout()
+        self.assertEqual((top, bottom), (70 + HdPauseMenu.BAR_GAP, 1707 - 48 - HdPauseMenu.BAR_GAP))
+        self.assertGreater(picker.list_area().top, 70)
+        picker.top_pad = 10                                                     # (a bar above the card's own top)
+        self.assertEqual(picker.card_layout()[0], TALL[0])
+
     def test_the_lists_layer_is_undimmed_and_see_through_when_zooming(self):
         import pygame
         from exp_runtime.desktop_episode_picker import HdEpisodePicker

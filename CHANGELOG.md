@@ -105,6 +105,11 @@
 
 ### Fixed
 
+- **The episode lists ran under a phone's status bar** (owner, g54, 2026-11-22; every game, worst in the Claire Hart
+  skin, where the camera hole covered the "On" of Episodes On Demand): Now Airing's and Episodes On Demand's card, and
+  Data Management's tick lists, now keep clear of the status and navigation bars as the text pages do
+  (`HdEpisodeList.card_layout`; the app gives the list the bars' pads, which only the tile grid had). The game chooser's
+  tick list also takes the frame's height on a tall screen.
 - **A save on Claire Hart's narration couldn't be loaded** (Claire Hart plan check 3, 2026-11-21): a narration line beside
   the narrator's portrait (Stage 0 E) has no relationship state, and the loader refused any line in a speaker's layout
   without one, so Resume and Undo failed on 55 of Case 1's 169 lines. It now takes that narration, checked against its
