@@ -107,6 +107,9 @@
   were refused ("ZIP member exceeds supported size": `chc` is 480 MB, `chcrounds` 1.1 GB, past an episode's 64 MB). An
   add-on past that size (8 GB at most) is now streamed to the library and hashed on the way, never held in memory, from a
   ZIP, a RAR, Bulk Import or a loose file; an episode that large is still refused, saying only an add-on may be.
+- **A Claire Hart case closed the app in a frame taller than 3:4** (the g54 at 20:9, 2026-11-21): its frame backdrop's
+  strip is at the picture's very top, and lengthening it grew the empty part above by empty rows, so the picture came out
+  short (`backdrop_fit.lengthen`). That part now grows from the picture's first row.
 
 ## 1.1.0 (shshd-runtime)
 

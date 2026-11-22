@@ -350,6 +350,18 @@ class BackdropFitTests(unittest.TestCase):
         # The bottom of the picture is its own, as at 3:4.
         self.assertEqual(rows[-200:], self.fit._rows(image)[-200:])
 
+    def test_a_strip_at_the_pictures_top_grows_from_its_first_row(self):
+        """The g54 at 20:9 (2026-11-21): Claire Hart's backdrop has its strip at the very top, so nothing is above it;
+        made taller, that empty part grew by empty rows and the picture came out short (a ValueError, the app closed)."""
+        image = self.pygame.Surface((384, 512), self.pygame.SRCALPHA)
+        image.fill((10, 60, 20, 255))
+        image.fill((200, 220, 120, 255), (0, 0, 384, 1))               # (its first row, to see where the gap's rows come from)
+        for y in range(300, 512, 7):                                    # (no pattern a repeat could be measured on)
+            image.fill((y % 251, 90, 40, 255), (0, y, 384, 3))
+        long = self.fit.lengthen(image, (0, 260), (171, 431), 683)
+        self.assertEqual(long.get_size(), (384, 683))
+        self.assertEqual(long.get_at((5, 100))[:3], (200, 220, 120))
+
 
 class WindowShapeTests(unittest.TestCase):
     """2f: a computer's window takes a picked shape at its own height; Fit Screen leaves it to the person."""

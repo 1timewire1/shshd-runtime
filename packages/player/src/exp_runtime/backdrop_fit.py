@@ -34,9 +34,11 @@ def repeat(rows, lo, hi):
     return None
 
 
-def _grow(rows, start, at, length, crop, row_at):
+def _grow(rows, start, at, length, crop, row_at, edge=b''):
     """rows[start:...] (this part, `len(rows)` long) made `length` long: whole repeats inserted at `at`, then the
-    excess cut from the `crop` end; shorter, cut from that end ('middle': about its middle)."""
+    excess cut from the `crop` end; shorter, cut from that end ('middle': about its middle). `edge` is the picture's row
+    beside an empty part (a strip at the picture's very top: Claire Hart's backdrop; the g54 at 20:9, 2026-11-21: the
+    empty part grew by empty rows and the picture came up short)."""
     if length <= len(rows):
         cut = len(rows) - length
         if crop == 'top':
@@ -48,7 +50,7 @@ def _grow(rows, start, at, length, crop, row_at):
     needed = length - len(rows)
     if row_at is None:
         # No repeat found: the row at `at` is repeated (a plain stretch's own colour).
-        source = rows[min(at, len(rows) - 1)] if rows else b''
+        source = rows[min(at, len(rows) - 1)] if rows else edge
         return rows[:at] + [source] * needed + rows[at:]
     period, at_row = row_at
     whole = -(-needed // period) * period
@@ -79,9 +81,10 @@ def lengthen(image, strip, wanted, height):
             break
     above, behind, below = rows[:top], rows[top:bottom], rows[bottom:]
     # Inserted just clear of the bars (the stretch beside a bar is plain, the picture's ends may be shaded).
-    parts = (_grow(above, 0, max(0, len(above) - clear), new_top, 'top', row_at)
-             + _grow(behind, top, len(behind) // 2, max(0, new_bottom - new_top), 'middle', row_at)
-             + _grow(below, bottom, min(len(below), clear), max(0, height - new_bottom), 'bottom', row_at))
+    parts = (_grow(above, 0, max(0, len(above) - clear), new_top, 'top', row_at, rows[0])
+             + _grow(behind, top, len(behind) // 2, max(0, new_bottom - new_top), 'middle', row_at,
+                     rows[min(top, count - 1)])
+             + _grow(below, bottom, min(len(below), clear), max(0, height - new_bottom), 'bottom', row_at, rows[-1]))
     parts = (parts + parts[-1:] * height)[:height]
     return pygame.image.frombytes(b''.join(parts), (image.get_width(), height), 'RGBA')
 
