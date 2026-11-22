@@ -1466,11 +1466,11 @@ class Desktop:
         return (action is not None and action.name == 'claire_round' and not self.menu_open and not self.error
                 and self.host_prompt is None and self.claire_round_renderer.view is not None)
 
-    @staticmethod
-    def _warm_claire_rounds(session):
+    def _warm_claire_rounds(self, session):
         """A Claire Hart case (one needing `chc`) opening with the rounds add-on in: its spec parsed now, behind the opening,
         once for the library (ContentLibrary.addon_json), not at the case's first round (owner, 2026-11-21: ~200 ms a
-        parse on the g54, and both the engine and the renderer parsed it)."""
+        parse on the g54, and both the engine and the renderer parsed it); and the choice panel's fonts, which its rounds'
+        skip prompt is the case's first use of (~300 ms on the g54 at a start's first round; the library keeps them)."""
         library = getattr(session.resources, 'library', None)
         record = getattr(session.resources, 'record', None)
         if not getattr(session.engine, 'claire_rounds_ready', False) or library is None or record is None:
@@ -1478,8 +1478,13 @@ class Desktop:
         try:
             if any(addon == 'chc' for addon, _ in library.episode_requires(record)):
                 library.addon_json('chcrounds', 26000)
-        except (ContentError, OSError, ValueError, AttributeError) as error:
-            logging.warning('Claire Hart rounds spec not read ahead: %s', error)
+                from .choice import BODY_FONT
+                from .vector_text import load_font
+                for name in ('PajamaHipY26', BODY_FONT):
+                    self.story_text.font(name)
+                load_font(library, 'ArialRoundedMTBold15')
+        except (ContentError, OSError, ValueError, AttributeError, KeyError, pygame.error) as error:
+            logging.warning('Claire Hart rounds not read ahead: %s', error)
 
     CLAIRE_PRELOAD_MS = 6                   # a frame's share of a round's preload while its skip prompt shows
     CLAIRE_PRELOAD_AFTER_MS = 350           # (after the prompt's own entrance: those frames stay smooth)
