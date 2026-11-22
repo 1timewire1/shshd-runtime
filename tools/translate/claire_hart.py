@@ -72,6 +72,9 @@ DEN = 'Shadows/VanDerWaltDen'
 EXTRA_SCENES = {DEN: (26800, 'references/backgrounds/VanDerWaltDen_HO/hd/hovanderwaltden')}
 STORE_SCENES = {'E191': 'DressShop', 'E265': DEN}
 STORY_VERSION = 1                       # the cases' version (episode_version.py): a newer build replaces an older copy
+# The chc revision the cases need: 1. Revision 2 adds only the skin's other screens (29109 on), which the player draws when
+# it finds them, so a case plays with either (and a library still on revision 1 isn't asked for an update).
+CASES_NEED_CHC = 1
 TITLE_TAG = ' (CHC)'                    # the Claire Hart category (cod/profile.py)
 NARRATOR_DEFAULT = {                    # characterutil.NARRATOR.DEFAULT: narration's portraits when a chapter has no 'Claire'
     'default': 'references/characters/ClaireHart/Avatar_Claire_Normal',
@@ -828,7 +831,7 @@ def convert(mirror, art, case, parts):
     builder.add('end')
     project = Project(title=title + TITLE_TAG, game='cod', pack_id=PACK_ID, episode_id=case['index'] * 10,
                       episode_version=STORY_VERSION, nodes=builder.nodes)
-    project.addons = [dict(id=chslim.CHC_ID, revision=chslim.CHC_REVISION)]
+    project.addons = [dict(id=chslim.CHC_ID, revision=CASES_NEED_CHC)]
     project.assets = [builder.assets[ident] for ident in sorted(builder.assets)]
     project.characters = list(builder.characters.values())
     project.start = builder.nodes[0].id

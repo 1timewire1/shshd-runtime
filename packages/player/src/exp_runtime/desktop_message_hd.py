@@ -325,3 +325,60 @@ class CodMessageRenderer(HdMessageRenderer):
 
     def background(self, session):
         return None
+
+    # -- Claire Hart Dialogue (CLAIRE_HART_SKIN_PLAN.md; owner, 2026-11-21) -------------------------------------------
+    # Classic's panel in CoD's place: its title on the cream tab, the text in off-white Romic Bold, the Play Now pill
+    # in its footer; in CoD points (UNIT layer pixels each), the panel CoD's width.
+    SKIN_ART = 0.3                              # the panel art's pixels a CoD point (its tab then about CoD's header)
+    SKIN_TITLE, SKIN_BODY, SKIN_LABEL = 19, 14, 15     # Romic Bold, CoD points
+    SKIN_PAD = 14                               # CoD points from the panel's side to its text
+    SKIN_PILL = (130, 29)                       # the Continue pill, CoD points
+
+    def draw(self, target, session):
+        from .desktop_ch_ui import ChUi
+        ui = ChUi.of(self.resources)
+        if ui is None:
+            return super().draw(target, session)
+        return self.draw_skinned(ui, session)
+
+    def draw_skinned(self, ui, session):
+        panel = session.engine.message_panel
+        layer = self.canvas
+        layer.fill((0, 0, 0, 0))
+        self.pending_background = self.background(session)
+        unit = self.K * S                                       # layer pixels a CoD point
+        s = self.SKIN_ART * unit
+        width = self.WIDTH * unit
+        lines = ui.wrap(panel.text, self.SKIN_BODY * unit, (self.WIDTH - 2 * self.SKIN_PAD) * unit)
+        pitch = ui.pitch(self.SKIN_BODY * unit)
+        header, footer = ui.header_height(s), ui.footer_height(s)
+        height = max(self.MIN_HEIGHT * unit, header + 12 * unit + pitch * len(lines) + 12 * unit + footer)
+        x0, y0 = self.frame_point(self.left, 0)
+        rect = pygame.Rect(round(x0 * S), 0, round(width), round(height))
+        rect.centery = round((self.ORIGIN[1] + self.SCREEN[1] * self.K / 2) * S)
+        title_alpha = default_ease(min(1., panel.elapsed_ms / 250)) if self.TITLE_FADE else 1.
+        ui.draw_panel(layer, rect, s, panel.title, self.SKIN_TITLE * unit)
+        if title_alpha < 1:                                     # (the title fades in, as CoD's does)
+            cover = ui.panel(rect.size, s, ui.font(self.SKIN_TITLE * unit).size(panel.title)[0])
+            band = pygame.Rect(0, 0, rect.width, round(header))
+            veil = cover.subsurface(band.clip(cover.get_rect())).copy()
+            veil.set_alpha(round(255 * (1 - title_alpha)))
+            layer.blit(veil, rect.topleft)
+        y = rect.y + header + 12 * unit
+        for line in lines:
+            if line:
+                ui.text(layer, line, self.SKIN_BODY * unit, ui.TEXT, topleft=(rect.x + self.SKIN_PAD * unit, y))
+            y += pitch
+        strings = self.strings()
+        ready, wait, hint_ready, hint_wait = self.LABELS
+        label = strings[ready] if panel.ready else f'{strings[wait]} ({panel.countdown})'
+        grow = min(1., panel.elapsed_ms / 250)
+        if grow > 0:
+            w, h = self.SKIN_PILL[0] * unit, self.SKIN_PILL[1] * unit
+            piece = ui.pill((w, h), h / 57).copy()
+            ui.text(piece, label, self.SKIN_LABEL * unit, ui.TEXT, (piece.get_width() // 2, piece.get_height() // 2 + 1))
+            if grow < 1:
+                piece = pygame.transform.smoothscale(piece, (piece.get_width(), max(1, round(piece.get_height() * grow))))
+            layer.blit(piece, piece.get_rect(center=(rect.centerx, round(rect.bottom - footer / 2))))
+        self.footer_text = strings[hint_ready if panel.ready else hint_wait]
+        return [(pygame.Rect(-32, 422, 92, 58), ('menu',)), (pygame.Rect(0, 0, 320, 480), ('continue',))]

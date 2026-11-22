@@ -35,6 +35,54 @@ NAME_BAND = (20, 311)               # the tab's rows the name is centred in (its
 TAB_INSET = 150                     # the tab's pixels from each end to where its name may start
 BUTTONS = {'idle': (3, 453, 212, 510), 'pressed': (218, 390, 427, 447)}
 
+# The rest of CoD's screens (CLAIRE_HART_SKIN_PLAN.md; owner, 2026-11-21: Classic's panel, the dark rows with the gold-edged
+# highlight, Classic's bar as the timer, Romic Bold, chc revision 2): Classic's own UI pieces, kept at their own pixels, the
+# spec saying where each is cut (the boxes' DENSITY doesn't apply: the renderer scales each to its place).
+(UI_PANEL, UI_POPUP, UI_ROW, UI_ROW_LIT, UI_CAPSULE, UI_TIMER, UI_TIMER_FILL, UI_CLOSE, UI_CLOSE_PRESSED,
+ UI_PILL_HOVER) = range(29109, 29119)
+UI_SOURCES = {
+    UI_PANEL: ('d6/d6bb0206-f11a-4329-a562-9de5f4302306.png', None),         # panel_background 718 x 498
+    UI_POPUP: ('19/192aa5599.png', (1259, 3, 328, 244)),                   # UI_modal_backing: Classic's Yes/No popup
+    UI_ROW: ('53/53c1157c-6d27-4017-85e5-b4bab356fb84.png', None),        # cmp_chapterresult_backing_scenecleared
+    UI_ROW_LIT: ('15/15c463ceb.png', (1357, 410, 225, 82)),                # cmp_menu_selectedstate: the gold left edge
+    UI_CAPSULE: ('18/18e2fa278.png', (381, 809, 494, 37)),                 # cmp_panelresult_scorecontainer
+    UI_TIMER: ('19/192aa5599.png', (3, 3, 1250, 141)),                     # ui-top-combobacking
+    UI_TIMER_FILL: ('19/192aa5599.png', (3, 150, 1249, 148)),              # ui-top-combobar
+    UI_CLOSE: ('18/18e2fa278.png', (918, 660, 45, 45)),                    # btn_close_idle
+    UI_CLOSE_PRESSED: ('18/18e2fa278.png', (763, 718, 45, 45)),            # btn_close_pressed
+    UI_PILL_HOVER: ('17/170baf746.png', (3, 390, 209, 57)),               # btn_hover
+}
+UI_HALVED = (UI_TIMER, UI_TIMER_FILL)        # (stored at half their size: a timer bar is never that big on screen)
+UI_COLOURS = {'title': (125, 66, 14), 'text': (239, 235, 226), 'gold': (255, 205, 78), 'lit': (238, 226, 90),
+              'teal': (18, 224, 188), 'wrong': (240, 80, 70)}
+
+
+def ui_pieces(root):
+    """{resource: picture} of Classic's UI pieces (UI_SOURCES), cut from the mirror's files or atlases."""
+    out = {}
+    for resource, (path, rect) in UI_SOURCES.items():
+        image = Image.open(root / path).convert('RGBA')
+        if rect is not None:
+            x, y, w, h = rect
+            image = image.crop((x, y, x + w, y + h))
+        out[resource] = scaled(image, 0.5) if resource in UI_HALVED else image
+    return out
+
+
+def ui_spec():
+    """Where each UI piece is cut (its own pixels: left, top, right, bottom kept; the rest stretches), and the panel's header,
+    tab and title band. A renderer that finds no `ui` (chc revision 1) keeps CoD's own art."""
+    return {
+        'panel': {'picture': UI_PANEL, 'size': [718, 498], 'caps': [60, 60], 'rows': [102, 402],
+                  'tab': [180, 270, 450, 540], 'title': [6, 74]},
+        'popup': {'picture': UI_POPUP, 'size': [328, 244], 'title': 62, 'text': [100, 182], 'buttons': 205},
+        'row': {'picture': UI_ROW, 'slice': [37, 11, 37, 11]},
+        'row_lit': {'picture': UI_ROW_LIT, 'slice': [12, 6, 12, 6]},
+        'capsule': {'picture': UI_CAPSULE, 'slice': [18, 0, 18, 0]},
+        'timer': {'back': UI_TIMER, 'fill': UI_TIMER_FILL, 'slice': [56, 0, 56, 0]},
+        'close': [UI_CLOSE, UI_CLOSE_PRESSED], 'pill_lit': UI_PILL_HOVER, 'colours': UI_COLOURS,
+    }
+
 
 def png(image):
     out = io.BytesIO()
@@ -111,8 +159,11 @@ def build(mirror):
                 'base': px(SPEAKER_BODY[1] - SPEAKER_TAB[1]), 'name': [px(NAME_BAND[0]), px(NAME_BAND[1])],
                 'inset': px(TAB_INSET)},
         'ring': RING, 'disc': DISC, 'pill': [PILL, PILL_PRESSED], 'slot': SLOT,
+        'ui': ui_spec(),                                 # (chc revision 2: the other screens' pieces)
     }
-    return {SPEC: json.dumps(spec, separators=(',', ':')).encode(), SPEAKER: png(body), TAB: png(tab),
-            NARRATOR: png(plain), RING: png(ring), DISC: png(disc),
-            PILL: png(atlas.crop(BUTTONS['idle'])), PILL_PRESSED: png(atlas.crop(BUTTONS['pressed'])),
-            SLOT: png(Image.open(root / SOURCES['slot']).convert('RGBA'))}
+    resources = {SPEC: json.dumps(spec, separators=(',', ':')).encode(), SPEAKER: png(body), TAB: png(tab),
+                 NARRATOR: png(plain), RING: png(ring), DISC: png(disc),
+                 PILL: png(atlas.crop(BUTTONS['idle'])), PILL_PRESSED: png(atlas.crop(BUTTONS['pressed'])),
+                 SLOT: png(Image.open(root / SOURCES['slot']).convert('RGBA'))}
+    resources.update({resource: png(picture) for resource, picture in ui_pieces(root).items()})
+    return resources

@@ -29,7 +29,7 @@ from exp_runtime.exp import ExpArchive, Metadata, encode_exp
 
 ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'chslim', 'Claire Hart (Slim)', 2
 # The translated cases' add-on, begun as chslim revision 1 (plan Stage 0): it stands in for chslim, which it holds all of.
-CHC_ID, CHC_TITLE, CHC_REVISION = 'chc', 'Claire Hart Classic', 1
+CHC_ID, CHC_TITLE, CHC_REVISION = 'chc', 'Claire Hart Classic', 2      # (2: the skin's other screens, 29109 on)
 PACK_ID = 31500                         # its metadata's pack: no episode of it exists yet
 SPEC = 28000                            # the map and contents (cod/profile.py PORTRAIT_ADDON)
 BACKDROP, SPEAKER_BOX, NARRATOR_BOX, FONT, FONT_BOLD = 28001, 28002, 28003, 28004, 28005

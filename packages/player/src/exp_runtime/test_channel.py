@@ -527,6 +527,9 @@ class Commands:
         chain = game._undo_for(session)
         out['undo_saves'] = chain.numbers() if chain is not None else None
         out['can_undo'] = game._undo_ready()
+        badge = getattr(session.engine, 'scene_badge', None)
+        if badge is not None:
+            out['badge'] = dict(text=badge.text, asset=badge.asset_id)     # the scene's location/time badge (service 90)
         catch = getattr(session.engine, 'brew_catch', None)
         if catch is not None:
             out['catch'] = dict(score=catch.score, target=catch.target, remaining=catch.remaining, over=catch.over)
