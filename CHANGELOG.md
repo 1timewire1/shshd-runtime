@@ -20,6 +20,12 @@
 
 ### Fixed
 
+- **The main menu's General page ran off a 3:4 frame** (owner, 2026-11-22; ten rows since Text Animation joined
+  it): the card ran past the frame's bottom and its back button was cut off. A page of rows too tall for its frame
+  now fills a text page's bounds and its rows scroll: a drag (begun on a row too, once it moves 8 points), the wheel,
+  Page Up / Down; the arrow keys go row by row and bring the highlighted one into view. On iOS the UISwitches and
+  UISliders show on whole rows only. Pages that fit are laid out as before. The test channel's `rows` gives a
+  scrolling page's `scroll`, and `key` takes `pageup` / `pagedown`.
 - **iOS stopped the app after a first Bulk Import** (found in v1.1.1's full check on the iPad, 2026-11-22): drawing a
   library's grid previews left about 1 GB behind (1153 MB for SHS's 146; 1.36 GB idle after a Bulk Import), so the
   next large job crossed iOS's memory limit and the app closed with no report. The iOS drawing backend's cache of

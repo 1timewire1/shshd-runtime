@@ -362,6 +362,78 @@ class HdPauseTests(unittest.TestCase):
         small, _ = page(top_pad=10, bottom_pad=0)                                     # a bar above the page's top
         self.assertEqual(small.top, area.top)
 
+    def tall_page(self, count=12, kind=None):
+        """A host page of `count` rows (actions, or switches with `kind='switch'`), too many for a 1024 frame."""
+        rows = [(f'a{i}', f'Row {i}') + ((kind,) if kind else ()) for i in range(count)]
+        self.menu.show_rows('many', 'Many', rows, 'options')
+        self.menu.slide = None
+        return [('pause_toggle' if kind == 'switch' else 'pause_action', f'a{i}') for i in range(count)]
+
+    def test_a_page_of_rows_too_tall_for_its_frame_scrolls(self):
+        # Owner, 2026-11-22: General's ten rows at 3:4 ran the card past the frame, its back button cut off.
+        module, state = self.module, self.menu.state
+        rows = self.tall_page()
+        buttons = self.commands()
+        hits = dict((command, rect) for rect, command in buttons)
+        area, back = hits[('pause_scroll',)], hits[('pause_back',)]
+        self.assertEqual(buttons[0][1], ('pause_scroll',))                  # under the rows: they take a tap first
+        self.assertEqual(area.top, module.TALL[0] + module.HEADER)
+        self.assertLessEqual(back.bottom, module.TALL[1])
+        self.assertEqual(state.max_scroll, 12 * module.ROW - area.height)
+        self.assertTrue(area.contains(hits[rows[0]]))
+        self.assertEqual(hits[rows[-1]].height, 0)                         # scrolled out: no pointer reaches it
+        state.scroll = 10_000.
+        hits = dict((command, rect) for rect, command in self.commands())
+        self.assertEqual(state.scroll, state.max_scroll)
+        self.assertEqual(hits[rows[-1]].bottom, area.bottom)
+        self.assertEqual(hits[rows[0]].height, 0)
+        self.menu.frame_height = 1707                                       # a phone's frame holds them all
+        hits = dict((command, rect) for rect, command in self.commands())
+        self.assertNotIn(('pause_scroll',), hits)
+        self.assertEqual((state.scroll, state.max_scroll), (0., 0.))
+        self.assertTrue(all(hits[row].height == module.ROW for row in rows))
+
+    def test_the_arrow_keys_move_along_a_scrolling_pages_rows_and_bring_them_into_view(self):
+        import pygame
+        state, menu = self.menu.state, self.menu
+        rows = self.tall_page()
+        self.commands()
+        state.focus = rows[-2]
+        menu.key(pygame.K_DOWN)
+        self.assertEqual(state.focus, rows[-1])                             # a row, not the page, moves
+        hits = dict((command, rect) for rect, command in self.commands())
+        self.assertEqual(state.scroll, state.max_scroll)
+        self.assertEqual(hits[rows[-1]].height, self.module.ROW)
+        menu.key(pygame.K_UP)
+        self.assertEqual((state.focus, state.scroll), (rows[-2], state.max_scroll))
+        menu.key(pygame.K_PAGEUP)                                           # Page Up / Down still scroll it
+        self.assertEqual(state.scroll, max(0., state.max_scroll - 400))
+
+    def test_a_scrolling_page_places_the_hosts_controls_on_whole_rows_only(self):
+        from exp_runtime import graphics
+        self.settings.update({f'a{i}': True for i in range(12)})
+        self.tall_page(kind='switch')
+        self.menu.state.scroll = 44.                                        # the first row half out
+        with patch.object(graphics, 'native_controls', []):
+            hits = dict((command, rect) for rect, command in self.commands())
+            placed = [control['key'] for control in self.menu.screen_controls]
+        area = hits[('pause_scroll',)]
+        self.assertNotIn('a0', placed)
+        self.assertIn('a1', placed)
+        self.assertTrue(all(area.top <= c['middle'] - 44 and c['middle'] + 44 <= area.bottom
+                            for c in self.menu.screen_controls))
+
+    def test_a_press_on_a_scrolling_page_scrolls_only_once_it_moves(self):
+        state = self.menu.state
+        state.max_scroll, state.scroll = 300., 100.
+        drag = ('scroll', 100., 500., False, ('pause_action', 'a3'))
+        drag = self.module.drag_scroll(state, drag, 500 - self.module.DRAG_SLOP + 1)
+        self.assertEqual((drag[3], state.scroll), (False, 100.))           # a tap's wobble: still a tap
+        drag = self.module.drag_scroll(state, drag, 440)
+        self.assertEqual((drag[3], state.scroll, drag[4]), (True, 160., ('pause_action', 'a3')))
+        self.module.drag_scroll(state, drag, -1000)
+        self.assertEqual(state.scroll, 300.)
+
     def test_long_titles_take_two_lines(self):
         self.assertEqual(self.menu.title_lines('Pause'), ['Pause'])
         self.assertEqual(self.menu.title_lines('Episodes On Demand'), ['Episodes On', 'Demand'])

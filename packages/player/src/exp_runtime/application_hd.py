@@ -25,7 +25,7 @@ from .desktop_main_hd import HdMainMenu
 from .animation_curves import ease_in_out
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
 from .desktop_pause_hd import (ASPECT_NAMES, TEXT_ANIMATION_NAMES, CONFIRM_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES,
-                               focus_step, place_controls)
+                               drag_scroll, focus_step, place_controls)
 from .menu_engine import BACK, CUSTOM_MENUS, ENGINE
 from .settings import START_IN
 from .hd_ui import S, FRAME
@@ -686,11 +686,14 @@ class HdShell:
         for rect, command in reversed(self.hits()):
             if rect.collidepoint(point):
                 self.pressed = command
+                area = self.pause.scroll_area if command in (c for _, c in self.pause_buttons) else None
                 if command[0] == 'pause_slider':
                     self.drag = ('slider', command[1])
                     self.set_volume(command[1], (point[0] - 143) / 460)
-                elif command[0] == 'pause_scroll':
-                    self.drag = ('scroll', self.pause.state.scroll, point[1])
+                elif area is not None and area.collidepoint(point):
+                    # A scrolling page (a text page, or rows too many for the frame): the press scrolls once it
+                    # moves, else it is a tap on what it began on.
+                    self.drag = ('scroll', self.pause.state.scroll, point[1], False)
                 return
 
     def pointer_move(self, point):
@@ -699,12 +702,13 @@ class HdShell:
         if self.drag[0] == 'slider':
             self.set_volume(self.drag[1], (point[0] - 143) / 460)
         elif self.drag[0] == 'scroll':
-            state = self.pause.state
-            state.scroll = min(state.max_scroll, max(0.0, self.drag[1] - (point[1] - self.drag[2])))
+            self.drag = drag_scroll(self.pause.state, self.drag, point[1])
+            if self.drag[3]:
+                self.pressed = None                 # (a scroll: nothing it began on is pressed, or clicks)
 
     def pointer_up(self, point):
         pressed, self.pressed, drag, self.drag = self.pressed, None, self.drag, None
-        if pressed is None or drag is not None:
+        if pressed is None or pressed[0] == 'pause_scroll' or (drag is not None and (drag[0] != 'scroll' or drag[3])):
             return
         for rect, command in reversed(self.hits()):
             if rect.collidepoint(point) and command == pressed:

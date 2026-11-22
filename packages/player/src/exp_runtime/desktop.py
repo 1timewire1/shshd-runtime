@@ -53,7 +53,7 @@ from .x360_diss import (ROUND_BACKGROUNDS as X360_ROUND_BACKGROUNDS, ROUND_EPISO
 from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, GRID_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
 from .desktop_pause_hd import (ASPECT_NAMES, TEXT_ANIMATION_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE, LANGUAGE_NAMES,
-                               focus_step, place_controls)
+                               drag_scroll, focus_step, place_controls)
 from . import backdrop_fit, frame_shape
 from .desktop_hd_menu import HdMenuWindows
 from .desktop_badge_hd import HdSceneBadge
@@ -3900,15 +3900,25 @@ class Desktop:
             state.focus = None                      # the pointer takes over from the arrow keys
         x, y = self._pause_point(event.pos)
         if event.type == pygame.MOUSEBUTTONUP:
-            state.drag = None
+            drag, state.drag = state.drag, None
+            if drag and drag[0] == 'scroll' and not drag[3] and drag[4] is not None:
+                self.command(drag[4])               # a tap on a scrolling page: what it began on
             return True
         if event.type == pygame.MOUSEMOTION:
             if state.drag and state.drag[0] == 'slider':
                 self._set_volume(state.drag[1], self.pause_hd.slider_value(x))
             elif state.drag and state.drag[0] == 'scroll':
-                state.scroll = min(state.max_scroll, max(0., state.drag[1] - (y - state.drag[2])))
+                state.drag = drag_scroll(state, state.drag, y)
             return True
         if event.button != 1:
+            return True
+        hit = next((command for rect, command in self.pause_buttons
+                    if rect.collidepoint(x, y) and command[0] != 'pause_scroll'), None)
+        area = self.pause_hd.scroll_area
+        if area is not None and area.collidepoint(x, y) and (hit is None or hit[0] != 'pause_slider'):
+            # A scrolling page (a text page, or rows too many for the frame): the press scrolls once it moves, else it
+            # is a tap on what it began on, sent as it lifts.
+            state.drag = ('scroll', state.scroll, y, False, hit)
             return True
         for rect, command in self.pause_buttons:
             if not rect.collidepoint(x, y):
@@ -3917,7 +3927,7 @@ class Desktop:
                 state.drag = ('slider', command[1])
                 self._set_volume(command[1], self.pause_hd.slider_value(x))
             elif command[0] == 'pause_scroll':
-                state.drag = ('scroll', state.scroll, y)
+                state.drag = ('scroll', state.scroll, y, False, None)
             else:
                 self.command(command)
             break

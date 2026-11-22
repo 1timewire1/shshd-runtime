@@ -498,6 +498,12 @@ menu's entrance and exit transitions. SHS HD's `SHSEngine::notifyNewMenu`
   screen shows.
 - **Back.** Going back runs the same slide the other way. The page categories
   this player adds (General / Sound / Controller / Extras / Add-Ons / Data Management) slide like native pages.
+- **Pages too tall for the frame** (owner, 2026-11-22). A page of rows that would not fit centred (the main menu's General,
+  ten rows, at 3:4) takes a text page's bounds (`page_bounds`: the frame's height less 30 points above and 31 below, and a
+  phone's bars) and its rows scroll between the header and the footer, as a text page's lines do: a drag anywhere on them
+  (a press scrolls once it moves 8 points, `DRAG_SLOP`; else it is a tap on its row), the wheel, Page Up / Down. The arrow
+  keys still step row by row, scrolling the highlighted one into view. The host's own controls (iOS's UISwitches and
+  UISliders) are placed on whole rows only. A page that fits is laid out as before.
 - **Choice pages** (owner, 2026-11-09). An option that is one of a few values (General's Preferred Language and Start In,
   the Controller page's Confirm Button and Word Grid Controls) shows its current value under its name, in smaller
   letters as the episode lists' airdates, with a `>`. Its row slides in a page of the values, the current one ticked;

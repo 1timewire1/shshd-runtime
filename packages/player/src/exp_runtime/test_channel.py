@@ -146,7 +146,8 @@ def _keys():
               ('RETURN', 'ESCAPE', 'UP', 'DOWN', 'LEFT', 'RIGHT', 'SPACE', 'BACKSPACE', 'TAB')}
     wanted.update({chr(c): 'K_' + chr(c) for c in range(ord('a'), ord('z') + 1)})
     wanted.update({str(d): f'K_{d}' for d in range(10)})
-    wanted.update({'enter': 'K_RETURN', 'back': 'K_ESCAPE', 'f5': 'K_F5', 'f9': 'K_F9'})
+    wanted.update({'enter': 'K_RETURN', 'back': 'K_ESCAPE', 'f5': 'K_F5', 'f9': 'K_F9',
+                   'pageup': 'K_PAGEUP', 'pagedown': 'K_PAGEDOWN'})      # (a scrolling page's own keys)
     keys = {}
     for name, constant in wanted.items():
         code = getattr(pygame, constant, None)
@@ -1012,6 +1013,9 @@ class Commands:
         pause = self._menu()[0]
         out = dict(ok=True, page=pause.state.screen,
                    rows=[{k: v for k, v in row.items() if k != 'command'} for row in rows])
+        if getattr(pause, 'scroll_area', None) is not None:
+            # A page that scrolls (a text page; rows too many for the frame): where it is, in points.
+            out['scroll'] = dict(at=round(pause.state.scroll, 1), most=round(pause.state.max_scroll, 1))
         text = self._page_text(pause, pause.state.screen)
         if text is not None:
             out.update(title=text[0], text=text[1])

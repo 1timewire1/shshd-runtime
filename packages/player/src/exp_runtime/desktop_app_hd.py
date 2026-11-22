@@ -20,7 +20,7 @@ from . import graphics as pygame
 from .app_icon import game_icon_surface, icon_surface
 from .desktop_pause import ease_in_out
 from .desktop_pause_hd import (BACK, BLUE, BORDER, CYCLE_POINTS, FOOT, HEADER, LABEL_BLUE, PANEL_W, PANEL_X, ROW,
-                               ROW_BACKGROUND, SEPARATOR, HdPauseMenu, LANGUAGE_NAMES)
+                               ROW_BACKGROUND, SEPARATOR, HdPauseMenu, LANGUAGE_NAMES, drag_scroll)
 from .games import GAMES
 from .hd_scale import S
 
@@ -118,18 +118,20 @@ class AppCard(HdPauseMenu):
             rect = pygame.Rect(round((x + 12 - r) * S), round((middle - r) * S), round(2 * r * S), round(2 * r * S))
             pygame.draw.arc(layer, GRAY, rect, -0.8, 0.8, max(1, round(2 * S)))
 
-    def slider(self, layer, top, value, key=None):
+    def slider(self, layer, top, value, key=None, *, place=True):
         """A volume row's control line, as HdPauseMenu.slider draws it with shape speakers; where the host shows its own
-        (iOS: a UISlider, graphics.native_controls), the speakers are drawn and the track is placed for it instead. (The
-        page passes `key` since the iOS host's UISliders; without it here the chooser's Sound page stopped the app on
-        every platform: reported on iOS 2026-11-22.)"""
+        (iOS: a UISlider, graphics.native_controls), the speakers are drawn and the track is placed for it instead
+        (`place` False: not placed, a row scrolled partly out). (The page passes `key` since the iOS host's UISliders;
+        without it here the chooser's Sound page stopped the app on every platform: reported on iOS 2026-11-22. Keep
+        this signature HdPauseMenu.slider's.)"""
         middle = top + 86
         self.speaker(layer, 112, middle, 0)
         self.speaker(layer, 618, middle, 2)
         left, right = 143, 603
         if pygame.native_controls is not None and key is not None:
-            self.screen_controls.append(dict(kind='slider', key=key, left=left, right=right, middle=middle,
-                                             value=float(value)))
+            if place:
+                self.screen_controls.append(dict(kind='slider', key=key, left=left, right=right, middle=middle,
+                                                 value=float(value)))
             return pygame.Rect(left - 10, middle - 22, right - left + 20, 44)
         self.rect(layer, (74, 132, 213), (left, middle - 3, right - left, 6), 3)
         self.rect(layer, (150, 185, 235), (left, middle - 3, right - left, 2), 1)
@@ -758,21 +760,26 @@ class AppOptions:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             self.menu.state.focus = None                # the pointer takes over from the keys
             self.pressed = next((command for rect, command in reversed(self.buttons) if rect.collidepoint(point)), None)
+            area = self.menu.scroll_area
             if self.pressed is not None and self.pressed[0] == 'pause_slider':
                 self.drag = ('slider', self.pressed[1])
                 self.set_volume(self.pressed[1], (point[0] - SLIDER[0]) / SLIDER[1])
-            elif self.pressed is not None and self.pressed[0] == 'pause_scroll':
-                self.drag = ('scroll', self.menu.state.scroll, point[1])
+            elif area is not None and area.collidepoint(point):
+                # A scrolling page (a text page, or rows too many for the frame): the press scrolls once it moves,
+                # else it is a tap on what it began on.
+                self.drag = ('scroll', self.menu.state.scroll, point[1], False)
         elif event.type == pygame.MOUSEMOTION and self.drag is not None:
             if self.drag[0] == 'slider':
                 self.set_volume(self.drag[1], (point[0] - SLIDER[0]) / SLIDER[1])
             else:
-                state = self.menu.state
-                state.scroll = min(state.max_scroll, max(0., self.drag[1] - (point[1] - self.drag[2])))
+                self.drag = drag_scroll(self.menu.state, self.drag, point[1])
+                if self.drag[3]:
+                    self.pressed = None             # (a scroll: nothing it began on is pressed)
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             pressed, drag, self.pressed, self.drag = self.pressed, self.drag, None, None
-            if pressed is not None and drag is None and any(rect.collidepoint(point) and command == pressed
-                                                            for rect, command in self.buttons):
+            tapped = drag is None or (drag[0] == 'scroll' and not drag[3])
+            if (pressed is not None and tapped and pressed[0] != 'pause_scroll'
+                    and any(rect.collidepoint(point) and command == pressed for rect, command in self.buttons)):
                 self.app._click_sound()
                 self.activate(pressed)
         elif event.type == pygame.MOUSEWHEEL:
