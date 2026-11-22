@@ -128,7 +128,8 @@
   Classic's panel with its title tab, dark rows with a gold-edged highlight, Classic's bar as the timer, Romic Bold):
   chc revision 2 adds Classic's UI pieces (29109 on: the panel, its Yes/No popup, the rows, the capsule, the combo bar, the
   close button; `ch_dialogue_skin.py`), the cases still needing revision 1; `desktop_ch_ui.ChUi` draws them for any screen
-  (sliced, kept by size); the **message panel** is the first screen in them (`CodMessageRenderer.draw_skinned`). A library
+  (sliced, kept by size); the **message panel** (`CodMessageRenderer.draw_skinned`) and the story's windows ("Exit Game?",
+  Connection Error, as Classic's own Yes/No popup: `CodMenuWindows.draw_popup`) are in them. A library
   with chc revision 1 keeps CoD's own look. The test channel's `state` reports the scene badge (`badge`).
 
 ## 1.1.0 (shshd-runtime)

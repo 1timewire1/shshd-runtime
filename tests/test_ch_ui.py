@@ -90,5 +90,49 @@ class ChUiTests(unittest.TestCase):
                 self.assertEqual(buttons, 'CoD')                          # (revision 1: CoD's own panel)
 
 
+class ChWindowTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        pygame.init()
+        pygame.display.set_mode((1, 1))
+
+    def windows(self, ui=True):
+        from exp_runtime.desktop_cod_menu import CodMenuWindows
+        resources, _ = a_chc(ui=ui)
+        windows = CodMenuWindows.__new__(CodMenuWindows)
+        no, yes = SimpleNamespace(id=25, label='No'), SimpleNamespace(id=24, label='Yes')
+        menus = {16: SimpleNamespace(id=16, style=2, title='Exit Game?', message='Leave and open your browser?'),
+                 38: SimpleNamespace(id=38, style=0xff, title='Connection Error', message='Unable to connect.')}
+        windows.data = SimpleNamespace(menu=menus.get, items=lambda menu: [no, yes] if menu == 16 else [no])
+        windows.art = SimpleNamespace(resources=resources)
+        windows.library = resources.library
+        windows.items = windows.data.items
+        windows.text_for = lambda value, variables=None: value
+        windows.item_label = lambda action, variables: action.label
+        windows.strings = lambda: {154: 'OK'}
+        return windows, (no, yes)
+
+    def test_an_alert_and_a_notice_take_classics_popup_and_their_taps_follow_the_pills(self):
+        from exp_runtime.hd_ui import FRAME, S
+        windows, (no, yes) = self.windows()
+        layer = pygame.Surface((FRAME[0] * S, FRAME[1] * S), pygame.SRCALPHA)
+        g = windows.draw(layer, 16, pressed=('item', 24))
+        self.assertEqual(g['kind'], 'alert')
+        self.assertEqual([command for _, command in windows.hits], [('item', 25), ('item', 24)])
+        left, right = (rect for rect, _ in windows.hits)
+        self.assertLess(left.right, FRAME[0] / 2)
+        self.assertGreater(right.left, FRAME[0] / 2)                     # (No left of the middle, Yes right)
+        self.assertGreater(layer.get_at((left.centerx * S, left.centery * S)).a, 200)    # (a pill drawn under each tap)
+        windows.draw(layer, 38)
+        self.assertEqual([command for _, command in windows.hits], [('item', 25)])     # (the notice's one OK)
+
+    def test_without_the_pieces_the_windows_keep_cods_card(self):
+        from exp_runtime.desktop_hd_menu import HdMenuWindows
+        windows, _ = self.windows(ui=False)
+        with mock.patch.object(HdMenuWindows, 'draw', return_value='CoD card') as plain:
+            self.assertEqual(windows.draw(None, 16), 'CoD card')
+        plain.assert_called_once()
+
+
 if __name__ == '__main__':
     unittest.main()
