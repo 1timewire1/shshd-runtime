@@ -473,6 +473,24 @@ class ShellActionTests(unittest.TestCase):
         shell.perform(18)
         self.assertEqual((shell.app.urls, shell.stack.stack), (['terms'], []))
 
+    def test_the_legal_page_is_a_page_of_the_card_whose_rows_press_the_windows_items(self):
+        # Owner, 2026-11-22: the legal window was the lone window among Help's card pages (no slide, no Claire Hart skin).
+        shell = self.shell
+        items = [SimpleNamespace(id=31, is_footer_button=False), SimpleNamespace(id=32, is_footer_button=False),
+                 SimpleNamespace(id=33, is_footer_button=True)]
+        shell.windows = SimpleNamespace(items=lambda menu: items, item_label=lambda action, v: f'Read {action.id}',
+                                        text_for=lambda string, v=None: 'Privacy Policy/ EULA')
+        shown = []
+        shell.pause = SimpleNamespace(show_rows=lambda *args: shown.append(args))
+        shell.data = SimpleNamespace(menu=lambda number: SimpleNamespace(title=99), action=lambda number: number)
+        pressed = []
+        shell.stack = SimpleNamespace(press=pressed.append)
+        shell.activate(('pause_open', 'privacy'))
+        self.assertEqual(shown, [(shell.LEGAL_PAGE, 'Privacy Policy/ EULA',
+                                  [('legal:31', 'Read 31'), ('legal:32', 'Read 32')], 'help')])   # (the back button is the card's)
+        shell.activate(('pause_action', 'legal:32'))
+        self.assertEqual(pressed, [32])                     # the window's own item: its "Exit Game?" first
+
     def test_usage_sharing_switch_and_its_confirmations(self):
         shell, state = self.shell, self.shell.app.state
         shell.perform(17)
