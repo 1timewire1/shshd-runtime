@@ -133,7 +133,12 @@
   rounds' **skip prompt** and the **timed word quiz** (`ChoiceRenderer.draw_skinned`: CoD's rows, scrolling, taps and timer
   place kept; the panel's top brought down to Classic's header, the options in dark bars with the focused or picked one
   lit gold, the combo bar running down in place of the circle timer, the quiz's score on the teal capsule with its "+n"
-  teal and "-n" red, the dialogue skin's ring round a portrait). A library
+  teal and "-n" red, the dialogue skin's ring round a portrait, whole, with the tab moved beside it, and an option's detail
+  line under it). The **pause menu** with its pages (`CodPauseMenu`: the panel as the card, rows as dark bars lit gold,
+  values under their labels, the back and value buttons as the Play Now pill, a gold tick; UIKit's switches and slider
+  kept), **text entry** (`InputRenderer._draw_cod_skinned`: the name in the teal capsule, a gold caret; the refused name's
+  alert as Classic's popup) and the **portrait picker** (`CodCharacterPickerRenderer`: the panel, the skin's rings, the
+  check button as the pill) follow, their places and taps CoD's. A library
   with chc revision 1 keeps CoD's own look. The test channel's `state` reports the scene badge (`badge`).
 
 ## 1.1.0 (shshd-runtime)

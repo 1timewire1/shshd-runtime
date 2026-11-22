@@ -199,6 +199,15 @@ class CodCharacterPickerRenderer(CharacterPickerRenderer):
     edge_bar = 'bar'
     U = 2
     TITLE_CENTER = (160, 112)
+    # The Claire Hart skin (desktop_ch_ui.ChUi; CLAIRE_HART_SKIN_PLAN.md, owner 2026-11-21): Classic's panel with the title
+    # on its tab, the dialogue skin's ring round each portrait, the check button the Play Now pill with a tick. The
+    # portraits' places, motion and taps stay. In CoD points: the art scale, the title's size, the pill's size.
+    SKIN_ART, SKIN_TITLE, SKIN_CHECK = .3, 17, (66, 32)
+    pressed = False
+
+    def ch_ui(self):
+        from .desktop_ch_ui import ChUi
+        return ChUi.of(self.resources)
 
     def __init__(self, resources, text_renderer, artwork):
         super().__init__(resources, text_renderer, artwork)
@@ -212,10 +221,16 @@ class CodCharacterPickerRenderer(CharacterPickerRenderer):
             return False
 
     @lru_cache(maxsize=32)
-    def pieces(self, asset, theme):
-        """[(image, top-left)] of one portrait at this canvas's density, relative to its centre."""
+    def pieces(self, asset, theme, ui=None):
+        """[(image, top-left)] of one portrait at this canvas's density, relative to its centre. Under the Claire Hart
+        skin (`ui`) the ring is the dialogue skin's ring and disc, at the picker ring's size."""
         U = self.U
         ring = self.art.frame_scaled(126, {1: 43, 2: 44}.get(theme, 43), U)
+        if ui is not None and 'ring' in ui.spec and 'disc' in ui.spec:
+            size = ring.get_size()
+            disc = ui.sized(ui.spec['disc'], [round(v * self.art.DISC_UNITS / 128) for v in size])
+            ring = ui.sized(ui.spec['ring'], size).copy()
+            ring.blit(disc, disc.get_rect(center=ring.get_rect().center))
         pieces = [(ring, ring.get_rect(center=(0, 0)).topleft)]
         composed = self.art.hd_portrait(asset, False, U)
         if composed is not None:
@@ -231,25 +246,49 @@ class CodCharacterPickerRenderer(CharacterPickerRenderer):
         self.pending_background = self.art.image(engine.panel.background_id)
         self.pending_background_origin = self.art.background_origin(self.pending_background, engine)
         theme = panel_theme(session)
-        self.art.box(canvas, Rect(0, 120, 320, 240), theme, alpha=243, scale=U)
+        ui = self.ch_ui()
+        if ui is not None:
+            # Classic's panel over CoD's box (0, 120, 320 x 240), raised so its tab's title is where CoD's title is
+            # (centred at TITLE_CENTER's y, 8 above the box).
+            s = self.SKIN_ART * U
+            top = self.TITLE_CENTER[1] * U - ui.title_centre(s)
+            title = session.pending.details['text'] or ''
+            title_px = self.SKIN_TITLE * U
+            while title_px > 10 * U and ui.font(title_px).size(title)[0] > 280 * U:
+                title_px -= U / 2
+            ui.draw_panel(canvas, pygame.Rect(0, round(top), 320 * U, round(360 * U - top)), s, title, title_px)
+        else:
+            self.art.box(canvas, Rect(0, 120, 320, 240), theme, alpha=243, scale=U)
         for index, character in enumerate(picker.characters):
             variants = engine.character_art_variants.get(character, [-1])
             color = engine.numbers.get(engine.number_key(character, 651), 0)
             motion = picker.portraits[index]
             px, py, scale = motion.pose
             cx, cy = px * U, py * U                     # the pose is the portrait's centre
-            for image, (ox, oy) in self.pieces(variants[0], color):
+            for image, (ox, oy) in self.pieces(variants[0], color, ui):
                 piece = pygame.transform.smoothscale(image, (max(1, round(image.get_width() * scale)),
                                                              max(1, round(image.get_height() * scale))))
                 piece = faded(piece, motion.opacity)
                 canvas.blit(piece, (round(cx + ox * scale), round(cy + oy * scale)))
-        title = self.text.layout('PajamaHip26', session.pending.details['text'], 300,
-                                 TextStyle(16, -16, (255, 255, 255)))
-        left, top, right, bottom = title.ink_bounds
-        self.text.draw_layout(canvas, 'PajamaHip26', title,
-                              round((self.TITLE_CENTER[0] - (left + right) / 2) * U),
-                              round((self.TITLE_CENTER[1] - (top + bottom) / 2) * U), scale=U)
-        canvas.blit(self.art.frame_scaled(126, 41, U), (205 * U, 347 * U))
+        if ui is not None:
+            # The check button as the Play Now pill with a white tick, over CoD's button (confirm_hit's 205-275 x 344-389).
+            pressed = self.pressed
+            pill = ui.pill((self.SKIN_CHECK[0] * U, self.SKIN_CHECK[1] * U), self.SKIN_CHECK[1] * U / 57,
+                           'pressed' if pressed else 'idle')
+            at = pill.get_rect(center=(240 * U, 366 * U))
+            canvas.blit(pill, at)
+            tick = [(at.centerx - 9 * U, at.centery), (at.centerx - 3 * U, at.centery + 6 * U),
+                    (at.centerx + 9 * U, at.centery - 7 * U)]
+            pygame.draw.lines(canvas, (0, 0, 0, 110), False, [(x + U, y + 1.5 * U) for x, y in tick], round(3.2 * U))
+            pygame.draw.lines(canvas, ui.TEXT + (255,), False, tick, round(3.2 * U))
+        else:
+            title = self.text.layout('PajamaHip26', session.pending.details['text'], 300,
+                                     TextStyle(16, -16, (255, 255, 255)))
+            left, top, right, bottom = title.ink_bounds
+            self.text.draw_layout(canvas, 'PajamaHip26', title,
+                                  round((self.TITLE_CENTER[0] - (left + right) / 2) * U),
+                                  round((self.TITLE_CENTER[1] - (top + bottom) / 2) * U), scale=U)
+            canvas.blit(self.art.frame_scaled(126, 41, U), (205 * U, 347 * U))
         if self.hint is None:
             self.hint = MenuStrings.load(self.resources.library)[37]
         self.footer_text = self.hint

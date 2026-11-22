@@ -264,8 +264,13 @@ class InputRenderer:
         self.edge_bar = None
         self.pending_background = self.art.image(session.engine.panel.background_id)
         self.pending_background_origin = self.art.background_origin(self.pending_background, session.engine)
-        if error:
+        ui = self.ch_ui() if self.cod_available() else None
+        if error and ui is not None:
+            buttons = self.alert_skinned(ui)
+        elif error:
             buttons = self.alert()
+        elif ui is not None:
+            return self._draw_cod_skinned(ui, target, session, cursor_visible)
         elif self.cod_available():
             return self._draw_cod(target, session, cursor_visible)
         elif getattr(self.resources.library, 'kind', 'apk') == 'ipa':
@@ -383,6 +388,97 @@ class InputRenderer:
         if target is not None:
             target.blit(pygame.transform.smoothscale(self.canvas, target.get_size()), (0, 0))
         return [(pygame.Rect(*(round(v) for v in field)), ('input_focus',))]
+
+    # -- the Claire Hart skin (desktop_ch_ui.ChUi; CLAIRE_HART_SKIN_PLAN.md, owner 2026-11-21) ------------------------------
+    # Layout 46's places stay (the prompt's, the name field's and its tap); the panel is Classic's with the title on its
+    # tab, the prompt off-white Romic Bold, the field the teal capsule with the name in it and a gold caret. The refused
+    # name's alert is Classic's Yes/No popup. In CoD points (a column unit): the art scale, title / prompt / name sizes.
+    SKIN_ART, SKIN_TITLE, SKIN_PROMPT, SKIN_NAME, SKIN_ALERT = .3, 17, 14, 17, 250
+
+    def ch_ui(self):
+        from .desktop_ch_ui import ChUi
+        return ChUi.of(self.resources)
+
+    def _draw_cod_skinned(self, ui, target, session, cursor_visible):
+        from .hd_layout import BankLayouts
+        k = self.scale
+        s = self.SKIN_ART * k
+        details = session.pending.details
+        bank = self.resources.dialogue_layout().bank
+        layouts = BankLayouts(bank)
+        prompt_node = bank.rectangle(46, 23)
+        px = self.SKIN_PROMPT * k
+        lines = ui.wrap(details['prompt'], px, prompt_node.width * k) if details['prompt'] else []
+        # CoD's panel grows up by the prompt's extra lines (_draw_cod); the same here, by Romic's pitch.
+        ox, oy = (320 - COD_BOX_WIDTH) / 2, COD_TOP - HD_CAP_HEIGHT * 16 - max(0, len(lines) - 1) * ui.pitch(px) / k
+        prompt = layouts.rectangle(46, 23, (ox, oy))
+        field = layouts.rectangle(46, 34, (ox, oy))
+        name = layouts.rectangle(46, 44, (ox, oy))
+        top = prompt[1] * k - ui.header_height(s) - 6 * k
+        bottom = (field[1] + field[3]) * k + 4 * k + ui.footer_height(s)
+        rect = pygame.Rect(round(ox * k), round(top), round(COD_BOX_WIDTH * k), round(bottom - top))
+        title = details['title'] or ''
+        title_px = self.SKIN_TITLE * k
+        while title_px > 10 * k and ui.font(title_px).size(title)[0] > rect.width - 40 * k:
+            title_px -= k / 2
+        ui.draw_panel(self.canvas, rect, s, title, title_px)
+        y = prompt[1] * k
+        for line in lines:
+            if line:
+                ui.text(self.canvas, line, px, ui.TEXT, (round(rect.centerx), round(y + ui.pitch(px) / 2)))
+            y += ui.pitch(px)
+        box = pygame.Rect(round(field[0] * k), round(field[1] * k), round(field[2] * k), round(field[3] * k))
+        self.canvas.blit(ui.capsule(box.size, box.height / ui.picture(ui.ui['capsule']['picture']).get_height()),
+                         box.topleft)
+        draft = details.get('draft', details['default'])
+        nx = max(name[0] * k, box.x + box.height * .55)          # (clear of the capsule's rounded end)
+        if not draft and self.answer:                 # (the faint answer, Choice & Answer Hints)
+            hint_px = self.SKIN_NAME * k
+            while hint_px > 8 * k and ui.font(hint_px).size(self.answer)[0] > box.right - box.height * .55 - nx:
+                hint_px -= k / 2
+            height = ui.font(hint_px).get_height()
+            ui.text(self.canvas, self.answer, hint_px, ui.TEXT, topleft=(round(nx), round(box.centery - height / 2)),
+                    alpha=96, shadow=False)
+        end = nx
+        if draft:
+            height = ui.font(self.SKIN_NAME * k).get_height()
+            end = ui.text(self.canvas, draft, self.SKIN_NAME * k, ui.TEXT,
+                          topleft=(round(nx), round(box.centery - height / 2))).right
+        if cursor_visible:
+            height = round(box.height * .62)
+            pygame.draw.rect(self.canvas, ui.GOLD, pygame.Rect(round(end + COD_CURSOR_GAP * k / 2),
+                                                               round(box.centery - height / 2), max(2, round(1.5 * k)),
+                                                               height))
+        self.edge_bar = 'bar'
+        if target is not None:
+            target.blit(pygame.transform.smoothscale(self.canvas, target.get_size()), (0, 0))
+        return [(pygame.Rect(*(round(v) for v in field)), ('input_focus',))]
+
+    def alert_skinned(self, ui):
+        """The refused name's alert as Classic's popup: its title gold, its text off-white, its OK on a pill. A tap
+        anywhere on it dismisses it, as the alert's (ALERT_RECT)."""
+        k = self.scale
+        strings = self.strings()
+        spec = ui.ui['popup']
+        w, h = spec['size']
+        scale = self.SKIN_ALERT * k / w
+        rect = pygame.Rect(0, 0, round(w * scale), round(h * scale))
+        rect.center = (round((ALERT_RECT[0] + ALERT_RECT[2] / 2) * k), round((ALERT_RECT[1] + ALERT_RECT[3] / 2) * k))
+        self.canvas.blit(ui.popup(rect.size), rect.topleft)
+        ui.text(self.canvas, strings[258], 17 * k, ui.GOLD, (rect.centerx, round(rect.y + spec['title'] * scale)))
+        top, bottom = (v * scale for v in spec['text'])
+        body = 12 * k
+        lines = ui.wrap(strings[260], body, rect.width - 50 * k)
+        pitch = ui.pitch(body)
+        y = rect.y + (top + bottom) / 2 - pitch * (len(lines) - 1) / 2
+        for line in lines:
+            ui.text(self.canvas, line, body, ui.TEXT, (rect.centerx, round(y)))
+            y += pitch
+        pill = ui.pill((95 * k, 26 * k), 26 * k / 57)
+        at = pill.get_rect(center=(rect.centerx, round(rect.y + spec['buttons'] * scale)))
+        self.canvas.blit(pill, at)
+        ui.text(self.canvas, strings[164], 13 * k, ui.TEXT, (at.centerx, at.centery + 1))
+        return [(pygame.Rect(ALERT_RECT), ('input_dismiss',))]
 
     def _tile(self, image, rect):
         """`CSMasterImage::drawTiledNoCP`: the image repeated from the rectangle's top-left, clipped to it."""

@@ -170,14 +170,14 @@ class ChChoiceTests(unittest.TestCase):
 
     def test_a_choice_keeps_cods_rows_and_taps_and_lights_the_focused_row(self):
         details = dict(title='What do you say?', text='Where were you?', options=['Home', 'Out', 'No comment'],
-                       timeout_ms=0)
+                       details=['', 'Open till 5', ''], timeout_ms=0)
         page = self.page()
         renderer = self.renderer(page, details)
         _, buttons = renderer.draw_hd(None, self.session(details), page, 0, None, None, False, focus=1)
         self.assertEqual([command for _, command in buttons], [('choose', 0), ('choose', 1), ('choose', 2), ('menu',)])
         self.assertEqual([(r.x, r.y, r.w, r.h) for r, _ in buttons[:3]], [(23, 150 + 44 * i, 274, 44) for i in range(3)])
-        self.assertIn(('ch', 'Out', (540, 80), True), renderer._labels)          # (the focused row's label, lit)
-        self.assertIn(('ch', 'Home', (540, 80), False), renderer._labels)
+        self.assertIn(('ch', 'Out', (540, 80), True, 'Open till 5'), renderer._labels)   # (lit, with its detail line)
+        self.assertIn(('ch', 'Home', (540, 80), False, None), renderer._labels)
         self.assertGreater(renderer.canvas.get_at((320, 120 * 2)).a, 200)       # (the panel under the description)
         self.assertEqual(renderer.overlay.get_at((320, (282 + 30) * 2)).a, 0)   # (no timer on an untimed choice)
 
@@ -197,6 +197,110 @@ class ChChoiceTests(unittest.TestCase):
         bar, capsule = renderer.skin_footer(renderer.ch_ui(page), page, True)
         self.assertLess(bar.right, capsule.left)                                # (the bar shortened for the capsule)
         self.assertGreater(renderer.canvas.get_at(capsule.center).a, 200)
+
+
+class ChScreenTests(unittest.TestCase):
+    """The pause menu, text entry and the portrait picker in the skin: their places and taps CoD's."""
+
+    @classmethod
+    def setUpClass(cls):
+        pygame.init()
+        pygame.display.set_mode((1, 1))
+
+    def test_the_tab_moves_beside_a_portrait_and_stays_centred_without_one(self):
+        from exp_runtime.desktop_ch_ui import ChUi
+        ui = ChUi.of(a_chc()[0])
+        middle, before = ui.tab_bounds(560, .6)
+        _, after = ui.tab_bounds(560, .6, tab_centre=560 - (60 * .6 + before + (270 - 180) * .6 + middle / 2))
+        self.assertGreater(before, 0)
+        _, right = ui.tab_bounds(560, .6, tab_centre=420)
+        self.assertGreater(right, before)                              # (moved right, away from a left portrait)
+        self.assertIsNot(ui.panel((560, 400), .6), ui.panel((560, 400), .6, tab_centre=420))
+
+    def test_the_pause_menu_takes_classics_dress_and_keeps_its_taps(self):
+        from exp_runtime.desktop_cod_pause import CodPauseMenu
+        from exp_runtime.desktop_pause_hd import PANEL_X, ROW
+        strings = [f's{i}' for i in range(300)]
+        with mock.patch.object(CodPauseMenu, 'strings', lambda self: strings):
+            menu = CodPauseMenu(a_chc()[0], SimpleNamespace(game_id=lambda: 'cod'))
+            layer, buttons = menu.layout({})
+            self.assertIsNotNone(menu.ui)
+            self.assertEqual(menu.LABEL_COLOR, menu.ui.TEXT)
+            self.assertEqual([command for _, command in buttons][:2], [('resume',), ('pause_open', 'options')])
+            self.assertEqual(buttons[1][0].height, ROW)
+            menu.state.screen = 'options:general'
+            layer, buttons = menu.layout({'autoplay': True, 'aspect_ratio': '3:4 (HD)'})
+            back = next(rect for rect, command in buttons if command == ('pause_back',))
+            self.assertEqual((back.x, back.w, back.h), (PANEL_X + 14, 156, 58))
+            self.assertIn(('pause_open', 'choice:aspect_ratio'), [command for _, command in buttons])
+            # The switch off: CoD's own colours come back.
+            menu.resources = SimpleNamespace(library=None, dialogue_skin=lambda: None)
+            self.assertIsNone(menu.skin())
+            self.assertNotIn('LABEL_COLOR', menu.__dict__)
+
+    def test_text_entry_keeps_its_field_and_the_refused_name_takes_the_popup(self):
+        from exp_runtime.desktop_input import ALERT_RECT, InputRenderer
+        from exp_runtime.ui_assets import Rect
+        resources, _ = a_chc()
+        places = {23: (10, 40, 260, 20), 34: (10, 80, 260, 40), 44: (20, 85, 240, 30)}
+
+        class Layouts:
+            def __init__(self, bank):
+                pass
+
+            def rectangle(self, layout, node, origin):
+                x, y, w, h = places[node]
+                return (origin[0] + x, origin[1] + y, w, h)
+        resources.dialogue_layout = lambda: SimpleNamespace(bank=SimpleNamespace(rectangle=lambda layout, node: Rect(0, 0, 260, 20)))
+        renderer = InputRenderer.__new__(InputRenderer)
+        renderer.resources, renderer.scale, renderer.answer = resources, 2, None
+        renderer.canvas = pygame.Surface((640, 960), pygame.SRCALPHA)
+        renderer.art = SimpleNamespace(game_id=lambda: 'cod', cod_hd_common=lambda: object(), image=lambda b: None,
+                                       background_origin=lambda *a: (160, 180))
+        renderer.answer_hint = lambda session, enabled: None
+        session = SimpleNamespace(pending=SimpleNamespace(details=dict(title='Your Name', prompt='Who are you?', default='',
+                                                                       draft='Claire')),
+                                  engine=SimpleNamespace(panel=SimpleNamespace(background_id=-1)))
+        with mock.patch('exp_runtime.hd_layout.BankLayouts', Layouts), \
+                mock.patch.object(InputRenderer, 'strings', lambda self: {258: 'Alert', 260: 'A-Z and 0-9 only.', 164: 'OK'}):
+            buttons = renderer.draw(None, session)
+            (field, command), = buttons
+            self.assertEqual(command, ('input_focus',))
+            ox = (320 - 280) / 2
+            self.assertEqual((field.x, field.w, field.h), (round(ox + 10), 260, 40))
+            self.assertGreater(renderer.canvas.get_at((field.centerx * 2, field.centery * 2)).a, 200)    # (the capsule)
+            self.assertEqual(renderer.draw(None, session, error='refused'), [(pygame.Rect(ALERT_RECT), ('input_dismiss',))])
+
+    def test_the_portrait_picker_takes_the_panel_and_the_pill_over_cods_check(self):
+        from exp_runtime.desktop_picker import CodCharacterPickerRenderer
+        resources, _ = a_chc()
+
+        def solid(colour, size):
+            image = pygame.Surface(size, pygame.SRCALPHA)
+            image.fill(colour)
+            return image
+        boxes = []
+        art = SimpleNamespace(game_id=lambda: 'cod', cod_hd_common=lambda: object(), image=lambda asset: None,
+                              background_origin=lambda *_: (160, 180), DISC_UNITS=105,
+                              box=lambda *a, **k: boxes.append(a),
+                              frame_scaled=lambda pack, frame, k: solid((frame, 0, 0, 255), (64 * k, 64 * k)),
+                              hd_portrait=lambda asset, flag, k: (solid((0, 0, 255, 255), (20 * k, 20 * k)), 0))
+        renderer = CodCharacterPickerRenderer(resources, SimpleNamespace(), art)
+        renderer.hint = 'Select portrait then confirm'
+        portraits = [SimpleNamespace(pose=(160, 275, 1.), opacity=255), SimpleNamespace(pose=(52, 241, .6), opacity=92)]
+        session = SimpleNamespace(
+            pending=SimpleNamespace(details={'text': 'Choose your look!'}),
+            engine=SimpleNamespace(character_picker=SimpleNamespace(characters=[1, 2], portraits=portraits),
+                                   character_art_variants={1: [5], 2: [6]}, numbers={}, number_key=lambda c, v: (c, v),
+                                   panel=SimpleNamespace(background_id=-1)))
+        with mock.patch('exp_runtime.desktop_picker.panel_theme', return_value=0):
+            buttons = renderer.draw(None, session)
+        U = renderer.U
+        self.assertEqual(boxes, [])                                      # (Classic's panel, not CoD's box)
+        self.assertEqual(buttons, [(pygame.Rect(-32, 422, 92, 58), ('menu',))])
+        self.assertNotEqual(renderer.canvas.get_at((210 * U, 352 * U))[:3], (41, 0, 0))   # (no frame 41: the pill)
+        self.assertTrue(CodCharacterPickerRenderer.confirm_hit((240, 366)))          # (the pill over CoD's tap)
+        self.assertGreater(renderer.canvas.get_at((240 * U, 366 * U)).a, 200)
 
 
 if __name__ == '__main__':

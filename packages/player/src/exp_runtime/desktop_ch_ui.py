@@ -114,23 +114,39 @@ class ChUi:
         p = self.ui['panel']
         return (p['size'][1] - p['rows'][1]) * s
 
-    def panel(self, size, s, title_width=0):
+    def tab_bounds(self, width, s, title_width=0, tab_centre=None):
+        """(middle, before): the tab's middle's length and the header's run before the tab, pixels, for a panel `width`
+        across with the tab centred on `tab_centre` (pixels from its left; None: the middle), kept off the caps."""
+        p = self.ui['panel']
+        w = p['size'][0]
+        left, right = p['caps']
+        t0, t1, t2, t3 = p['tab']
+        # The tab's ends are slanted: a title may run into each but for its outer TAB_CLEAR pixels.
+        middle = max((t2 - t1) * s, title_width - ((t1 - t0) + (t3 - t2) - 2 * self.TAB_CLEAR) * s)
+        tab = (t1 - t0 + t3 - t2) * s + middle
+        room = max(0., width - (left + right) * s - tab)
+        if tab_centre is None:
+            return middle, room * (t0 - left) / max(1, (t0 - left) + (w - right - t3))
+        return middle, max(0., min(room, tab_centre - left * s - tab / 2))
+
+    def panel(self, size, s, title_width=0, tab_centre=None):
         """Classic's panel at `size`: its header (with the cream tab) and footer kept at scale `s`, its teal middle
-        stretched; the tab's middle wide enough for a title `title_width` pixels across."""
+        stretched; the tab's middle wide enough for a title `title_width` pixels across, the tab centred on `tab_centre`
+        (pixels from the left; None: the middle, as Classic's)."""
         p = self.ui['panel']
         w, h = p['size']
         left, right = p['caps']
         top, bottom = p['rows']
         t0, t1, t2, t3 = p['tab']
-        # The tab's ends are slanted: a title may run into each but for its outer TAB_CLEAR pixels.
-        middle = max((t2 - t1) * s, title_width - ((t1 - t0) + (t3 - t2) - 2 * self.TAB_CLEAR) * s)
-        key = ('panel', round(size[0]), round(size[1]), round(s, 3), round(middle))
+        middle, before = self.tab_bounds(size[0], s, title_width, tab_centre)
+        after = max(0., size[0] - (left + right) * s - (t1 - t0 + t3 - t2) * s - middle - before)
+        key = ('panel', round(size[0]), round(size[1]), round(s, 3), round(middle), round(before))
         found = self._made.get(key)
         if found is None:
             def cols(row_top):
                 if row_top == 0:
-                    return [(0, left, 'fix'), (left, t0, 'grow'), (t0, t1, 'fix'), (t1, t2, middle), (t2, t3, 'fix'),
-                            (t3, w - right, 'grow'), (w - right, w, 'fix')]
+                    return [(0, left, 'fix'), (left, t0, before), (t0, t1, 'fix'), (t1, t2, middle), (t2, t3, 'fix'),
+                            (t3, w - right, after), (w - right, w, 'fix')]
                 return [(0, left, 'fix'), (left, w - right, 'grow'), (w - right, w, 'fix')]
             found = self._made[key] = self._sliced(self.picture(p['picture']), size, cols,
                                                    [(0, top, 'fix'), (top, bottom, 'grow'), (bottom, h, 'fix')], s)
@@ -141,11 +157,13 @@ class ChUi:
         a, b = self.ui['panel'].get('title', (6, 74))
         return (a + b) / 2 * s
 
-    def draw_panel(self, target, rect, s, title, title_px, *, alpha=255):
-        """The panel at `rect` with `title` on its tab in Romic Bold, Classic's brown."""
+    def draw_panel(self, target, rect, s, title, title_px, *, alpha=255, tab_centre=None):
+        """The panel at `rect` with `title` on its tab in Romic Bold, Classic's brown; the tab centred on `tab_centre`
+        (pixels from the panel's left, beside a portrait) or the panel's middle."""
         font = self.font(title_px)
         words = font.render(title, True, self.TITLE) if title else None
-        piece = self.panel(rect.size, s, words.get_width() if words else 0)
+        width = words.get_width() if words else 0
+        piece = self.panel(rect.size, s, width, tab_centre)
         if alpha < 255:
             piece = piece.copy()
             piece.set_alpha(alpha)
@@ -153,7 +171,11 @@ class ChUi:
         if words is not None:
             if alpha < 255:
                 words.set_alpha(alpha)
-            target.blit(words, words.get_rect(center=(rect.centerx, round(rect.y + self.title_centre(s)))))
+            p = self.ui['panel']
+            t0, t1, t2, t3 = p['tab']
+            middle, before = self.tab_bounds(rect.width, s, width, tab_centre)
+            centre = rect.x + (p['caps'][0] + (t1 - t0)) * s + before + middle / 2
+            target.blit(words, words.get_rect(center=(round(centre), round(rect.y + self.title_centre(s)))))
 
     def row(self, size, s, lit=False):
         """A dark option row; `lit` the gold-edged highlight over it (the picked or focused row)."""

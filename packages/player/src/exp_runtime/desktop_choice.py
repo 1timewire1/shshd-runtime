@@ -688,18 +688,22 @@ class ChoiceRenderer:
         rect = self.skin_rect(ui, page)
         title = details.get('title') or ''
         title_px = self.SKIN_TITLE * k
-        while title_px > 10 * k and ui.font(title_px).size(title)[0] > rect.width - 40 * k:
-            title_px -= k / 2
-        ui.draw_panel(self.canvas, rect, s, title, title_px)
-        # The description: its CoD region (below the header, beside a portrait), centred in it.
-        top = (page.top + page.header_height) * k
+        # The description (and, beside a portrait, the tab): CoD's region below the header, clear of the housing.
         left, right = rect.x + 14 * k, rect.right - 14 * k
+        tab_centre = None
         if page.portrait is not None:
             housing = page.portrait
-            if housing.centerx < g.panel_x + g.panel_width / 2:
+            if housing.center[0] < g.panel_x + g.panel_width / 2:
                 left = max(left, (housing.x + housing.width) * k - 8 * k)
+                tab_centre = (left + rect.right) / 2 - rect.x
             else:
                 right = min(right, housing.x * k + 8 * k)
+                tab_centre = (rect.x + right) / 2 - rect.x
+        room = rect.width - 40 * k if tab_centre is None else min(tab_centre, rect.width - tab_centre) * 2 - 40 * k
+        while title_px > 10 * k and ui.font(title_px).size(title)[0] > room:
+            title_px -= k / 2
+        ui.draw_panel(self.canvas, rect, s, title, title_px, tab_centre=tab_centre)
+        top = (page.top + page.header_height) * k
         height = page.description_height * k
         text = details.get('text') or ''
         if text:
@@ -716,6 +720,7 @@ class ChoiceRenderer:
                             round(page.table.height * k))
         self.canvas.set_clip(table)
         options = details.get('options') or ()
+        extra = details.get('details') or ()          # an option's detail line (engine.OPTION_DETAIL), under its label
         gap = max(1, round(self.SKIN_ROW_GAP * k))
         for row in page.rows:
             cell = Rect(row.rect.x, row.rect.y - scroll, row.rect.width, row.rect.height)
@@ -738,7 +743,8 @@ class ChoiceRenderer:
                     tint.fill(tuple(hint_color[:3]) + (70,))
                     self.canvas.blit(tint, band.topleft)
                 words = options[row.index] if row.index < len(options) else ''
-                self.draw_skin_label(ui, words, band, self.label_home(row, game), g, down)
+                detail = extra[row.index] if row.index < len(extra) and extra[row.index] else None
+                self.draw_skin_label(ui, words, band, self.label_home(row, game), g, down, detail)
             if hit.height > 0:
                 buttons.append((hit, ('choose', row.index)))
         if page.max_scroll:
@@ -749,24 +755,34 @@ class ChoiceRenderer:
         self.canvas.set_clip(None)
         return buttons
 
-    def draw_skin_label(self, ui, words, band, home, geometry, lit):
-        """An option in Romic Bold, centred on its row (gold on the lit one), flying on as CoD's two labels do."""
+    SKIN_DETAIL, SKIN_DETAIL_ALPHA = .75, 170       # a detail line's size against its option's, and its alpha
+
+    def draw_skin_label(self, ui, words, band, home, geometry, lit, detail=None):
+        """An option in Romic Bold, centred on its row (gold on the lit one), with its detail line smaller and fainter
+        under it, flying on as CoD's two labels do."""
         from .hd_choice import label_offsets
         k = self.scale
-        key = ('ch', words, band.size, lit)
+        key = ('ch', words, band.size, lit, detail)
         cache = self.__dict__.setdefault('_labels', {})
         if key not in cache:
             if len(cache) > 32:
                 cache.clear()
             label = pygame.Surface(band.size, pygame.SRCALPHA).convert_alpha()
             label.fill((0, 0, 0, 0))
-            px, lines = ui.fit(words, self.SKIN_OPTION * k, band.width - 16 * k, band.height - 4 * k)
+            small = self.SKIN_OPTION * self.SKIN_DETAIL * k
+            room = band.height - 4 * k - (ui.pitch(small) if detail else 0)
+            px, lines = ui.fit(words, self.SKIN_OPTION * k, band.width - 16 * k, room)
             pitch = ui.pitch(px)
-            y = band.height / 2 - pitch * (len(lines) - 1) / 2
+            block = pitch * len(lines) + (ui.pitch(small) if detail else 0)
+            y = band.height / 2 - block / 2 + pitch / 2
+            colour = ui.LIT if lit else ui.TEXT
             for line in lines:
                 if line:
-                    ui.text(label, line, px, ui.LIT if lit else ui.TEXT, (band.width // 2, round(y)))
+                    ui.text(label, line, px, colour, (band.width // 2, round(y)))
                 y += pitch
+            if detail:
+                y += (ui.pitch(small) - pitch) / 2
+                ui.text(label, detail, small, colour, (band.width // 2, round(y)), alpha=self.SKIN_DETAIL_ALPHA)
             cache[key] = label, faded(label, 128)
         whole, half = cache[key]
         offsets = label_offsets(home, geometry)
@@ -873,7 +889,8 @@ class ChoiceRenderer:
         skin = ui is not None and 'ring' in ui.spec and 'disc' in ui.spec
         ring = (ui.sized(ui.spec['ring'], (round(128 * k),) * 2) if skin else self.art.ring_frame(k)).copy()
         left, top = round(cx * k) - ring.get_width() // 2, round(cy * k) - ring.get_height() // 2
-        pygame.draw.polygon(ring, (0, 0, 0, 0), [(x * k - left, y * k - top) for x, y in page.portrait_clip])
+        if not skin:            # (the skin's ring stays whole, as the dialogue skin draws it: owner, 2026-11-21)
+            pygame.draw.polygon(ring, (0, 0, 0, 0), [(x * k - left, y * k - top) for x, y in page.portrait_clip])
         center = (round(cx * k) + m, round(cy * k))
         self.wide.blit(ring, ring.get_rect(center=center))
         disc = self.art.disc_frame(page.theme, k)
