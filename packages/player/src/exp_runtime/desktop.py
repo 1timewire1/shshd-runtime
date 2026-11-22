@@ -5035,14 +5035,18 @@ class Desktop:
             if not dragged:
                 url = next((url for rect, url in panels.wall_targets if rect.collidepoint(event.pos)), None)
                 if url:
-                    self._close_panels_now()        # (over the screen they'd hide the window and take its taps)
-                    if self.notice_stack is not None:
-                        self.wall_link = url
-                        self.notice_stack.queue(self.exit_menu)
-                    else:
-                        self._open_link(url)
+                    self._wall_link(url)
             return dragged or area.collidepoint(event.pos)
         return False
+
+    def _wall_link(self, url):
+        """A tap on a wall post's link: "Exit Game?" first where the game has that window, else the link."""
+        self._close_panels_now()        # (over the screen they'd hide the window and take its taps)
+        if self.notice_stack is not None:
+            self.wall_link = url
+            self.notice_stack.queue(self.exit_menu)
+        else:
+            self._open_link(url)
 
     def _wall_perform(self, number):
         """`SHSEngine::doMenuEngineAction` action 18 ("Exit Game?" -> Yes; CoD: menu 16's action 24): the only action menu 17's two buttons
@@ -5533,10 +5537,16 @@ class Desktop:
         target = next((command for rect, command in self.side_panels.tree_targets if rect.collidepoint(position)), None)
         if target is None:
             return False
+        self._tree_target(target)
+        return True
+
+    def _tree_target(self, target):
+        """A tapped tree control, ('node', node), ('rewind',) or ('forward',): the warp, or the "Locked" notice; nothing
+        for a scene a warp can't reach. (The test channel's `tree` taps these by name.)"""
         engine = self.session.engine
         if (self.fade or self.session.transitioning or pygame.time.get_ticks() < self.warp_lockout
                 or engine.dt_view.current is None):
-            return True
+            return
         view = engine.dt_view
         if not self.warp_unlocked:
             # `touchesEnded:` -- while the lock flag is set a touch on any scene (or on Rewind / Fast Forward)
@@ -5547,7 +5557,7 @@ class Desktop:
                 self.notice_stack.queue(28)
             else:
                 self._notice(self._locked_message())
-            return True
+            return
         if target[0] == 'node':
             # Only a scene on the followed story (`DTNode` flag +0x1b1, `active`) is a target; the grayed ones and the automatic
             # branches and joins are not.
@@ -5557,9 +5567,8 @@ class Desktop:
         else:
             node = view.real_child(view.current)
         if node is None or not self.session.has_tree_state(node):
-            return True
+            return
         self._warp(node)
-        return True
 
     def _locked_message(self):
         try:

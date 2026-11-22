@@ -16,11 +16,28 @@ it's done, so real clocks (fades, timers) run as in play.
     ping                        the app is up
     state                       what's showing: screen, pending story screen and its text/options, prompt, switches;
                                 `minigame` for an open mini-game (minigame_report: its score, time, what it waits for;
-                                a Claire Hart round's listed names, hint, power-ups and view)
+                                a Claire Hart round's listed names, hint, power-ups and view); `window` for the window
+                                on top (its source: story, message, update, picker, options or menu); `panels` where
+                                an episode has a Decision Tree or Faceplace wall; `picker` (the look picker's portraits),
+                                `input_error`, `page` (an Options page, in a story too), `games` (the chooser's), `job`
     continue                    a tap on a line or panel (Enter)
-    answer N                    pick choice or prompt row N (0 first)
-    type TEXT                   type into name entry, then confirm it
-    key NAME                    a key press: return, escape, up, down, left, right, space, n, u, ... (the menus' keys)
+    answer N                    pick choice or prompt row N (0 first); on the look picker, bring portrait N to the front
+    type TEXT                   type into name entry (or a screen's field: a search, the browser's path), then Enter
+    key NAME [MS]               a key press: return, escape, up, down, left, right, space, n, u, ... (the menus' keys);
+                                held MS milliseconds if given
+    panels open|close           the side panels, as Tab (beside the game where there's room, else over the screen)
+    tree                        the Decision Tree's scenes: serial, label, current, which a warp reaches, Rewind and
+                                Fast Forward's scenes; `tree warp SERIAL|LABEL`, `tree rewind`, `tree forward` tap them
+                                (the panels open first; locked, its "Locked" window)
+    wall                        the Faceplace wall's posts (sender, text, links); `wall link N` taps post N's link
+                                (its "Exit Game?" window: `window no`)
+    picker                      the episode picker's rows and tiles (id, title, saved, finished, info) and its popup;
+                                `picker tile TITLE|ID`, `picker new|continue|delete|close` (the popup), `picker info
+                                TITLE|ID`, `picker restore`, `picker back`
+    ticks                       the open episode tick list (Data Management's, or the chooser's): each episode, ticked
+    buttons / button WORDS      a screen outside a story and the HD menus (the chooser, Setup, Bulk Import, the file
+                                browser, a game's menus without HD art): its buttons by their command's words, and a
+                                tap on one (`button file NAME`, `button up`, `button folder`, `button episode TITLE`)
     pinch FACTOR [MS] [MOVES]   two fingers on the open story tree (or a Claire Hart round) part to FACTOR times as far
                                 apart over MS (default 800) and lift, MOVES moves a frame (default 3); replies with the
                                 tree's size (the round's zoom) before and after
@@ -42,10 +59,11 @@ it's done, so real clocks (fades, timers) run as in play.
                                 option (title_look, title_music...), `set start_in auto|games|shs|cod`,
                                 `set music_volume|sound_volume 0-100`
     options [PAGE]              Options at PAGE: general, sound, extras, addons, per_game, controller, data, library,
-                                episodes, progress, sync, or a screen name (choice:start_in...): the main menu's, or in
-                                a story the pause menu's (opened first)
+                                episodes, progress, sync, or a screen name (choice:start_in...): the main menu's, the
+                                game chooser's (no game open), or in a story the pause menu's (opened first)
     rows                        the open menu page's rows: label, kind, key, value (the pause menu itself too: Resume,
-                                Skip Ahead, Undo, Options, Help, Main Menu)
+                                Skip Ahead, Undo, Options, Help, Main Menu; Help & About's pages); a text page (a Help
+                                page, Library Info, a Quest Journal entry) gives its title and text, its links as rows
     press LABEL                 a row of the open Options page, as a tap (its label or key): pages open, switches flip,
                                 choices open their page, picks choose, actions run (their question shows as `window`)
     do ACTION                   a Data Management action by its key, as its row (verify_library, back_up, mark_read...)
@@ -54,11 +72,13 @@ it's done, so real clocks (fades, timers) run as in play.
     aspect 3:4|2:3|9:16|fit|default   General's Aspect Ratio (default: the device's own)
     resize W H                  a computer's window resized to W x H pixels, as a drag would (with `aspect fit`, any
                                 shape: 9:20 is `resize 540 1200`); not on a phone, whose window is its screen
-    game shs|cod                pick a game, as the game picker does (`open` needs one picked); a story held for
-                                Resume is saved and let go, as the main menu's switch button does
+    game shs|cod|chooser        pick a game, as the game picker does (`open` needs one picked); a story held for
+                                Resume is saved and let go, as the main menu's switch button does; `chooser` shows the
+                                game chooser, as Switch Game does where the other game has no library
     import PATH                 Add Content with that file (Android: one in the app's files folder); waits for it
-    window yes|no|ok|LABEL|N    press a button of the menu's open window by its words (`state` shows them, a game's
-                                own string ids resolved), its id, or the Nth
+    window yes|no|ok|LABEL|N    press a button of the window on top (`state` shows it: a story's own "Exit Game?" or
+                                "Locked", the app's message card or Update Available, the picker's info card, the
+                                chooser's question, the menus' windows) by its words, its id, or the Nth
     reopen TITLE                as `open`, continuing the story from its autosave
     open TITLE                  start the episode whose title contains TITLE (or whose id starts with TITLE), from the
                                 beginning; of several copies, the newest import
@@ -433,7 +453,7 @@ class Commands:
 
     @property
     def game(self):
-        return self.app.game if self.app.screen == 'game' else None
+        return self.app.game if getattr(self.app, 'screen', None) == 'game' else None
 
     def run(self, line):
         name, _, rest = line.partition(' ')
@@ -455,11 +475,20 @@ class Commands:
         out = dict(ok=True, screen=app.screen, stage=getattr(app.shell, 'stage', None) if app.shell else None,
                    message=getattr(app, 'message', None), busy=bool(app.busy),
                    progress=getattr(app, 'progress_text', '') or None, game=getattr(app, 'selected_game', None))
+        if app.busy and getattr(app, 'job_kind', None) == 'data':
+            out['job'] = app.job_title                          # a Data Management job's busy card
         if app.shell is not None and getattr(app.shell, 'pause_open', False):
             out['page'] = app.shell.pause.state.screen          # the Options page showing over the main menu
-        prompt = getattr(app.shell, 'prompt', None) if app.shell else None
-        if prompt is not None:
-            out['menu_prompt'] = str(prompt)[:200]
+        opened = getattr(app, 'app_options_open', None)
+        if opened is not None and opened():
+            out['page'] = app.app_screens.options.menu.state.screen     # the chooser's Options
+        if app.screen == 'games' and hasattr(app, 'games_with_libraries'):
+            out['games'] = list(app.games_with_libraries())     # the chooser's games that have a library
+        picker = getattr(app, 'picker', None)
+        if app.screen == 'picker' and picker is not None:
+            out['picker'] = dict(style=getattr(app, 'picker_style', None), selected=picker.selected,
+                                 popup=picker.popup['id'][:12] if picker.popup else None,
+                                 ticks=getattr(picker, 'choosing', None) is not None)
         window = self._window()
         if window is not None:
             out['window'] = self._window_words(window)
@@ -467,13 +496,23 @@ class Commands:
             return out
         session = game.session
         record = getattr(session.resources, 'record', None) or {}
+        # The story's toast ("Progress saved") while it shows: it goes after 3.5 s (Desktop.message_until).
+        toast = game.message if game.message and pygame.time.get_ticks() < getattr(game, 'message_until', 0) else None
         out.update(episode=(record.get('titles') or [''])[0], scene=session.scene, paused=game.menu_open,
-                   fading=bool(game.fade), notice=game.message if game.message else None, error=game.error,
-                   ended=session.episode_ended)
+                   fading=bool(game.fade), notice=toast, error=game.error, ended=session.episode_ended)
+        if game.menu_open:
+            out['page'] = game.pause_hd.state.screen            # the pause menu's page (`rows` reads it)
         action = session.pending
         if action is not None:
             out['pending'] = action.name
             out.update({key: action.details[key] for key in TEXT_KEYS if key in action.details})
+            if action.name == 'text_input' and getattr(game, 'input_error', None):
+                out['input_error'] = str(game.input_error)      # a name the game turned down, as its alert says
+            picker = getattr(session.engine, 'character_picker', None)
+            if action.name == 'character_picker' and picker is not None:
+                # The portraits by their original place (`answer N` brings one to the front, `continue` confirms).
+                out['picker'] = dict(characters=list(picker.characters), selected=picker.selected,
+                                     moving=bool(picker.moving))
         if game.host_prompt is not None and game.host_prompt.get('loading'):
             out['prompt'] = dict(loading=True)             # its outcomes still being worked out (the loading band)
         elif game.host_prompt is not None:
@@ -482,6 +521,9 @@ class Commands:
                                  options=list(game.host_prompt['options']))
         out['switches'] = {key: getattr(game, key) for key in ('undo', 'skip_ahead', 'java_look', 'hollywood_art', 'dsi_backgrounds', 'dsi_pixels', 'preferred_language', 'dsi_language', 'shs11_language', 'story_language', 'skip_minigames',
                                                                 'choice_hints', 'autoplay') if hasattr(game, key)}
+        panels = self._panels_state(game)
+        if panels is not None:
+            out['panels'] = panels
         chain = game._undo_for(session)
         out['undo_saves'] = chain.numbers() if chain is not None else None
         out['can_undo'] = game._undo_ready()
@@ -496,6 +538,24 @@ class Commands:
             if minigame['kind'] == 'claire_round' and view is not None:
                 minigame['view'] = dict(zoom=round(view.zoom, 3), centre=[round(view.cx), round(view.cy)])
         return out
+
+    @staticmethod
+    def _panels_state(game):
+        """The side panels where an episode uses them (the Decision Tree, the Faceplace wall): beside the game or over
+        the screen, the corner button, the Faceplace alert, the warp lock; None in an episode with neither."""
+        try:
+            tree, wall = game.panels_used()
+        except AttributeError:
+            return None
+        if not (tree or wall):
+            return None
+        engine = game.session.engine
+        toast = getattr(engine, 'faceplace_toast', None)
+        return dict(tree=tree, wall=wall, enabled=game.side_panels_enabled, beside=bool(game.panels_open),
+                    over=bool(game.panels_overlay), ready=game._panels_ready(), button=game._panels_button_shown(),
+                    alert=toast.message.text if toast is not None else None,
+                    warp_unlocked=bool(getattr(game, 'warp_unlocked', False)),
+                    posts=len(engine.faceplace.messages) if wall else 0)
 
     # -- acting -------------------------------------------------------------------------------------------------------
 
@@ -560,13 +620,31 @@ class Commands:
         return self._act(act, check)
 
     def do_type(self, rest):
-        self._need_game()
+        """Typing, then Enter: a story's name entry, or a screen's own field (the file browser's path, a list's
+        search)."""
         for character in rest:
             pygame.event.post(pygame.event.Event(pygame.TEXTINPUT, text=character))
         return self._then_key('return')
 
     def do_key(self, rest):
+        """`key NAME [MS]`: a key pressed and released, or held MS milliseconds (the X360 puzzle's and leash's held
+        arrows)."""
+        parts = rest.split()
+        if len(parts) > 1:
+            return self._held_key(parts[0], float(parts[1]))
         return self._then_key(rest.strip())
+
+    def _held_key(self, name, ms):
+        code = KEYS.get(name)
+        if code is None:
+            return dict(ok=False, error=f'unknown key {name!r}')
+        pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=code, mod=0, unicode=''))
+        end = time.perf_counter() + ms / 1000
+        while time.perf_counter() < end:
+            yield
+        pygame.event.post(pygame.event.Event(pygame.KEYUP, key=code, mod=0, unicode=''))
+        result = yield from self._settled(0.2)
+        return result
 
     def do_pinch(self, rest):
         """`pinch FACTOR [MS] [MOVES]`: two fingers on the open story tree, a quarter of its width apart about its middle,
@@ -622,6 +700,113 @@ class Commands:
         touch(pygame.FINGERUP, 9002, cx + last)
         result = yield from self._settled(0.3)
         return dict(result, **{reported: [round(before, 2), round(size(), 2)]})
+
+    def do_panels(self, rest):
+        """`panels open|close`: the side panels, as Tab (or the corner button, or a tap on the Faceplace alert) opens
+        them: beside the game where there's room, else over the screen; `close` as Tab, the close strip or Escape."""
+        game = self._need_game()
+        wanted = rest.strip().lower()
+        if wanted not in ('open', 'close'):
+            return dict(ok=False, error='panels open|close')
+        if not any(game.panels_used()):
+            return dict(ok=False, error='this episode has no Decision Tree or Faceplace wall')
+        if not game.side_panels_enabled:
+            return dict(ok=False, error='Side Panels is off (`set side_panels on`)')
+        room = game.panels_room()
+        is_open = game.panels_open if room else game.panels_overlay
+        if (wanted == 'open') != bool(is_open):
+            if room:
+                game.toggle_panels()
+            elif wanted == 'open':
+                game.open_panels_overlay()
+            else:
+                game.close_panels_overlay()
+        return self._settled(0.5)
+
+    def _tree_ready(self):
+        game = self._need_game()
+        if not game.panels_used()[0]:
+            raise ValueError('this episode has no Decision Tree')
+        if not game._panels_ready():
+            raise ValueError('the Decision Tree is not showing (`panels open`)')
+        if game.notice_stack is not None and game.notice_stack.stack:
+            raise ValueError('a window is open over it (`window`)')
+        return game
+
+    def _tree_listing(self, game):
+        """The Decision Tree's scenes as `tree` lists them."""
+        from .dtview_faceplace import NOT_WARPABLE
+        session = game.session
+        view = session.engine.dt_view
+        nodes = []
+        for node in view.nodes():
+            reachable = (node.active and node.node_type not in NOT_WARPABLE and session.has_tree_state(node)
+                         and node is not view.current)
+            nodes.append(dict(serial=node.serial, label=node.lower_label or node.exit_label, type=node.node_type,
+                              current=node is view.current, active=bool(node.active), warp=bool(reachable)))
+        back = view.real_parent(view.current) if view.current is not None else None
+        ahead = view.real_child(view.current) if view.current is not None else None
+        return dict(nodes=nodes, rewind=back.serial if back is not None and session.has_tree_state(back) else None,
+                    forward=ahead.serial if ahead is not None and session.has_tree_state(ahead) else None,
+                    current=view.current.serial if view.current is not None else None,
+                    unlocked=bool(game.warp_unlocked))
+
+    def do_tree(self, rest):
+        """`tree`: the Decision Tree's scenes (serial, label, the current one, those a warp reaches); `tree warp
+        SERIAL|LABEL`, `tree rewind`, `tree forward`: a tap on that scene, Rewind or Fast Forward, as the tree takes it
+        (locked: its "Locked" notice, which `state` shows as `window`)."""
+        game = self._need_game()
+        if not game.panels_used()[0]:
+            return dict(ok=False, error='this episode has no Decision Tree')
+        view = game.session.engine.dt_view
+        words = rest.split(None, 1)
+        verb = words[0].lower() if words else ''
+        if not verb:
+            return dict(ok=True, **self._tree_listing(game))
+        self._tree_ready()
+        if verb in ('rewind', 'forward'):
+            target = (verb,)
+        elif verb == 'warp' and len(words) > 1:
+            wanted = words[1].strip()
+            nodes = list(view.nodes())
+            node = (next((n for n in nodes if str(n.serial) == wanted), None) if wanted.isdigit()
+                    else next((n for n in nodes if (n.lower_label or '').lower() == wanted.lower()), None))
+            if node is None:
+                return dict(ok=False, error=f'no scene {wanted!r} on the tree (`tree` lists them)')
+            target = ('node', node)
+        else:
+            return dict(ok=False, error='tree, tree warp SERIAL|LABEL, tree rewind, tree forward')
+        return self._tree_tap(game, target)
+
+    def _tree_tap(self, game, target):
+        view = game.session.engine.dt_view
+        before = view.current
+        result = yield from self._act(lambda: game._tree_target(target))
+        return dict(result, warped=view.current is not before, tree=self._tree_listing(game))
+
+    def do_wall(self, rest):
+        """`wall`: the Faceplace wall's posts, oldest first (sender, text, links); `wall link N`: a tap on post N's link
+        (the "Exit Game?" window first where the game has it: `window no` declines)."""
+        game = self._need_game()
+        if not game.panels_used()[1]:
+            return dict(ok=False, error='this episode has no Faceplace wall')
+        posts = []
+        for index, message in enumerate(game.session.engine.faceplace.messages):
+            parts = [message] + list(message.continuations)
+            posts.append(dict(index=index, sender=message.from_id, text='\n'.join(p.text for p in parts if p.text),
+                              links=[p.url for p in parts if p.url]))
+        words = rest.split()
+        if not words:
+            return dict(ok=True, posts=posts)
+        if words[0] != 'link' or len(words) < 2 or not words[1].isdigit() or int(words[1]) >= len(posts):
+            return dict(ok=False, error=f'wall link N (0 to {len(posts) - 1}, a post with a link)')
+        if not game._panels_ready():
+            return dict(ok=False, error='the wall is not showing (`panels open`)')
+        links = posts[int(words[1])]['links']
+        if not links:
+            return dict(ok=False, error=f'post {words[1]} has no link')
+        game._wall_link(links[0])
+        return self._settled(0.6)
 
     def do_back(self, _):
         return self._then_key('escape')
@@ -696,6 +881,11 @@ class Commands:
             if not game.menu_open:
                 raise ValueError('the pause menu is not open (`pause` or `options` first)')
             return game.pause_hd, game._pause_settings(), game.command
+        opened = getattr(self.app, 'app_options_open', None)
+        if opened is not None and opened():
+            # The chooser's Options (no game open): the shared Options and Data Management for both games.
+            options = self.app.app_screens.options
+            return options.menu, options.settings(), options.activate
         shell = self.app.shell
         if shell is None or not getattr(shell, 'pause_open', False):
             raise ValueError('no Options page is open (`options` first)')
@@ -712,6 +902,14 @@ class Commands:
                 game.command(('menu',))
                 yield from self._settled(0.6)
             pause = game.pause_hd
+        elif self.app.library is None:
+            # The game chooser's Options (no game open), as its Options button opens them.
+            app = self.app
+            if not app.app_options_open():
+                app.history = ['games']
+                app.show('options', remember=False)
+                yield from self._settled(0.3)       # (its first frame sets it up: AppOptions.enter)
+            pause = app.app_screens.options.menu
         else:
             pause = self._main_options().pause
         pause.open(self.PAGE_NAMES.get(page, page) if page and page != 'options' else 'options')
@@ -734,6 +932,17 @@ class Commands:
                 if settings.get(flag):
                     entries.insert(1, (label, command))
             return [dict(label=str(label), kind='action', key=command[-1], command=command) for label, command in entries]
+        if screen == 'help':
+            # Help & About's list (the main menu's has Push Notifications and the legal page too).
+            from .desktop_pause_hd import HELP_ORDER, MAIN_HELP_ORDER
+            for page in (MAIN_HELP_ORDER if pause.main_menu else HELP_ORDER):
+                label = strings[170 if page == 'privacy' else pause.PAGES[page][0]]
+                rows.append(dict(label=str(label), kind='page', key=page, command=('pause_open', page)))
+            return rows
+        text = self._page_text(pause, screen)
+        if text is not None:
+            # A text page (a Help page, Library Info, a Quest Journal entry): its links are its rows.
+            return [dict(label=label, kind='link', key=url, command=('pause_link', url)) for label, url in text[2]]
         if screen == 'options':
             for category, label in OPTION_CATEGORIES:
                 if pause.option_rows(category, settings, strings):
@@ -762,12 +971,43 @@ class Commands:
             rows.append(row)
         return rows
 
+    @staticmethod
+    def _page_text(pause, screen):
+        """A text page's (title, body, [(link words, url)]), or None for a page of rows."""
+        from .desktop_pause_hd import DATA_TITLES, link_words
+        if (screen in ('pause', 'options', 'help') or screen.startswith(('options:', 'choice:')) or screen in DATA_TITLES
+                or screen in pause.row_pages):
+            return None
+        try:
+            title, body = pause.text_lines(screen)
+        except (KeyError, IndexError):
+            return None
+        links = []
+        for paragraph in body.split('\n'):
+            current = None
+            for word in link_words(paragraph):
+                for piece, url in word:
+                    if url is None:
+                        current = None
+                    elif current is not None and current[1] == url:
+                        current[0].append(piece)
+                    else:
+                        current = ([piece], url)
+                        links.append(current)
+        return str(title), str(body), [(' '.join(words), url) for words, url in links]
+
     def do_rows(self, _):
-        """The open Options page's rows: label, kind (switch, choice, pick, page, action, folder, cycle, slider), key,
-        value (a switch's on/off, a choice's current value, a pick's tick)."""
+        """The open Options page's rows: label, kind (switch, choice, pick, page, action, folder, cycle, slider, link),
+        key, value (a switch's on/off, a choice's current value, a pick's tick); a text page (a Help page, Library Info,
+        a Quest Journal entry) also gives its title and text, its links as rows."""
         rows = self._menu_rows()
-        return dict(ok=True, page=self._menu()[0].state.screen,
-                    rows=[{k: v for k, v in row.items() if k != 'command'} for row in rows])
+        pause = self._menu()[0]
+        out = dict(ok=True, page=pause.state.screen,
+                   rows=[{k: v for k, v in row.items() if k != 'command'} for row in rows])
+        text = self._page_text(pause, pause.state.screen)
+        if text is not None:
+            out.update(title=text[0], text=text[1])
+        return out
 
     def do_press(self, rest):
         """`press LABEL`: a row of the open Options page, as a tap on it (its label, without case, or its key): a page
@@ -798,18 +1038,33 @@ class Commands:
         return result
 
     def _choosing(self):
-        picker = self.app.picker
+        """The open episode tick list: (its picker, its EpisodeChoice, its library, its verb button's act): a game's
+        Data Management list, or the chooser's (its Episodes page, a library opened for it)."""
+        app = self.app
+        chooser = getattr(app.app_screens, 'choice', None) if getattr(app, 'app_screens', None) is not None else None
+        if app.screen == 'choice' and chooser is not None:
+            return chooser.picker, chooser.picker.choosing, chooser.library, app.app_screens.choice_act
+        picker = app.picker
         choosing = getattr(picker, 'choosing', None)
-        if choosing is None:
+        if choosing is None or app.screen != 'picker':
             raise ValueError('no episode tick list is open (`press Mark as Finished`, `press Delete Episodes`...)')
-        return picker, choosing
+        from .desktop_episode_list_hd import CHOICE_ACT
+        return picker, choosing, app.library, lambda: app.picker_command(CHOICE_ACT)
+
+    def do_ticks(self, _):
+        """The open tick list: its title and verb, each episode offered (id, title, ticked)."""
+        picker, choosing, library, _ = self._choosing()
+        episodes = [dict(id=r['id'][:12], title=(r.get('titles') or [''])[0], ticked=r['id'] in choosing.chosen)
+                    for r in library.episodes if r['id'] in choosing.allowed]
+        return dict(ok=True, title=getattr(choosing, 'title', None), verb=getattr(choosing, 'verb', None),
+                    chosen=len(choosing.chosen), episodes=episodes)
 
     def do_pick(self, rest):
         """`pick TITLE|ID`: tick or untick an episode in Data Management's tick list (Mark as Finished, Delete, Export,
         Reset Decision Tree): its title contains TITLE, or its id starts with ID."""
-        picker, choosing = self._choosing()
+        picker, choosing, library, _ = self._choosing()
         wanted = rest.strip().lower()
-        records = [r for r in self.app.library.episodes if r['id'] in choosing.allowed]
+        records = [r for r in library.episodes if r['id'] in choosing.allowed]
         found = [r for r in records if r['id'].startswith(wanted) and len(wanted) >= 6] or \
                 [r for r in records if any(wanted in (t or '').lower() for t in r.get('titles', ()))]
         if not found:
@@ -820,11 +1075,10 @@ class Commands:
 
     def do_act(self, _):
         """The tick list's verb button (Save, Delete, Export, Reset): its question shows as `window`."""
-        picker, choosing = self._choosing()
+        picker, choosing, _, act = self._choosing()
         if not choosing.can_act():
             return dict(ok=False, error='nothing is ticked')
-        from .desktop_episode_list_hd import CHOICE_ACT
-        self.app.picker_command(CHOICE_ACT)
+        act()
         return self._settled(0.8)
 
     def do_set(self, rest):
@@ -898,12 +1152,112 @@ class Commands:
             self.app.game.window = self.app.window
         return dict(ok=True, window=list(self.app.window.get_size()))
 
+    def _screen_buttons(self):
+        """The buttons of a screen outside a story and the HD menus (the chooser, Setup, Bulk Import, the file browser,
+        the menus of a game without HD art): [(words, command)], as the screen drew them."""
+        app = self.app
+        if app.screen == 'game' or (app.screen == 'main' and app.shell is not None) or app.screen == 'picker':
+            return []
+
+        titles = {}
+        if app.library is not None:
+            titles = {r['id']: (r.get('titles') or [''])[0] for r in app.library.episodes}
+
+        def words(command):
+            if len(command) == 2 and command[1] in titles:        # an episode's row: its title, then its id's start
+                return f'{command[0]} {titles[command[1]]} [{command[1][:8]}]'
+            return ' '.join(part.name if isinstance(part, Path) else str(part) for part in command)
+        return [(words(command), command) for _, command in getattr(app, 'buttons', ()) or ()]
+
+    def do_buttons(self, _):
+        """The buttons on a screen outside a story and the HD menus, by their command's words (`button` presses one); in
+        the file browser, its folder and kind too."""
+        app = self.app
+        out = dict(ok=True, screen=app.screen, buttons=[label for label, _ in self._screen_buttons()])
+        if app.screen == 'browser':
+            out.update(folder=str(getattr(app, 'folder', '')), kind=getattr(app, 'browser_kind', None),
+                       files=[p.name + ('/' if p.is_dir() else '') for p in getattr(app, 'files', ())])
+        return out
+
+    def do_button(self, rest):
+        """`button WORDS`: a button of that screen, as a tap on it (`buttons` lists them: `file NAME` opens a folder or
+        imports a file in the browser, `up`, `folder` (Use This Folder, Open Library), `browse library`...)."""
+        wanted = rest.strip().lower()
+        buttons = self._screen_buttons()
+        if self.app.screen == 'browser' and wanted.startswith('file '):
+            # Any file of the folder, not only those scrolled into view (a player scrolls to it).
+            name = wanted[5:].strip().rstrip('/')
+            buttons = buttons + [('file ' + p.name, ('file', p)) for p in getattr(self.app, 'files', ())
+                                 if p.name.lower() == name]
+        found = (next((command for label, command in buttons if label.lower() == wanted), None)
+                 or next((command for label, command in buttons if label.lower().startswith(wanted)), None))
+        if not wanted or found is None:
+            return dict(ok=False, error=f'no button {rest!r}: {[label for label, _ in buttons][:60]}')
+        if self._window() is not None:
+            return dict(ok=False, error='a window is open (`window`)')
+        self.app.command(found)
+        return self._idle(600) if found[0] in ('file', 'folder') else self._settled(0.6)
+
+    PICKER_VERBS = ('tile', 'new', 'continue', 'delete', 'close', 'info', 'restore', 'back')
+
+    def do_picker(self, rest):
+        """`picker`: the episode picker on screen (the tiles, Now Airing or On Demand): its rows, each episode's id,
+        title, whether a saved game holds it and whether it's finished, and the open popup. `picker tile TITLE|ID` taps
+        an episode (a new one starts; one with a save opens its New Game / Continue popup), `picker new|continue|
+        delete|close` presses the popup's New Game, Continue, Delete Save or back, `picker info TITLE|ID` its info
+        button, `picker restore` the Restore button, `picker back` Back."""
+        app = self.app
+        picker = getattr(app, 'picker', None)
+        if app.screen != 'picker' or picker is None:
+            return dict(ok=False, error='the episode picker is not showing (`main play`, `main airing`, `main demand`)')
+        model = picker.model
+        words = rest.split(None, 1)
+        verb = words[0].lower() if words else ''
+        if not verb:
+            rows = [dict(title=row.title, episodes=[
+                dict(id=r['id'][:12], title=model.label(r), saved=r['id'] in app.saved,
+                     finished=r['id'] in getattr(app, 'finished', ()), info=bool(model.has_info(r))) for r in row.episodes])
+                    for row in model.rows]
+            return dict(ok=True, style=app.picker_style, rows=rows, selected=picker.selected,
+                        popup=picker.popup['id'][:12] if picker.popup else None)
+        if verb not in self.PICKER_VERBS:
+            return dict(ok=False, error=f'picker is one of {", ".join(self.PICKER_VERBS)}')
+        if self._window() is not None:
+            return dict(ok=False, error='a window is open (`window`)')
+        if verb in ('new', 'continue', 'delete', 'close'):
+            if not picker.popup:
+                return dict(ok=False, error='no New Game / Continue popup is open (`picker tile` on a saved episode)')
+            record_id = picker.popup['id']
+            command = {'close': ('close',), 'delete': ('delete_save', record_id)}.get(verb, (verb, record_id))
+        elif verb in ('restore', 'back'):
+            command = (verb,)
+        else:
+            if picker.popup:
+                return dict(ok=False, error='the popup is open (`picker close`)')
+            wanted = (words[1] if len(words) > 1 else '').strip().lower()
+            shown = [r for row in model.rows for r in row.episodes]
+            found = ([r for r in shown if len(wanted) >= 6 and r['id'].startswith(wanted)]
+                     or [r for r in shown if wanted and wanted in model.label(r).lower()])
+            if not found:
+                return dict(ok=False, error=f'no episode {wanted!r} in the picker')
+            if verb == 'info' and not model.has_info(found[0]):
+                return dict(ok=False, error=f'{model.label(found[0])} has no info card')
+            command = (verb, found[0]['id'])
+        app.picker_command(command)
+        result = yield from self._settled(0.8)
+        return dict(result, pressed=list(command[:1]))
+
     def do_game(self, rest):
         key = rest.strip().lower()
         if self.app.game is not None and self.app.screen == 'game':
             return dict(ok=False, error='a story is open: leave it first')
         # (A story held for Resume behind the main menu is let go with its library, saved first, as the main menu's
         # switch button does: test channel wish, 2026-11-20.)
+        if key in ('chooser', 'games'):
+            # The game chooser, as Switch Game shows it where the other game has no library (and Start In's Choose a
+            # Game at launch): this game's library let go.
+            self.app.show_game_chooser()
+            return self._settled(0.5)
         if getattr(self.app, 'selected_game', None) != key or self.app.library is None:
             self.app.choose_game(key)
         return self._settled(0.5)
@@ -948,25 +1302,72 @@ class Commands:
         return result
 
     def _window(self):
-        """The menu window that's open on top (a confirmation, a notice, the launch's questions): (menu, its buttons), or
-        None. A game's own window gives string ids for its text, this player's own gives text."""
-        shell = self.app.shell
+        """The window on top, as a player meets it: a story's own notice ("Exit Game?", the Decision Tree's "Locked",
+        Connection Error), the app's Update Available or its message card ("Added 3 episodes."), the episode picker's
+        alert (an info card, Restore's answer), the chooser's Options' question, or the menus' confirmation or notice.
+        A SimpleNamespace(source, title, text, buttons, ids, press(index)), or None (owner, 2026-11-21: `state` saw only
+        the menus' windows)."""
+        from types import SimpleNamespace
+        app, game = self.app, self.game
+
+        def window(source, title, text, buttons, press, ids=None):
+            buttons = [str(b) for b in buttons]
+            return SimpleNamespace(source=source, title=str(title or ''), text=str(text or '')[:400], buttons=buttons,
+                                   ids=ids or list(buttons), press=press)
+        if game is not None:
+            stack = game.notice_stack
+            if stack is not None and stack.stack:
+                items = self._shown_items(game.notice_windows, game.notice_data, stack.current)
+                return self._menu_window('story', game.notice_data.menu(stack.current), items, game.notice_windows,
+                                         None, lambda i: stack.press(items[i]), window)
+            return None
+        if getattr(app, 'busy', False):
+            return None
+        if getattr(app, 'message', None):
+            return window('message', app.game_title, app.message, ['OK'], lambda i: app.command(('dismiss',)))
+        if getattr(app, 'update_prompt', None) is not None:
+            from .updates import UPDATE_TITLE, update_message
+            commands = (('update_no',), ('update_yes',)) if app.can_quit else (('update_no',),)
+            return window('update', UPDATE_TITLE, update_message(app.update_prompt.version, can_quit=app.can_quit),
+                          ['No', 'Yes'] if app.can_quit else ['OK'], lambda i: app.command(commands[i]))
+        picker = getattr(app, 'picker', None)
+        if getattr(app, 'screen', None) == 'picker' and picker is not None and picker.alert:
+            alert = picker.alert
+            title, text = ((alert.title, ' '.join(t for t in (alert.airdate, alert.price, alert.description) if t))
+                           if hasattr(alert, 'description') else alert)
+            return window('picker', title, text, ['OK'], lambda i: app.picker_command(('dismiss',)))
+        opened = getattr(app, 'app_options_open', None)
+        if opened is not None and opened() and app.app_screens.options.ask is not None:
+            options = app.app_screens.options
+            title, text, labels, actions = options.ask
+
+            def press(i):
+                options.ask = None
+                if actions[i] is not None:
+                    actions[i]()
+            return window('options', title, text, labels, press)
+        shell = app.shell
         stack = getattr(shell, 'stack', None)
         if stack is None or not stack.stack or getattr(shell, 'data', None) is None:
             return None
-        return shell.data.menu(stack.current), shell.data.items(stack.current)
-
-    def _window_words(self, window):
-        """A window as a player reads it: a game's own window carries string ids (its title '5', buttons '25' / '24'),
-        shown as the words they draw (test channel wish, 2026-11-20)."""
-        menu, buttons = window
-        shell = self.app.shell
-        windows, variables = getattr(shell, 'windows', None), None
         try:
             variables = shell.variables()
         except Exception:                               # (a shell without a game's variables: the ids' own words)
             variables = None
+        items = self._shown_items(getattr(shell, 'windows', None), shell.data, stack.current)
+        return self._menu_window('menu', shell.data.menu(stack.current), items, getattr(shell, 'windows', None),
+                                 variables, lambda i: stack.press(items[i]), window)
 
+    @staticmethod
+    def _shown_items(windows, data, menu_id):
+        """A window's buttons as drawn: its renderer leaves out the ones a game's conditions rule out."""
+        items = getattr(windows, 'items', None)
+        return list(items(menu_id)) if callable(items) else list(data.items(menu_id))
+
+    @staticmethod
+    def _menu_window(source, menu, items, windows, variables, press, window):
+        """A menu engine's window as a player reads it: a game's own window carries string ids (its title '5', buttons
+        '25' / '24'), shown as the words they draw (test channel wish, 2026-11-20)."""
         def words(string_id):
             try:
                 return windows.text_for(string_id, variables) if windows is not None else str(string_id)
@@ -978,29 +1379,34 @@ class Commands:
                 return windows.item_label(action, variables) if windows is not None else str(action.label)
             except (KeyError, IndexError, TypeError, AttributeError):
                 return str(action.label)
-        return dict(title=words(menu.title), text=words(menu.message)[:400], buttons=[label(b) for b in buttons],
-                    ids=[str(b.label) for b in buttons])
+        return window(source, words(menu.title), words(menu.message), [label(b) for b in items], press,
+                      ids=[str(b.label) for b in items])
+
+    @staticmethod
+    def _window_words(window):
+        return dict(source=window.source, title=window.title, text=window.text, buttons=window.buttons, ids=window.ids)
 
     def do_window(self, rest):
-        """Press a button of the open window: `yes` (its verb, the last), `no`, `ok`, a label, or its position (0 first)."""
+        """Press a button of the open window: its words (`no`, `ok`, `play with sound`), its id, its position (0
+        first), or `yes` (its verb, the last)."""
         window = self._window()
         if window is None:
             return dict(ok=False, error='no window is open')
-        buttons, wanted = window[1], rest.strip().lower()
+        wanted = rest.strip().lower()
         # Its words first ("no", "play with sound": a game's own window draws them from string ids), then a label as an
         # id ('25', '24'), which a position never reached (iPad, 2026-11-19: `window 24` found no button '24').
-        words = [label.lower() for label in self._window_words(window)['buttons']]
-        found = next((b for b, word in zip(buttons, words) if word == wanted), None)
-        found = found or next((b for b in buttons if str(b.label).lower() == wanted), None)
-        if found is not None:
-            pass
-        elif wanted.isdigit():
-            found = buttons[int(wanted)] if int(wanted) < len(buttons) else None
-        elif wanted == 'yes':
-            found = buttons[-1]
-        if found is None:
-            return dict(ok=False, error=f'no button {rest!r}: {self._window_words(window)["buttons"]}')
-        self.app.shell.stack.press(found)
+        index = next((i for i, word in enumerate(window.buttons) if word.lower() == wanted), None)
+        if index is None:
+            index = next((i for i, key in enumerate(window.ids) if key.lower() == wanted), None)
+        if index is None and wanted.isdigit() and int(wanted) < len(window.buttons):
+            index = int(wanted)
+        if index is None and wanted in ('yes', 'ok') and window.buttons:
+            index = len(window.buttons) - 1
+        if index is None:
+            return dict(ok=False, error=f'no button {rest!r}: {window.buttons}')
+        window.press(index)
+        if window.source == 'story':
+            return self._settled(0.6)
         return self._idle(60)
 
     # -- Sync Devices (owner, 2026-11-19: the device passes drove it by taps, shots and coordinates) ---------------
@@ -1075,8 +1481,8 @@ class Commands:
                 if yes:
                     window[3][-1]()
             else:
-                buttons = self._window()[1]
-                app.shell.stack.press(buttons[-1] if yes else buttons[0])
+                window = self._window()
+                window.press(len(window.buttons) - 1 if yes else 0)
             yield from self._settled(0.5)
             return dict(ok=True, sync=self._sync_status())
         if verb == 'wait':
@@ -1098,7 +1504,7 @@ class Commands:
                 window = self._window()
                 if window is None:
                     return dict(ok=False, error='no notice is open')
-                app.shell.stack.press(window[1][-1])
+                window.press(len(window.buttons) - 1)
             yield from self._settled(0.5)
             return dict(ok=True, sync=self._sync_status())
         if verb == 'stop':

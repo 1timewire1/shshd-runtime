@@ -443,6 +443,24 @@ are real pointer events through the round's own hit tests, refused while a skip 
 there to tap (a name not listed); a spent Power-Up or an unready hint is tapped as a player would, and the round
 ignores it (the reply's `minigame` shows nothing changed).
 
+Everything else a player can reach runs by command too (owner, 2026-11-21: the channel should see and drive all of it).
+`state`'s `window` is the window on top, whichever drew it: a story's own ("Exit Game?" from a Faceplace link, the
+Decision Tree's "Locked", Connection Error), the app's message card ("Added 3 episodes.") and Update Available, the
+episode picker's info card and Restore answer, the chooser's Options' question, or the menus' windows; `window` presses
+any of them. In a story `state` also gives the pause menu's `page`, a name the game turned down (`input_error`), the look
+picker's portraits (`picker`), the toast only while it shows, and `panels` where an episode has a Decision Tree or
+Faceplace wall (beside the game or over the screen, the corner button, the Faceplace alert, the warp lock, the posts).
+`panels open|close` opens or closes them as Tab does; `tree` lists the tree's scenes (serial, label, current, which a
+warp reaches) and `tree warp SERIAL|LABEL`, `tree rewind` and `tree forward` tap them through the tree's own handling
+(`Desktop._tree_target`), the panels open as a player's would be; `wall` lists the posts and `wall link N` taps one's
+link (`Desktop._wall_link`). Help & About's list and its text pages read through `rows` (a text page's title, text and
+links). `picker` lists the episode picker's rows and tiles and taps a tile, the New Game / Continue popup's buttons, an
+info button, Restore or Back. The game chooser (`game chooser`) takes `options`, `rows`, `press` and `window` as the main
+menu's Options do, and its Episodes lists `ticks`, `pick` and `act`. Screens outside a story and the HD menus (the
+chooser, Setup's Open Library, Bulk Import, the file browser, the menus of a game without HD art) list their buttons with
+`buttons` and take `button WORDS` (a browser's `button file NAME` reaches files scrolled out of view); `type` fills their
+fields, and `key NAME MS` holds a key.
+
 Sync Devices runs by command too (owner, 2026-11-19: the device passes drove it by taps, screenshots and coordinates):
 `sync receive` and `sync send [shs|cod|both] [nobackup]` open Data Management's Sync Devices where a player reaches it
 (the open game's Options over its main menu, or the chooser's) and start Receive, or Send with every switch on and Find

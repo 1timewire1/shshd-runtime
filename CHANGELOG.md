@@ -81,6 +81,13 @@
   Power-Ups and hint), and `play` presses, picks a cell or arena key, or in a round finds a listed object, misses, uses
   the hint or a Power-Up, picks a name and continues, by real taps through the round's own hit tests; `pinch` zooms a
   round. Checked on a PC with six rounds from three random cases (72 of 72 finds, zoomed finds too).
+- **The test channel reaches every screen** ([RUNTIME.md](docs/RUNTIME.md#test-channel-this-fork)): `window` sees and
+  presses a story's own windows ("Exit Game?", "Locked"), the app's message card and Update Available, the picker's info
+  card and the chooser's questions; `panels`, `tree` (warp, Rewind, Fast Forward) and `wall` (posts, links) for the side
+  panels; `picker` for the episode picker and its New Game / Continue popup; Help's pages and text through `rows`; the game
+  chooser's Options and tick lists (`game chooser`, `ticks`); `buttons` / `button` for the chooser, Setup, the file browser
+  and the menus without HD art; held keys. `state` adds the look picker's portraits, a refused name, the in-story Options
+  page and the side panels.
 
 ### Changed
 
@@ -95,6 +102,7 @@
   the narrator's portrait (Stage 0 E) has no relationship state, and the loader refused any line in a speaker's layout
   without one, so Resume and Undo failed on 55 of Case 1's 169 lines. It now takes that narration, checked against its
   narrator.
+- The test channel's `rows` on Help & About no longer fails, and `state`'s `notice` is the toast only while it shows.
 
 ## 1.1.0 (shshd-runtime)
 
