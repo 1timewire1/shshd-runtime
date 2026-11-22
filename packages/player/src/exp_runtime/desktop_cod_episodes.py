@@ -155,6 +155,28 @@ class CodEpisodeList(CodPickerStyle, HdEpisodeList):
         self.skin()
         return super().draw(backdrop=backdrop)
 
+    def mark_width(self, mark):
+        if self.ui is None:
+            return super().mark_width(mark)
+        from .desktop_pause_hd import BADGE_PAD, BADGE_PX
+        return self.font(BADGE_PX).size(mark)[0] / S + 2 * BADGE_PAD
+
+    def draw_standard_mark(self, layer, x, y, mark='SD', color=None):
+        """A row's tag; in the skin Options' badge (CodPauseMenu.row, HdPauseMenu.badge): gold, at its size, centred where
+        the list's smaller tag is (`y` is that one's top, 18 points tall). Claire Hart's own dark green was near invisible
+        on the dark rows (owner, g54, 2026-11-22: "make them match the Claire Hart tag in options")."""
+        if self.ui is None:
+            return super().draw_standard_mark(layer, x, y, mark, color)
+        from .desktop_pause_hd import BADGE_HEIGHT, BADGE_PX
+        color = self.ui.GOLD
+        label = self.font(BADGE_PX).render(mark, True, color)
+        width, height = self.mark_width(mark), BADGE_HEIGHT
+        plate = pygame.Surface((round(width * S), round(height * S)), pygame.SRCALPHA)
+        pygame.draw.rect(plate, (*color, 30), plate.get_rect(), border_radius=round(8 * S))
+        pygame.draw.rect(plate, (*color, 200), plate.get_rect(), max(1, round(2 * S)), border_radius=round(8 * S))
+        plate.blit(label, label.get_rect(center=plate.get_rect().center))
+        layer.blit(plate, (round(x * S), round((y + 9 - height / 2) * S)))
+
     def font(self, points):
         if self.ui is not None:
             return self.ui.font(points * S * self.SKIN_TEXT)

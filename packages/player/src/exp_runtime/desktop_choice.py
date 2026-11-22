@@ -45,6 +45,9 @@ from .ui_assets import Rect
 # Choice hints' row tints (choice_hints.preview_choices), shared with exp-runtime's minigame prompt colours.
 HINT_COLORS = {'gain': (189, 237, 199), 'loss': (251, 201, 199),
                'no_gain': (251, 201, 199), 'mixed': (251, 228, 175)}
+# shshd-runtime: the same hints on the Claire Hart skin's dark rows (owner, 2026-11-22: they have to read there too),
+# saturated enough to tell apart over its teal (ChoiceRenderer.draw_skinned).
+SKIN_HINT_COLORS = {'gain': (62, 190, 104), 'loss': (214, 74, 70), 'no_gain': (214, 74, 70), 'mixed': (226, 168, 52)}
 # `SHSWidgetMenu::setPortrait` keeps three ARGB colors per theme: (even row, odd row, pressed row). Blue, pink
 # and gold are (white, near-white tint, saturated tint); theme 3 (gray) holds opaque green / red / blue, which
 # reads as an unfinished placeholder (no gray character ever has a choice). The odd-row values below are the
@@ -738,10 +741,14 @@ class ChoiceRenderer:
             band = area.inflate(-2 * gap, -2 * gap)
             if band.width > 0 and band.height > 0:
                 self.canvas.blit(ui.row(band.size, s, lit=down), band.topleft)
-                if hint_color:
+                skin_hint = SKIN_HINT_COLORS.get(hint) if hint_color else None
+                if skin_hint:
+                    # Choice Hints on the skin's dark rows: CoD's pastels washed out to one grey-green there, so the
+                    # row takes a stronger tint of its own colour and a bar of it down its left edge.
                     tint = pygame.Surface(band.size, pygame.SRCALPHA)
-                    tint.fill(tuple(hint_color[:3]) + (70,))
+                    tint.fill(skin_hint + (self.SKIN_HINT_ALPHA_LIT if down else self.SKIN_HINT_ALPHA,))
                     self.canvas.blit(tint, band.topleft)
+                    self.canvas.fill(skin_hint, (band.x, band.y, max(2, round(self.SKIN_HINT_EDGE * k)), band.height))
                 words = options[row.index] if row.index < len(options) else ''
                 detail = extra[row.index] if row.index < len(extra) and extra[row.index] else None
                 self.draw_skin_label(ui, words, band, self.label_home(row, game), g, down, detail)
@@ -756,6 +763,8 @@ class ChoiceRenderer:
         return buttons
 
     SKIN_DETAIL, SKIN_DETAIL_ALPHA = .75, 170       # a detail line's size against its option's, and its alpha
+    # A hinted row's tint (lighter on the lit row, whose gold label and edge stay the cue) and its edge bar, in points.
+    SKIN_HINT_ALPHA, SKIN_HINT_ALPHA_LIT, SKIN_HINT_EDGE = 96, 56, 3
 
     def draw_skin_label(self, ui, words, band, home, geometry, lit, detail=None):
         """An option in Romic Bold, centred on its row (gold on the lit one), with its detail line smaller and fainter

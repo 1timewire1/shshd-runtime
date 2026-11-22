@@ -670,7 +670,9 @@ class HdPauseMenu:
         control = self.control_font(15)
         y = height / 2 - self.cap_offset(15, control) - .5
         for label, x, color in (('ON', kx - 27, (255, 255, 255)), ('OFF', kx + 52, (128, 128, 128))):
-            self.text(track, label, x - box[0], y, 15, color, center=True, font=control)
+            # (HdPauseMenu's own text: the label is the control's, not the page's. The Claire Hart skin's `text` turns
+            # grey text off-white for its teal pages, and the OFF label vanished on the white track; g54, 2026-11-22.)
+            HdPauseMenu.text(self, track, label, x - box[0], y, 15, color, center=True, font=control)
         mask = pygame.Surface(track.get_size(), pygame.SRCALPHA)
         pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=track.get_height() // 2)
         track.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)

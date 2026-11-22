@@ -151,6 +151,10 @@
   Now Airing and Episodes On Demand's list with its New Game / Continue and info cards, the prompts ("Play with sound?",
   Update Available) and the busy card as Classic's popup (`ChUi.window`); the episode grid and the game chooser keep their
   looks, and Claire Hart Cases leaves the menus CoD's. A library with chc revision 1 keeps CoD's own look. The test channel's `state` reports the scene badge (`badge`).
+  After the g54 pass (owner, 2026-11-22): **Choice Hints read on the skin** (CoD's pastel row tints washed out to one
+  grey-green on the dark rows; each kind now takes a stronger tint of its own and a bar of its colour down the row's left
+  edge, `SKIN_HINT_COLORS`), the **switches' OFF** keeps the control's grey (the skin's text colouring had turned it
+  off-white on the white track), and the **episode lists' tags** are Options' gold badge at its size.
 
 ## 1.1.1 (shshd-runtime)
 

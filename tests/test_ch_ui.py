@@ -181,6 +181,28 @@ class ChChoiceTests(unittest.TestCase):
         self.assertGreater(renderer.canvas.get_at((320, 120 * 2)).a, 200)       # (the panel under the description)
         self.assertEqual(renderer.overlay.get_at((320, (282 + 30) * 2)).a, 0)   # (no timer on an untimed choice)
 
+    def test_choice_hints_read_on_the_dark_rows(self):
+        # Owner, g54, 2026-11-22: CoD's pastel hints washed out to one grey-green on the skin. Each kind takes its own
+        # stronger tint and an edge bar of its colour; off, the rows are the skin's own.
+        from exp_runtime.desktop_choice import SKIN_HINT_COLORS
+        details = dict(title='Pick', text='Which?', options=['Good', 'Bad', 'Both'], timeout_ms=0)
+        page = self.page()
+        renderer = self.renderer(page, details)
+        renderer.hints = [SimpleNamespace(kind=kind) for kind in ('gain', 'loss', 'mixed')]
+        renderer.hint_key = renderer.cached_key = 'k'
+        renderer.draw_hd(None, self.session(details), page, 0, None, None, True)
+        k, gap = renderer.scale, max(1, round(renderer.SKIN_ROW_GAP * renderer.scale))
+        edges = [tuple(renderer.canvas.get_at((23 * k + gap, (150 + 44 * i + 22) * k)))[:3] for i in range(3)]
+        self.assertEqual(edges, [SKIN_HINT_COLORS[kind] for kind in ('gain', 'loss', 'mixed')])
+        spots = [((23 + 30) * k, (150 + 44 * i + 12) * k) for i in range(3)]
+        hinted = [tuple(renderer.canvas.get_at(spot))[:3] for spot in spots]
+        renderer.draw_hd(None, self.session(details), page, 0, None, None, False)
+        plain = [tuple(renderer.canvas.get_at(spot))[:3] for spot in spots]
+        self.assertNotIn(tuple(renderer.canvas.get_at((23 * k + gap, (150 + 22) * k)))[:3], SKIN_HINT_COLORS.values())
+        (gr, gg, _), (lr, lg, _) = ([a - b for a, b in zip(hinted[i], plain[i])] for i in (0, 1))
+        self.assertGreater(gg, gr)                                              # (a gain's tint leans green)
+        self.assertGreater(lr, lg)                                              # (a loss's red)
+
     def test_a_timed_choice_runs_the_combo_bar_and_the_quiz_scores_on_the_capsule(self):
         details = dict(title='Quick!', text='Now.', options=['A', 'B', 'C'], timeout_ms=10000)
         page = self.page(timed=True)
@@ -233,6 +255,12 @@ class ChScreenTests(unittest.TestCase):
             back = next(rect for rect, command in buttons if command == ('pause_back',))
             self.assertEqual((back.x, back.w, back.h), (PANEL_X + 14, 156, 58))
             self.assertIn(('pause_open', 'choice:aspect_ratio'), [command for _, command in buttons])
+            # A switch's OFF is the control's grey, not the skin's off-white page text (g54, 2026-11-22: it vanished).
+            track = menu.switch_track(0.0)
+            w, h = track.get_size()
+            darkest = min(sum(track.get_at((x, y))[:3]) / 3 for x in range(w // 2, w) for y in range(h // 3, 2 * h // 3)
+                          if track.get_at((x, y)).a == 255)
+            self.assertLess(darkest, 170)                       # (128 now; the off-white label was ~228)
             # The switch off: CoD's own colours come back.
             menu.resources = SimpleNamespace(library=None, dialogue_skin=lambda: None)
             self.assertIsNone(menu.skin())
@@ -369,6 +397,18 @@ class ChMenuTests(unittest.TestCase):
         self.assertEqual(listing.TEXT_ROW_COLOR, ui.TEXT)
         self.assertEqual(listing.ICON_RING_COLOR, ui.GOLD)
         self.assertGreaterEqual(listing.line_height(28), listing.font(28).get_linesize() / 2 - 1)
+        # A row's tag is Options' badge (g54, 2026-11-22): gold, at its size, not Claire Hart's dark green.
+        from exp_runtime.desktop_pause_hd import BADGE_HEIGHT
+        from exp_runtime.hd_scale import S
+        layer = pygame.Surface((200 * S, 60 * S), pygame.SRCALPHA)
+        listing.draw_standard_mark(layer, 10, 20, 'CH', (14, 80, 40))
+        top = next(y for y in range(layer.get_height()) if any(layer.get_at((x, y)).a for x in range(layer.get_width())))
+        bottom = max(y for y in range(layer.get_height()) if any(layer.get_at((x, y)).a for x in range(layer.get_width())))
+        self.assertEqual(bottom - top + 1, BADGE_HEIGHT * S)
+        border = next(layer.get_at((x, (top + bottom) // 2)) for x in range(layer.get_width())
+                      if layer.get_at((x, (top + bottom) // 2)).a > 150)
+        self.assertEqual(tuple(border)[:3], ui.GOLD)
+        self.assertGreater(listing.mark_width('CH'), 32)
         listing.library = self.library('off')
         self.assertIsNone(listing.skin())
         self.assertNotIn('TEXT_ROW_COLOR', listing.__dict__)
