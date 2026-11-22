@@ -79,7 +79,9 @@ def write_bundle(directory, game, player, titles, target, *, note='', keep=None,
     files = [(name, path) for name, path in progress_files(directory) if keep is None or keep(name)]
     names = [name for name, _ in files]
     saved = saved_ids(names)
-    manifest = dict(format=FORMAT, version=VERSION, game=game, created=datetime.now().isoformat(timespec='seconds'),
+    # (`created` to the microsecond: two backups in one second, a restore's "(before restore)" one among them, listed
+    # newest first by it; to the second they tied, and so did Windows' file times. v1.1.1, 2026-11-22.)
+    manifest = dict(format=FORMAT, version=VERSION, game=game, created=datetime.now().isoformat(timespec='microseconds'),
                     note=note, saved=[dict(id=key, title=titles.get(key, '')) for key in saved],
                     trees=sum(1 for name in names if name.endswith('.json.gz')),
                     names=len(player.get('names', {})) + sum(len(table) for table in player.get('name_sets', {}).values()))
@@ -250,7 +252,7 @@ SET_FORMAT = 'shshd-progress-set'
 def write_set(target, bundles, *, note=''):
     """Write a set of bundles ({game: its bundle's file}) to `target`, replaced whole; returns its manifest."""
     games = sorted(bundles)
-    manifest = dict(format=SET_FORMAT, version=VERSION, created=datetime.now().isoformat(timespec='seconds'),
+    manifest = dict(format=SET_FORMAT, version=VERSION, created=datetime.now().isoformat(timespec='microseconds'),
                     note=note, games=games, saved={game: len(read_manifest(bundles[game]).get('saved', ()))
                                                     for game in games})
     target = Path(target)

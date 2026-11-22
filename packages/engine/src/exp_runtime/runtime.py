@@ -46,6 +46,11 @@ class SaveError(ValueError):
     pass
 
 
+class NewerSaveError(SaveError):
+    """shshd-runtime: a save in a format this build does not read but a newer one does (a later version). It is not
+    corrupt: the player keeps it where it is (v1.1.1 check, 2026-11-22)."""
+
+
 def transition_class(resources):
     """The game's queued-transition model: HD_SCENE_TRANSITION with an HD bundle (SHS HD's SHSFadeLayer), else
     SCENE_TRANSITION, or None."""
@@ -785,6 +790,27 @@ class Session:
         """The iOS builds' dialogue (SHS HD, or an IPA library): CSFont paging and SHSUIDialog's own clocks."""
         return self.engine.hd_version is not None or getattr(self.resources.library, 'kind', 'apk') == 'ipa'
 
+    text_animation = 'letters'      # General's Text Animation (dialogue_animation.TEXT_ANIMATIONS), set by the player
+
+    def _text_reveal(self, motion):
+        """`motion` (the page's animation) in General's Text Animation: a wipe takes each visible line's share of the
+        region's width at WIPE_LINE_MS (`addTypingAnimations:lineTime:` steps by the line's display length over the
+        drawRegion's width); without a layout to measure, letter by letter."""
+        from math import ceil
+        from .dialogue_animation import TEXT_ANIMATIONS, WIPE_LINE_MS
+        # (The player keeps the setting on the library, which outlives a session: a load or a restart keeps it.)
+        mode = getattr(getattr(self.resources, 'library', None), 'text_animation', None) or self.text_animation
+        mode = mode if mode in TEXT_ANIMATIONS else 'letters'
+        lines = ()
+        if mode == 'wipe':
+            page = self.dialogue_page()
+            width = getattr(page, 'body_width', 0) if page is not None else 0
+            if width <= 0:
+                mode = 'letters'
+            else:
+                lines = [max(0, ceil(line.width / width * WIPE_LINE_MS)) for line in page.body.lines]
+        return motion.set_text(mode, lines)
+
     def _typed_length(self, details):
         """The source indices a page's reveal runs over. Android's cursor scans the whole remaining substring; the iOS
         builds type only the page's own lines (`-[SHSTextLayer setupTypingLayers]` lays out the visible lines and
@@ -920,6 +946,7 @@ class Session:
                         length=self._typed_length(action.details),
                         expression_ms=IOS_EXPRESSION_MS if self._ios_dialogue() else EXPRESSION_MS,
                         restage=partner >= 0 and partner != held)
+                    self._text_reveal(self.engine.dialogue_animation)
                     self._duet_line = (self.engine.dialogue_animation, partner)
                     if self.engine.notice and (self.engine.hd_version is not None
                                                or GAMES[self.engine.game_key].LETTER_NOTICE):
@@ -1133,6 +1160,7 @@ class Session:
                 action.details['page_start'] = action.details['page_end']
                 self._prepare_dialogue(update_text=True)
                 self.engine.dialogue_animation.next_page(self._typed_length(action.details))
+                self._text_reveal(self.engine.dialogue_animation)
                 return action
             if action.name == 'vm_pause':
                 self.vm.continue_after_pause()
@@ -1536,7 +1564,7 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=44,
+        return dict(format='shs-runtime-save', version=46,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
@@ -1590,14 +1618,25 @@ class Session:
     @classmethod
     def from_snapshot(cls, resources: EpisodeResources, state: dict):
         try:
-            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 45):
+            # Version 46 joins the two lines that branched from 42: the Claire Hart branch's 43 (story-object pictures)
+            # and 44 (hidden-object rounds), and v1.1.1's 45 (Text Animation). Each step below fills in what its own
+            # line left out, so a 43 / 44 save gains the Text Animation and a 45 save the Claire Hart parts.
+            if (state['format'] == 'shs-runtime-save' and type(state['version']) is int and state['version'] > 46):
+                raise NewerSaveError('This save was made by a newer version of SHSHD Runtime')
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 47):
                 raise SaveError('Unsupported save format or version')
+            version = state['version']
+            # Version 45 gives a dialogue page its Text Animation (General's, dialogue_animation.TEXT_ANIMATIONS): an older
+            # save's page types letter by letter, as it did.
+            if version < 45 and isinstance((state.get('engine') or {}).get('dialogue_animation'), dict):
+                state = deepcopy(state)
+                state['engine']['dialogue_animation'].update(text_mode='letters', wipe_lines=[], wipe_ms=0)
             # Version 44 adds Claire Hart's hidden-object round (claire_rounds.py); an older save never had one open.
-            if state['version'] < 44 and isinstance(state.get('engine'), dict):
+            if (version < 44 or version == 45) and isinstance(state.get('engine'), dict):
                 state = deepcopy(state)
                 state['engine'].setdefault('claire_round', None)
             # Version 43 adds story-object pictures (service 225, Claire Hart plan P); an older save showed none.
-            if state['version'] < 43 and isinstance(state.get('engine'), dict):
+            if (version < 43 or version == 45) and isinstance(state.get('engine'), dict):
                 state = deepcopy(state)
                 state['engine'].setdefault('story_objects_due', [])
                 state['engine'].setdefault('story_objects', [])

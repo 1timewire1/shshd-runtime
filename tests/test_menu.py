@@ -262,6 +262,20 @@ class LibraryMenuTests(unittest.TestCase):
         with self.assertRaises(ContentError):
             state.save_path('../../outside')
 
+    def test_a_newer_builds_save_is_not_taken_for_corrupt(self):
+        from exp_runtime.runtime import NewerSaveError
+        state = MenuState(self.library)
+        path = state.save_path(state.selected, automatic=True)
+        path.parent.mkdir()
+        for version in (47, 60):                # (any later version's)
+            path.write_text(json.dumps({'format': 'shs-runtime-save', 'version': version}))
+            with self.assertRaises(NewerSaveError):
+                state.session(state.selected)
+        path.write_text(json.dumps({'format': 'shs-runtime-save', 'version': 0}))
+        with self.assertRaises(SaveError) as caught:
+            state.session(state.selected)
+        self.assertNotIsInstance(caught.exception, NewerSaveError)     # (an impossible version is still corrupt)
+
     def test_choice_hint_preferences_default_off_and_survive_reopen(self):
         state = MenuState(self.library)
         self.assertFalse(state.choice_hints)

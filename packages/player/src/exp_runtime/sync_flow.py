@@ -483,10 +483,13 @@ class SendProvider:
         Options shows (settings.json, over the defaults)."""
         from .languages import with_language_settings, with_preferred
         app = self.app
-        if app.state is not None:
-            # (with the four languages Preferred Language replaced, which a device from before it takes)
-            return with_language_settings({key: getattr(app.state, key) for key in SHARED_PREFERENCES if key not in DEVICE_OPTIONS})
         from .menu import preference_defaults, shared_preference
+        if app.state is not None:
+            # (with the four languages Preferred Language replaced, which a device from before it takes; a preference newer
+            # than the state's copy goes at its default)
+            defaults = preference_defaults()
+            return with_language_settings({key: getattr(app.state, key, defaults[key]) for key in SHARED_PREFERENCES
+                                           if key not in DEVICE_OPTIONS})
         saved = with_preferred(app.settings.preferences)
         values = dict(preference_defaults(), **{key: value for key, value in saved.items() if shared_preference(key, value)})
         return with_language_settings({key: value for key, value in values.items()

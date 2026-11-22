@@ -42,7 +42,10 @@ it's done, so real clocks (fades, timers) run as in play.
                                 apart over MS (default 800) and lift, MOVES moves a frame (default 3); replies with the
                                 tree's size (the round's zoom) before and after
     play press [N]              the open mini-game's go-ahead or button; a cell 0-8 in SHS '11's games; a key code on
-                                New Rules' arena (-5 OK, -1 to -4 the joystick, 48-57 numbers), a row on its menu
+                                New Rules' arena (-5 OK, -1 to -4 the joystick, 48-57 numbers), a row on its menu;
+                                football's tap, or a play 0-8; the word game's option N
+    play cells A B C...         the word grid: a drag through those cells (0 first, row by row); `play press` a tap off
+                                the board
     play find NAME|SLOT         a Claire Hart round: a real tap on that listed object, where nothing listed covers it
                                 (the view centred on it first if it's off screen); `play miss` taps an empty spot
     play hint | pick SLOT | continue | powerup NAME   a round's hint orb, a name for the Psychic Locator, the Level
@@ -143,7 +146,8 @@ def _keys():
               ('RETURN', 'ESCAPE', 'UP', 'DOWN', 'LEFT', 'RIGHT', 'SPACE', 'BACKSPACE', 'TAB')}
     wanted.update({chr(c): 'K_' + chr(c) for c in range(ord('a'), ord('z') + 1)})
     wanted.update({str(d): f'K_{d}' for d in range(10)})
-    wanted.update({'enter': 'K_RETURN', 'back': 'K_ESCAPE', 'f5': 'K_F5', 'f9': 'K_F9'})
+    wanted.update({'enter': 'K_RETURN', 'back': 'K_ESCAPE', 'f5': 'K_F5', 'f9': 'K_F9',
+                   'pageup': 'K_PAGEUP', 'pagedown': 'K_PAGEDOWN'})      # (a scrolling page's own keys)
     keys = {}
     for name, constant in wanted.items():
         code = getattr(pygame, constant, None)
@@ -508,6 +512,11 @@ class Commands:
             out.update({key: action.details[key] for key in TEXT_KEYS if key in action.details})
             if action.name == 'text_input' and getattr(game, 'input_error', None):
                 out['input_error'] = str(game.input_error)      # a name the game turned down, as its alert says
+            motion = getattr(session.engine, 'dialogue_animation', None)
+            if action.name == 'dialogue' and motion is not None:
+                # The page's Text Animation and how far it is out (dialogue_animation.TEXT_ANIMATIONS).
+                out['reveal'] = dict(mode=getattr(motion, 'text_mode', 'letters'), complete=motion.complete,
+                                     revealed=motion.revealed, length=motion.text_length)
             picker = getattr(session.engine, 'character_picker', None)
             if action.name == 'character_picker' and picker is not None:
                 # The portraits by their original place (`answer N` brings one to the front, `continue` confirms).
@@ -1007,6 +1016,9 @@ class Commands:
         pause = self._menu()[0]
         out = dict(ok=True, page=pause.state.screen,
                    rows=[{k: v for k, v in row.items() if k != 'command'} for row in rows])
+        if getattr(pause, 'scroll_area', None) is not None:
+            # A page that scrolls (a text page; rows too many for the frame): where it is, in points.
+            out['scroll'] = dict(at=round(pause.state.scroll, 1), most=round(pause.state.max_scroll, 1))
         text = self._page_text(pause, pause.state.screen)
         if text is not None:
             out.update(title=text[0], text=text[1])
@@ -1098,6 +1110,8 @@ class Commands:
             state.persist()
             if key.startswith('dsi_') or key == 'preferred_language':
                 self.app.apply_dsi()
+            elif self.app.game is not None and hasattr(self.app.game, key):
+                setattr(self.app.game, key, value.strip())     # (the open story's too, as its pause menu's page sets it)
             if key == 'ch_dialogue':
                 self.app.apply_ch_dialogue()
             if key == 'claire_powerups':
@@ -1377,8 +1391,18 @@ class Commands:
             except (KeyError, IndexError, TypeError, AttributeError):
                 return str(string_id)
 
+        def notice():
+            try:
+                return windows.kind_of(menu) == 'notice'
+            except (AttributeError, TypeError):
+                return False
+
         def label(action):
             try:
+                if windows is not None and notice():
+                    # A notice draws its one button as OK, whatever its item says (the "Locked" notice's item is
+                    # string 0, the credits: v1.1.1 check, 2026-11-22).
+                    return str(windows.strings()[154])
                 return windows.item_label(action, variables) if windows is not None else str(action.label)
             except (KeyError, IndexError, TypeError, AttributeError):
                 return str(action.label)
@@ -1798,7 +1822,8 @@ class Commands:
 
     def do_play(self, rest):
         """`play press [N]` (the go-ahead or the game's button; a cell 0-8 for SHS '11's games; a key code on New Rules'
-        arena, a row on its menu); Claire Hart's rounds: `play find NAME|SLOT`, `play miss`, `play hint`,
+        arena, a row on its menu; football's tap, or a play 0-8; the word game's option N); `play cells A B C` (the word
+        grid: a drag through those cells; `play press` a tap off its board); Claire Hart's rounds: `play find NAME|SLOT`, `play miss`, `play hint`,
         `play powerup focus|locator|clairvoyance|time_warp`, `play pick SLOT` (the Psychic Locator), `play continue`."""
         game = self._need_game()
         words = rest.split(None, 1)
@@ -1812,6 +1837,22 @@ class Commands:
             return dict(ok=False, error='a skip prompt is up: answer it first (`answer N`, Play to play)')
         if name == 'claire_round':
             return self._claire_play(verb, arg)
+        if name == 'word_grid' and verb in ('press', 'cells'):
+            # (v1.1.1 check, 2026-11-22) The word grid: a drag through cells (`play cells 0 1 2`, down on the first,
+            # through the rest, up on the last), or `play press`, a tap off the board (its rules pages, its results).
+            cells = [int(c) for c in arg.split()] if verb == 'cells' else []
+            if verb == 'cells' and not cells:
+                return dict(ok=False, error='play cells A B C... (the board\'s cells, 0 first, row by row)')
+            def drag():
+                if not cells:
+                    session.grid_pointer('down', None)
+                    session.grid_pointer('up', None)
+                    return
+                session.grid_pointer('down', cells[0])
+                for cell in cells[1:]:
+                    session.grid_pointer('move', cell)
+                session.grid_pointer('up', cells[-1])
+            return self._act(lambda: game._attempt(drag))
         if verb != 'press':
             return dict(ok=False, error=f'{verb} is for Claire Hart rounds; this is {name}')
         from .minigame_report import CELL_GAMES, PRESS_GAMES
@@ -1828,6 +1869,18 @@ class Commands:
             return self._act(lambda: game._attempt(lambda: session.answer(value)))
         if name in PRESS_GAMES:
             return self._act(lambda: game._attempt(lambda: session.answer(None)))
+        if name == 'football':
+            # (v1.1.1 check, 2026-11-22) A tap goes on from a rules page; a play is one of the nine targets (0-8), as a
+            # tap on it or keys 1-9.
+            if value is not None and not 0 <= value < 9:
+                return dict(ok=False, error='a play is 0-8 (none for a tap)')
+            return self._act(lambda: game._attempt(lambda: session.answer(value)))
+        if name == 'word_game':
+            # The word game's options by number (0 first), as a tap on a row or keys 1-9.
+            options = session.engine.word_game.options if session.engine.word_game is not None else []
+            if value is None or not 0 <= value < len(options):
+                return dict(ok=False, error=f'the word game takes an option, 0 to {len(options) - 1}')
+            return self._act(lambda: game.command(('choose', value)))
         return dict(ok=False, error=f'no mini-game is open ({name})')
 
     def _claire_window(self, x, y):

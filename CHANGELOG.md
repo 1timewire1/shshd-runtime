@@ -2,6 +2,13 @@
 
 ## Unreleased (shshd-runtime)
 
+### Changed
+
+- **v1.1.1 merged into the Claire Hart branch** (2026-11-22). Saves are **version 46**, joining the two lines that
+  branched from 42: this branch's 43 (story-object pictures) and 44 (hidden-object rounds), and v1.1.1's 45 (Text
+  Animation). Every one of them loads, each gaining what its own line left out; v1.1.1 refuses 46 as newer and keeps
+  the save.
+
 ### Added
 
 - **Narration with the narrator's portrait** (Claire Hart plan Stage 0, E; `claire-hart` branch): a presentation flag,
@@ -144,6 +151,70 @@
   Now Airing and Episodes On Demand's list with its New Game / Continue and info cards, the prompts ("Play with sound?",
   Update Available) and the busy card as Classic's popup (`ChUi.window`); the episode grid and the game chooser keep their
   looks, and Claire Hart Cases leaves the menus CoD's. A library with chc revision 1 keeps CoD's own look. The test channel's `state` reports the scene badge (`badge`).
+
+## 1.1.1 (shshd-runtime)
+
+### Added
+
+- **Text Animation** (Options → General; a player's suggestion, owner 2026-11-22): dialogue text Letter by Letter
+  (Android's, the default, as before), in the iOS games' own **Line Wipe** (decompiled from SHS HD's
+  `SHSTextLayer`: each line wiped in over 0.6 s a text width, the next once its text is out; a tap hurries the rest to
+  0.2 s) or **Instant**. With Autoplay Dialogue a page still waits as long as its letters would have taken. Saves are
+  version 45 and keep a page's mode; older saves load as Letter by Letter. See docs/MAIN_MENU.md.
+- **The test channel reaches every screen** (brought from the Claire Hart branch for v1.1.1's full check;
+  [RUNTIME.md](docs/RUNTIME.md#test-channel-this-fork)): `window` sees and presses a story's own windows ("Exit Game?",
+  "Locked"), the app's message card and Update Available, the picker's info card and the chooser's questions; `panels`,
+  `tree` (warp, Rewind, Fast Forward) and `wall` (posts, links) for the side panels; `picker` for the episode picker and its
+  New Game / Continue popup; Help's pages and text through `rows`; the game chooser's Options and tick lists (`game
+  chooser`, `ticks`); `buttons` / `button` for the chooser, Setup, the file browser and the menus without HD art; held keys.
+  `state` adds the open mini-game (the Creator's playtest report, now shared as `minigame_report.py`), the look picker's
+  portraits, a refused name, the in-story Options page and the side panels; `play` presses, picks a cell or an arena key.
+
+### Fixed
+
+- **The main menu's General page ran off a 3:4 frame** (owner, 2026-11-22; ten rows since Text Animation joined
+  it): the card ran past the frame's bottom and its back button was cut off. A page of rows too tall for its frame
+  now fills a text page's bounds and its rows scroll: a drag (begun on a row too, once it moves 8 points), the wheel,
+  Page Up / Down; the arrow keys go row by row and bring the highlighted one into view. On iOS the UISwitches and
+  UISliders show on whole rows only. Pages that fit are laid out as before. The test channel's `rows` gives a
+  scrolling page's `scroll`, and `key` takes `pageup` / `pagedown`.
+- **iOS stopped the app after a first Bulk Import** (found in v1.1.1's full check on the iPad, 2026-11-22): drawing a
+  library's grid previews left about 1 GB behind (1153 MB for SHS's 146; 1.36 GB idle after a Bulk Import), so the
+  next large job crossed iOS's memory limit and the app closed with no report. The iOS drawing backend's cache of
+  pixels made into surfaces (`ImageAPI.frombytes`) was bounded by entries only, and each preview's title card added
+  about 11 MB it never asked for again; it is now bounded to 32 MB as well. Rebuilding SHS's 191 previews peaks at
+  221 MB. Desktop and Android draw with pygame and were not affected.
+- **Delete Library left a folder that Bulk Import took for a library** (found on the iPad, 2026-11-22; every
+  platform since v1.1.0): the imports' checks (`content_checks.json`) and the ended saves' cache (`ended_saves.json`)
+  stayed, and Bulk Import said "… already has a library. Nothing was imported." Both now go with the library.
+- **Options → Sound in the game chooser stopped the app** (reported on iOS 2026-11-22; every platform, since the
+  iOS volume sliders): "AppCard.slider() got an unexpected keyword argument 'key'". The chooser's card takes the
+  slider's key, and on iOS its UISliders and UISwitches now reach the chooser's Options (they went nowhere there).
+- **A saved game from a newer version was set aside as corrupt** (found in v1.1.1's full check, 2026-11-22): Continue
+  said "Save file was corrupt… Deleting save file." and moved it out of the way. A save in a format only a newer build
+  reads (a later version, or the Claire Hart development branch's 43 / 44) now stays where it is, and the message says
+  it was made by a newer version (`NewerSaveError`).
+- **Letters typed in one frame were lost in name entry** (found in v1.1.1's full check, 2026-11-22; inherited from
+  upstream): the app stops a frame's input when the screen changes, so a queued tap never lands on a new screen, and the
+  name being typed counted as a change, so after a frame's first letter the rest and its Enter were dropped ("Sam" came
+  out "S"). A keyboard's autocorrect or a suggestion sends several at once. The name no longer counts; a refused
+  letter's alert still does (`Desktop._screen_token`).
+- **A window raised from the side panels over the screen was hidden and could not be answered** (found in v1.1.1's full
+  check, 2026-11-22): with the Decision Tree and Faceplace wall over the screen (where there is no room beside the game:
+  a phone, a 3:4 window), the tree's "Locked" notice and a wall link's "Exit Game?" were drawn under the panels, and the
+  panels took every tap, so nothing seemed to happen until they were closed. The window now draws over them and takes
+  the input first.
+- **Backups made in the same second could list in the wrong order** (v1.1.1's Windows CI, 2026-11-22): a backup's
+  `created` stamp was to the second, and Windows' file times tie too, so a restore's "(before restore)" backup could
+  list below the one it was made from. Stamped to the microsecond now.
+- **Test channel:** `set` passes a choice option (Text Animation, Word Grid Controls…) to the open story too, as its
+  pause menu does; `state` reports a dialogue page's `reveal` (its Text Animation, complete, letters out); `play` drives
+  football (a tap, or a play 0-8), the HD word game (an option) and the word grid (`play cells A B C`), whose reports
+  now say what they wait for (they read "time"); a notice's button reads OK, as drawn (the "Locked" notice's read as
+  the credits).
+- **A Cause of Death word quiz closed the app with Ask to Skip Mini-Games on** (found 2026-11-21; in v1.1.0): while its
+  skip prompt's outcomes were worked out, Android's loading band read the scene's pan from a stand-in engine that had none.
+  The stand-in now carries it (`Desktop._loading_view`).
 
 ## 1.1.0 (shshd-runtime)
 

@@ -55,8 +55,8 @@ from .x360_diss import (ROUND_BACKGROUNDS as X360_ROUND_BACKGROUNDS, ROUND_EPISO
                         SOUND_GOOD as X360_SOUND_GOOD, SOUND_REMIX as X360_SOUND_REMIX)
 from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, GRID_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
-from .desktop_pause_hd import (ASPECT_NAMES, CH_DIALOGUE_NAMES, CLAIRE_POWERUPS_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE, LANGUAGE_NAMES,
-                               focus_step, place_controls)
+from .desktop_pause_hd import (ASPECT_NAMES, CH_DIALOGUE_NAMES, CLAIRE_POWERUPS_NAMES, TEXT_ANIMATION_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE, LANGUAGE_NAMES,
+                               drag_scroll, focus_step, place_controls)
 from . import backdrop_fit, frame_shape
 from .desktop_hd_menu import HdMenuWindows
 from .desktop_badge_hd import HdSceneBadge
@@ -412,6 +412,19 @@ class Desktop:
     warp_unlocked = True
     controller_confirm = 'south'    # a controller's confirm button (Options' Controller page; the app's MenuState)
     grid_controls = 'hold'          # the word grid with a controller: 'hold' or 'tap' (Options' Controller page)
+
+    @property
+    def text_animation(self):
+        """General's Text Animation (dialogue_animation.TEXT_ANIMATIONS), kept on the library: the session reads it there
+        as each page starts (Session._text_reveal), across loads and restarts."""
+        return getattr(getattr(self.session.resources, 'library', None), 'text_animation', 'letters')
+
+    @text_animation.setter
+    def text_animation(self, value):
+        from .dialogue_animation import TEXT_ANIMATIONS
+        library = getattr(self.session.resources, 'library', None)
+        if library is not None:
+            library.text_animation = value if value in TEXT_ANIMATIONS else 'letters'
     warp_lockout = 0
     panels_open = False
     panels_progress = 0.0
@@ -1839,7 +1852,11 @@ class Desktop:
         ready = False
         if self.autoplay and action is not None and not self.session.transitioning and self.host_prompt is None:
             if action.name == 'dialogue':
-                ready = engine.dialogue_animation is not None and engine.dialogue_animation.complete
+                # (Text Animation's wipe or instant page also waits out the time its letters would have taken: owner,
+                # 2026-11-22, so Autoplay reads the same at any setting.)
+                motion = engine.dialogue_animation
+                ready = motion is not None and motion.complete and (
+                    getattr(motion, 'text_mode', 'letters') == 'letters' or motion.elapsed_ms >= motion.letters_end_ms)
             elif action.name in ('message_panel', 'survey_confirmation'):
                 ready = engine.message_panel is not None and engine.message_panel.ready
             elif action.name == 'presentation':
@@ -2522,7 +2539,10 @@ class Desktop:
                 (dialogue.finish_requested, dialogue.complete) if dialogue else None,
                 tuple(picker.order) if picker else None,
                 (title.reveal_width == 320, title.ready) if title else None,
-                details.get('draft'), self.input_error, self.menu_open)
+                # (Not the name being typed: a frame's later keys were dropped after its first letter, as for a new
+                # screen, so "Sam" typed in one frame came out "S" and its Enter was lost; a keyboard's autocorrect or
+                # suggestion sends several at once. v1.1.1 check, 2026-11-22. A refused letter's alert still counts.)
+                self.input_error, self.menu_open)
 
     def _football(self):
         """HD's football art when an HD app bundle is imported, else the Android renderer."""
@@ -3129,8 +3149,14 @@ class Desktop:
                                                       round(FRAME_UNITS[1] * scale)), frame, self.BADGE_REGION)
         if hd_pause:
             self._draw_hd_pause(frame)
+        # A window raised from the side panels over the screen (the tree's "Locked", a Faceplace link's "Exit Game?") is
+        # drawn over them, after them below (v1.1.1 check, 2026-11-22: it was drawn under them, so a phone, whose panels
+        # go over the screen, showed nothing while the window waited for its answer).
+        notice_over_panels = (self.notice_stack is not None and bool(self.notice_stack.stack)
+                              and self.overlay_progress > 0)
         if self.notice_stack is not None and self.notice_stack.stack:
-            self._draw_notice(frame, dim=not hd_pause)
+            if not notice_over_panels:
+                self._draw_notice(frame, dim=not hd_pause)
         elif not hd_pause:
             self._tinted = None             # the next pause menu or notice tints the scene as it is then
         # Real device confirmed: panels occupy the window space *beside*
@@ -3180,6 +3206,8 @@ class Desktop:
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('DTView/Faceplace panel rendering stopped: %s', error)
+        if notice_over_panels:
+            self._draw_notice(frame, dim=not hd_pause)
         if zoom_mode is not None and not self.capture:
             self.tree_zoom.draw_tab(self.window, self.tree_zoom.tab_rect(zoom_mode, self.bg_viewport))
             if zoom_mode == 'portrait':
@@ -4079,6 +4107,7 @@ class Desktop:
         # them (owner).
         return dict(vibration=self.vibration_enabled, music=self.music_enabled, sound=self.sound_enabled,
                     aspect_ratio=ASPECT_NAMES[self.aspect_ratio],
+                    text_animation=TEXT_ANIMATION_NAMES.get(getattr(self, 'text_animation', 'letters'), TEXT_ANIMATION_NAMES['letters']),
                     **({'device_vibration': self.device_vibration_enabled} if pygame.supports_vibration() else {}),
                     **(dict(controller_confirm=CONFIRM_NAMES[self.controller_confirm],
                             grid_controls=GRID_CONTROLS_NAMES[self.grid_controls],
@@ -4202,15 +4231,25 @@ class Desktop:
             state.focus = None                      # the pointer takes over from the arrow keys
         x, y = self._pause_point(event.pos)
         if event.type == pygame.MOUSEBUTTONUP:
-            state.drag = None
+            drag, state.drag = state.drag, None
+            if drag and drag[0] == 'scroll' and not drag[3] and drag[4] is not None:
+                self.command(drag[4])               # a tap on a scrolling page: what it began on
             return True
         if event.type == pygame.MOUSEMOTION:
             if state.drag and state.drag[0] == 'slider':
                 self._set_volume(state.drag[1], self.pause_hd.slider_value(x))
             elif state.drag and state.drag[0] == 'scroll':
-                state.scroll = min(state.max_scroll, max(0., state.drag[1] - (y - state.drag[2])))
+                state.drag = drag_scroll(state, state.drag, y)
             return True
         if event.button != 1:
+            return True
+        hit = next((command for rect, command in self.pause_buttons
+                    if rect.collidepoint(x, y) and command[0] != 'pause_scroll'), None)
+        area = self.pause_hd.scroll_area
+        if area is not None and area.collidepoint(x, y) and (hit is None or hit[0] != 'pause_slider'):
+            # A scrolling page (a text page, or rows too many for the frame): the press scrolls once it moves, else it
+            # is a tap on what it began on, sent as it lifts.
+            state.drag = ('scroll', state.scroll, y, False, hit)
             return True
         for rect, command in self.pause_buttons:
             if not rect.collidepoint(x, y):
@@ -4219,7 +4258,7 @@ class Desktop:
                 state.drag = ('slider', command[1])
                 self._set_volume(command[1], self.pause_hd.slider_value(x))
             elif command[0] == 'pause_scroll':
-                state.drag = ('scroll', state.scroll, y)
+                state.drag = ('scroll', state.scroll, y, False, None)
             else:
                 self.command(command)
             break
@@ -4324,6 +4363,20 @@ class Desktop:
             if value != 'off':
                 self.set_dsi_pixels(value)
             self.set_dsi_backgrounds(value != 'off')
+            if self.on_settings:
+                self.on_settings()
+            if len(command) > 2:
+                self.pause_hd.back()
+            self._menu_sound()
+            return
+        if kind == 'pause_cycle' and command[1] == 'text_animation':
+            # Text Animation: a value picked on its choice page (then back), or a step to the next. The page on show
+            # keeps its own; the next one takes it.
+            from .dialogue_animation import TEXT_ANIMATIONS
+            if len(command) > 2:
+                self.text_animation = command[2]
+            else:
+                self.text_animation = TEXT_ANIMATIONS[(TEXT_ANIMATIONS.index(self.text_animation) + 1) % len(TEXT_ANIMATIONS)]
             if self.on_settings:
                 self.on_settings()
             if len(command) > 2:
@@ -4609,9 +4662,12 @@ class Desktop:
         self._sync_text_input()
         if event.type == pygame.QUIT:
             return False
-        if (self.panels_overlay or self.overlay_progress > 0) and self._overlay_event(event):
+        notice_open = self.notice_stack is not None and bool(self.notice_stack.stack)
+        # (An open window goes first even over the panels over the screen, which raise two of them: v1.1.1 check,
+        # 2026-11-22, a "Locked" or "Exit Game?" raised from them could not be answered until they closed.)
+        if not notice_open and (self.panels_overlay or self.overlay_progress > 0) and self._overlay_event(event):
             return True                 # the panels over the screen take everything (Escape closes them)
-        if self.notice_stack is not None and self.notice_stack.stack:
+        if notice_open:
             # A native notice/confirm window (the wall's "Exit Game?" confirmation, or the Decision Tree's
             # "Locked" notice) is modal: it takes every event ahead of everything else below, including the
             # pause menu's own Escape handling right after this.

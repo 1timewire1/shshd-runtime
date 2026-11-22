@@ -11,7 +11,7 @@ standalone **SHSHD Runtime Creator** download
 a release's Python wheels (Python 3.10 or newer; pip fetches Qt):
 
 ```sh
-python -m pip install --find-links ./wheels "shshd-runtime[creator]==1.1.0"
+python -m pip install --find-links ./wheels "shshd-runtime[creator]==1.1.1"
 shshd-creator
 ```
 
@@ -554,7 +554,7 @@ depends only on `shshd-runtime-formats`. Its `[desktop]` extra adds Qt for Pytho
 umbrella's `[creator]` extra selects that complete editor. Ordinary player
 installs and desktop/iOS player bundles exclude the creator and Qt.
 
-`python -m pip install --find-links ./wheels "shshd-runtime[creator]==1.1.0"`
+`python -m pip install --find-links ./wheels "shshd-runtime[creator]==1.1.1"`
 installs the visual editor from a release's wheels. Source checkouts and locally built wheels support
 the same authoring API.
 

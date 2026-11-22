@@ -24,8 +24,8 @@ from .desktop_hd_menu import HdMenuWindows
 from .desktop_main_hd import HdMainMenu
 from .animation_curves import ease_in_out
 from .desktop_pause import PAUSE_OPEN_MS, pause_scale
-from .desktop_pause_hd import (ASPECT_NAMES, CONFIRM_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES,
-                               focus_step, place_controls)
+from .desktop_pause_hd import (ASPECT_NAMES, TEXT_ANIMATION_NAMES, CONFIRM_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, MAIN_HELP_ORDER, PAGES, START_IN_NAMES,
+                               drag_scroll, focus_step, place_controls)
 from .menu_engine import BACK, CUSTOM_MENUS, ENGINE
 from .settings import START_IN
 from .hd_ui import S, FRAME
@@ -409,6 +409,7 @@ class HdShell:
         settings['check_updates'] = self.app.settings.check_for_updates
         settings['start_in'] = START_IN_NAMES[self.app.settings.start_in]
         settings['aspect_ratio'] = ASPECT_NAMES[self.app.settings.aspect(self.app.fixed_window)]
+        settings['text_animation'] = TEXT_ANIMATION_NAMES.get(state.text_animation, TEXT_ANIMATION_NAMES['letters'])
         settings['skip_sound_prompt'] = state.skip_sound_prompt         # Sound's, on the main menu only
         if graphics.controller_connected():
             settings['controller_confirm'] = CONFIRM_NAMES[state.controller_confirm]
@@ -470,7 +471,7 @@ class HdShell:
             state.persist()
             self.app.picker = None                      # the pickers' captions follow the language
             self.app.apply_dsi()                        # ...and the add-ons' stories (the library and a paused episode)
-        elif key in ('controller_confirm', 'grid_controls'):
+        elif key in ('controller_confirm', 'grid_controls', 'text_animation'):
             setattr(state, key, value)
             self.app._attempt(state.persist)
             if key == 'controller_confirm':
@@ -701,11 +702,14 @@ class HdShell:
         for rect, command in reversed(self.hits()):
             if rect.collidepoint(point):
                 self.pressed = command
+                area = self.pause.scroll_area if command in (c for _, c in self.pause_buttons) else None
                 if command[0] == 'pause_slider':
                     self.drag = ('slider', command[1])
                     self.set_volume(command[1], (point[0] - 143) / 460)
-                elif command[0] == 'pause_scroll':
-                    self.drag = ('scroll', self.pause.state.scroll, point[1])
+                elif area is not None and area.collidepoint(point):
+                    # A scrolling page (a text page, or rows too many for the frame): the press scrolls once it
+                    # moves, else it is a tap on what it began on.
+                    self.drag = ('scroll', self.pause.state.scroll, point[1], False)
                 return
 
     def pointer_move(self, point):
@@ -714,12 +718,13 @@ class HdShell:
         if self.drag[0] == 'slider':
             self.set_volume(self.drag[1], (point[0] - 143) / 460)
         elif self.drag[0] == 'scroll':
-            state = self.pause.state
-            state.scroll = min(state.max_scroll, max(0.0, self.drag[1] - (point[1] - self.drag[2])))
+            self.drag = drag_scroll(self.pause.state, self.drag, point[1])
+            if self.drag[3]:
+                self.pressed = None                 # (a scroll: nothing it began on is pressed, or clicks)
 
     def pointer_up(self, point):
         pressed, self.pressed, drag, self.drag = self.pressed, None, self.drag, None
-        if pressed is None or drag is not None:
+        if pressed is None or pressed[0] == 'pause_scroll' or (drag is not None and (drag[0] != 'scroll' or drag[3])):
             return
         for rect, command in reversed(self.hits()):
             if rect.collidepoint(point) and command == pressed:
@@ -834,6 +839,11 @@ class HdShell:
         elif kind == 'pause_cycle' and command[1] == 'grid_controls':
             state = self.app.state
             state.grid_controls = 'hold' if state.grid_controls == 'tap' else 'tap'
+            self.app._attempt(state.persist)
+        elif kind == 'pause_cycle' and command[1] == 'text_animation':
+            from .dialogue_animation import TEXT_ANIMATIONS
+            state = self.app.state
+            state.text_animation = TEXT_ANIMATIONS[(TEXT_ANIMATIONS.index(state.text_animation) + 1) % len(TEXT_ANIMATIONS)]
             self.app._attempt(state.persist)
         elif kind == 'pause_cycle' and command[1] in ('backup_folder', 'export_folder'):
             self.app.choose_folder(command[1])

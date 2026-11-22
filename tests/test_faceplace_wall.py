@@ -124,6 +124,16 @@ class WallConfirmTests(unittest.TestCase):
         self.assertEqual(self.ui.notice_stack.stack, [self.ui.exit_menu])
         self.assertEqual(self.ui.wall_link, 'http://example.invalid/pogo')
 
+    def test_over_the_screen_the_window_takes_the_taps_ahead_of_the_panels(self):
+        # (v1.1.1 check, 2026-11-22: with the panels over the screen, as on a phone, the window they raised was drawn
+        # under them and could not be tapped until they closed.)
+        self.ui.notice_stack.queue(self.ui.exit_menu)
+        self.assertEqual(self.ui.notice_stack.stack, [self.ui.exit_menu])
+        self.ui.panels_overlay, self.ui.overlay_progress = True, 1.0
+        self._tap(self.no_rect)
+        self.assertEqual(self.ui.notice_stack.stack, [])
+        self.assertTrue(self.ui.panels_overlay)                         # (the panels stay; the story waits on them)
+
     def test_a_touch_that_stops_the_gliding_wall_is_not_a_link_tap(self):
         fling = self.ui.wall_fling
         fling.velocity, fling.left, fling.time = (1.0,), (self.ui.side_panels.wall_scroll,), 0

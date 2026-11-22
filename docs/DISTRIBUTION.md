@@ -70,7 +70,7 @@ The release body comes from [RELEASE.md](../RELEASE.md) at the repository root.
 Update it before tagging a version. [CHANGELOG.md](../CHANGELOG.md) records
 release history, with upcoming changes under **Unreleased**.
 
-The prepared release notes ([RELEASE.md](../RELEASE.md)) describe this fork's **v1.1.0**. Upstream's
+The prepared release notes ([RELEASE.md](../RELEASE.md)) describe this fork's **v1.1.1**. Upstream's
 earlier releases remain documented in the changelog.
 
 exp-runtime v0.6.0 added an optional seventh distribution, the episode creator (`shshd-runtime-creator` here). Its wheel

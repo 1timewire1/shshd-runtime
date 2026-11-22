@@ -42,7 +42,7 @@ from .menu import (EPISODE_HEADER_HEIGHT, EPISODE_ROW_HEIGHT, MenuState,
                    SHARED_PREFERENCES, default_library, group_episodes, preference_defaults, remember_library,
                    shared_preference)
 from .minigames import MINIGAMES
-from .runtime import SaveError, Session
+from .runtime import NewerSaveError, SaveError, Session
 from .settings import AppSettings
 from . import frame_shape
 from .frame_shape import CHOICES as ASPECT_RATIOS
@@ -116,9 +116,13 @@ FOLDER_LABEL = 22               # the rows' value: a longer folder name is short
 # delete cut short never leaves a library the app would try to open; and the folders a job stages in (`.sync-...`).
 # shshd-runtime: also DSi Backgrounds' record of the episodes that show them (dsi.COVERAGE_FILE; it kept the folder after a
 # delete on the g54, 2026-11-19).
+# Also the imports' checks (ContentLibrary.CONTENT_CHECKS) and the ended saves' cache (menu.ENDED_CACHE), and their
+# half-written copies: left behind, they kept a deleted library's folder, and Bulk Import took it for a library ("...
+# already has a library. Nothing was imported.", the iPad, 2026-11-22).
 LIBRARY_PARTS = ('library.json', 'content', 'saves', 'dtsaves', 'dtview', 'dtview_tree.json', 'player.json', 'thumbs',
-                 'hd_twins', 'fonts', 'dsi_backgrounds.json')
-LIBRARY_STAGES = ('.sync-', '.sync-send-', '.restore-', '.merge-', '.exp-import-', '.player-', '.library-')
+                 'hd_twins', 'fonts', 'dsi_backgrounds.json', 'content_checks.json', 'ended_saves.json')
+LIBRARY_STAGES = ('.sync-', '.sync-send-', '.restore-', '.merge-', '.exp-import-', '.player-', '.library-', '.checks-',
+                  '.ended-')
 
 
 def remove_library(directory):
@@ -2368,6 +2372,12 @@ class Application:
                 path = self.state.resume_path(episode) if resume else None
                 try:
                     session = self.state.session(episode, resume=resume)
+                except NewerSaveError:
+                    # A newer build's save (v1.1.1 check, 2026-11-22: it was set aside as corrupt): kept where it is, for
+                    # that build, and said so; New Game is still there.
+                    self.message = ('This saved game was made by a newer version of SHSHD Runtime. Update to continue '
+                                    'it; the save is kept.')
+                    return
                 except SaveError:
                     if path is None:
                         raise
@@ -2415,6 +2425,7 @@ class Application:
         self.game.disable_choice_timer = self.state.disable_choice_timer
         self.game.controller_confirm = self.state.controller_confirm
         self.game.grid_controls = self.state.grid_controls
+        self.game.text_animation = self.state.text_animation
         self.game.hd_backdrop = self.state.hd_backdrop
         self.game.side_panels_enabled = self.state.side_panels
         self.game.hires_portraits = self.state.hires_portraits
@@ -2534,6 +2545,7 @@ class Application:
         self.state.music, self.state.sound = self.game.music_enabled, self.game.sound_enabled
         self.state.controller_confirm = self.game.controller_confirm
         self.state.grid_controls = self.game.grid_controls
+        self.state.text_animation = getattr(self.game, 'text_animation', getattr(self.state, 'text_animation', 'letters'))
         self.state.vibration = self.game.vibration_enabled
         self.state.device_vibration = self.game.device_vibration_enabled
         self.state.choice_hints = self.game.choice_hints

@@ -26,6 +26,16 @@ EXPRESSION_END_MS = 3150
 # 0001af9c / CoD 0001988c; HD's autosave limit is 60000). Upstream read the 1.0 as a second (EXPRESSION_MS), which
 # Android SHS keeps until its own timing is checked.
 IOS_EXPRESSION_MS = 1
+# shshd-runtime: General's Text Animation (owner, 2026-11-22): how a page's text comes out. 'letters' is Android's cursor
+# (one source index a 1/30 s, LETTER_HZ: the default, as before); 'wipe' is the iOS builds' typed lines
+# (`-[SHSTextLayer addTypingAnimations:lineTime:]`, SHS HD 1.4.38 00058634): each line's clip slides across it, a
+# region's width in `lineTime` (startTypingAnimation's 0.6 s, WIPE_LINE_MS), and the next line starts once this one's
+# text is out (its display length / the region's width x lineTime); a tap re-adds them at 0.2 s
+# (`speedUpTyping`, WIPE_FAST_LINE_MS), so it hurries the wipe rather than ending it. 'instant' shows the page when its
+# text would start. Either of the others keeps the page's clock running to where the letters would have ended, so
+# Autoplay Dialogue waits as long as it does for them (letters_end_ms).
+TEXT_ANIMATIONS = ('letters', 'wipe', 'instant')
+WIPE_LINE_MS, WIPE_FAST_LINE_MS = 600, 200
 
 
 @dataclass(frozen=True)
@@ -142,6 +152,12 @@ class DialogueAnimation:
     expression_decorations: ExpressionDecorations = field(default_factory=ExpressionDecorations)
     # When the line's expression is requested, in presentation time: EXPRESSION_MS, or IOS_EXPRESSION_MS (start()).
     expression_ms: int = EXPRESSION_MS
+    # Text Animation (TEXT_ANIMATIONS, save v45): the page's mode; for 'wipe', each visible line's wipe in ms at
+    # WIPE_LINE_MS (its share of the region's width) and how far the wipe has run on that clock (a hurried wipe runs it
+    # WIPE_LINE_MS / WIPE_FAST_LINE_MS times faster).
+    text_mode: str = 'letters'
+    wipe_lines: list[int] = field(default_factory=list)
+    wipe_ms: int = 0
 
     @property
     def at_rest(self):
@@ -155,6 +171,29 @@ class DialogueAnimation:
     @property
     def expression_end_ms(self):
         return self.expression_ms + EXPRESSION_END_MS - EXPRESSION_MS
+
+    @property
+    def letters_end_ms(self):
+        """Where on the page's clock letter by letter would have finished (Autoplay Dialogue waits for it)."""
+        return self.text_delay_ms + ((self.text_length + 2) * 1000 + LETTER_HZ - 1) // LETTER_HZ
+
+    def wipe_edges(self):
+        """While a wipe runs, each line's revealed width as a share of the region's width (0 before it starts), else
+        None (the letters' `revealed` rules, or all is shown)."""
+        if self.text_mode != 'wipe' or self.complete:
+            return None
+        edges, start = [], 0
+        for line in self.wipe_lines:
+            edges.append(max(0., (self.wipe_ms - start) / WIPE_LINE_MS))
+            start += line
+        return edges
+
+    def set_text(self, text_mode='letters', wipe_lines=()):
+        """The page's Text Animation (TEXT_ANIMATIONS) and, for a wipe, its lines' wipe times (Session._text_reveal)."""
+        self.text_mode = text_mode if text_mode in TEXT_ANIMATIONS else 'letters'
+        self.wipe_lines = list(wipe_lines) if self.text_mode == 'wipe' else []
+        self.wipe_ms = 0
+        return self
 
     @classmethod
     def start(cls, details, variants, previous=None, history=None, *, retain_suppressed=False, length=None,
@@ -302,7 +341,7 @@ class DialogueAnimation:
     def duration_ms(self):
         return max(self.name_delay_ms + NAME_FADE_MS,
                    self.shake_start_ms + 250 if self.native_lifecycle and self.wobble_direction else 0,
-                   self.text_delay_ms + ((self.text_length + 2) * 1000 + LETTER_HZ - 1) // LETTER_HZ)
+                   self.letters_end_ms, self.text_delay_ms + sum(self.wipe_lines) + 1)
 
     @property
     def portrait_scale(self):
@@ -372,11 +411,15 @@ class DialogueAnimation:
         if self.relationship:
             self.relationship.tick(elapsed_ms)
         end = self.elapsed_ms + elapsed_ms
+        was = self.elapsed_ms
         old = self._callbacks(self.elapsed_ms)
         self.elapsed_ms = min(self.duration_ms, self.elapsed_ms + elapsed_ms)
         due = self._callbacks(self.elapsed_ms) - old
         if self.complete:
             self.continue_ms = min(CONTINUE_MS, self.continue_ms + elapsed_ms)
+            return
+        if self.text_mode != 'letters':
+            self._tick_text(was, end)
             return
         if due <= 0:
             return
@@ -401,7 +444,25 @@ class DialogueAnimation:
             finished = ((first - 1 + old + needed) * 1000 + LETTER_HZ - 1) // LETTER_HZ
             self.continue_ms = min(CONTINUE_MS, max(0, end - finished))
 
+    def _tick_text(self, was, end):
+        """Text Animation's wipe or instant page, from `was` to `end` on the page's clock (uncapped)."""
+        start = self.text_delay_ms
+        if end <= start:
+            return
+        if self.text_mode == 'instant':
+            self.revealed, self.complete = self.text_length, True
+            self.continue_ms = min(CONTINUE_MS, end - start)
+            return
+        run = end - max(was, start)                     # ms of this tick the wipe runs
+        rate = WIPE_LINE_MS / WIPE_FAST_LINE_MS if self.finish_requested else 1
+        total, before = sum(self.wipe_lines), self.wipe_ms
+        self.wipe_ms = min(total, before + round(run * rate))
+        if self.wipe_ms >= total:
+            self.revealed, self.complete = self.text_length, True
+            self.continue_ms = min(CONTINUE_MS, max(0, round(run - (total - before) / rate)))
+
     def finish(self):
+        """A tap before the page is out: Android's next two callbacks complete it; a wipe hurries (speedUpTyping)."""
         self.finish_requested = True
         # touchesBegan stops the bubble and title, but leaves portrait and
         # expression tracks running. Its SHSUIDialog::stopAnimation (CoD
@@ -419,7 +480,7 @@ class DialogueAnimation:
         self.previous = None
         self.changed, self.page_turn = False, True
         self.elapsed_ms = self.revealed = self.finish_step = 0
-        self.continue_ms = 0
+        self.continue_ms = self.wipe_ms = 0
         self.complete = self.finish_requested = False
         self.visuals_finished = False
 
@@ -432,6 +493,7 @@ class DialogueAnimation:
         self.elapsed_ms = self.duration_ms
         self.age_ms = max(self.age_ms, 60000)
         self.revealed, self.complete = self.text_length, True
+        self.wipe_ms = sum(self.wipe_lines)
         self.continue_ms = CONTINUE_MS
         self.housing_clipped = self.native_lifecycle
         if self.relationship:
@@ -495,8 +557,17 @@ class DialogueAnimation:
                 or (self.complete and self.revealed != self.text_length)
                 or (not self.changed and self.previous is not None)
                 or (self.page_turn and self.changed)
-                or (callbacks == 0 and (self.revealed or self.complete))
-                or (not self.finish_requested and
-                    (self.revealed != min(self.text_length, callbacks)
-                     or self.complete != (callbacks > self.text_length)))):
+                or self.text_mode not in TEXT_ANIMATIONS
+                or (self.text_mode != 'wipe' and (self.wipe_lines or self.wipe_ms))
+                or any(type(line) is not int or line < 0 for line in self.wipe_lines)
+                or not 0 <= self.wipe_ms <= sum(self.wipe_lines)
+                or (self.text_mode != 'letters' and (
+                    self.finish_step or self.revealed not in (0, self.text_length)
+                    or (self.text_length and self.complete != (self.revealed == self.text_length))
+                    or (self.complete and self.text_mode == 'wipe' and self.wipe_ms != sum(self.wipe_lines))))
+                or (self.text_mode == 'letters' and (
+                    (callbacks == 0 and (self.revealed or self.complete))
+                    or (not self.finish_requested and
+                        (self.revealed != min(self.text_length, callbacks)
+                         or self.complete != (callbacks > self.text_length)))))):
             raise ValueError('Invalid dialogue animation state')

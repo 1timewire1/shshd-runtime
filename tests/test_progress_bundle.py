@@ -30,6 +30,14 @@ class BundleTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
 
+    def test_two_backups_in_one_second_still_list_newest_first(self):
+        # (v1.1.1 CI, 2026-11-22: a backup and the restore's "(before restore)" one, made in one second, tied on a
+        # second-precision `created` and on Windows' file times, and listed either way round.)
+        source = library_folder(self.root / 'one', {'a.shs-auto.json': 'A'})
+        first = write_bundle(source, 'shs', {}, {}, self.root / 'first.zip')
+        second = write_bundle(source, 'shs', {}, {}, self.root / 'second.zip', note='before restore')
+        self.assertLess(first['created'], second['created'])
+
     def test_a_bundle_carries_the_progress_files_and_names_and_restores_them_whole(self):
         source = library_folder(self.root / 'one', {'a.shs-auto.json': 'A', 'a.shs-shot.jpg': 'pic', 'b.shs-save.json': 'B'})
         player = dict(names={'$USR': 'Zoe'}, name_sets={'nr': {'$Emily': 'Em'}}, warp_unlocked=True, music=False)

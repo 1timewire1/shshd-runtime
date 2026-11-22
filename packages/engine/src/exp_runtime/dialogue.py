@@ -223,6 +223,8 @@ class DialoguePage:
     # shshd-runtime (Claire Hart Dialogue): the skin's spec with `box` ('speaker' or 'narrator'), and the name's tab, or None.
     skin: dict | None = None
     tab: Rect | None = None
+    # shshd-runtime: the width the body wraps in (SHSTextLayer's drawRegion): Text Animation's wipe crosses it per line.
+    body_width: float = 0
 
 
 def story_object_slots(box, pictures, *, widen=False):
@@ -675,7 +677,8 @@ class DialogueLayout:
                             name, name_origin, name_scale, start, start + end, name_bounds, note_frame, note_tint,
                             note_pack=note_pack, theme=details['theme'] if duet is not None or narration_theme else None, lift=lift,
                             story_objects=story_objects,
-                            skin=dict(skin, box='narrator' if mode == 4 or narration else 'speaker') if skin else None, tab=tab)
+                            skin=dict(skin, box='narrator' if mode == 4 or narration else 'speaker') if skin else None, tab=tab,
+                            body_width=body_width)
 
     @staticmethod
     def skin_tab(skin, box, portrait, mode, name):

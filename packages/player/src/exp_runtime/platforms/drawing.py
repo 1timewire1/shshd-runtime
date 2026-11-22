@@ -957,8 +957,15 @@ class ImageAPI:
         self.icon_path = icon_path
 
     # Pixels already made into a surface, by their bytes object: an atlas frame read every frame (the side panels'
-    # bars, the Continue arrow, Faceplace emoticons) stays one node, not a new PNG for the host each frame.
+    # bars, the Continue arrow, Faceplace emoticons) stays one node, not a new PNG for the host each frame. Bounded by
+    # bytes as well as entries: each entry keeps its bytes and a surface as large, and pixels made fresh each time (a
+    # title card's font atlases and picture, `image.tobytes()`) are never asked for again. Bounded by entries alone, a
+    # first-time grid's previews filled it to ~1 GB on the iPad (512 entries of up to 3 MB, twice over) and kept it,
+    # and iOS stopped the app after a Bulk Import (2026-11-22).
     _from_bytes = {}
+    _from_bytes_held = 0                # the bytes the entries keep (their surfaces as much again)
+    FROM_BYTES_ENTRIES = 512
+    FROM_BYTES_HELD = 32 * 1024 * 1024
 
     @classmethod
     def frombytes(cls, data, size, mode):
@@ -966,11 +973,16 @@ class ImageAPI:
             return Surface.from_pixels(Image.frombytes(mode, size, data))
         key = id(data), tuple(size), mode
         kept = cls._from_bytes.pop(key, None)
+        if kept is not None:
+            cls._from_bytes_held -= len(kept[0])
         if kept is None or kept[0] is not data:
             kept = data, Surface.from_pixels(Image.frombytes(mode, size, data))
         cls._from_bytes[key] = kept
-        while len(cls._from_bytes) > 512:
-            del cls._from_bytes[next(iter(cls._from_bytes))]
+        cls._from_bytes_held += len(data)
+        while len(cls._from_bytes) > cls.FROM_BYTES_ENTRIES or (
+                cls._from_bytes_held > cls.FROM_BYTES_HELD and len(cls._from_bytes) > 1):
+            oldest = next(iter(cls._from_bytes))
+            cls._from_bytes_held -= len(cls._from_bytes.pop(oldest)[0])
         return kept[1].copy()
 
     @staticmethod

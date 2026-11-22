@@ -435,7 +435,9 @@ Creator's playtests give (`minigame_report.py`: kind, score, time left, phase an
 also lists its names (slot, name, object, found), the count, score, multiplier, clock, misclicks and lock, the hint and
 each Power-Up's uses left, the markers shown and `view` (zoom and centre). `play press [VALUE]` is the player's press:
 the go-ahead or the game's button, a cell for SHS '11's Memory and Reflex, a key code (`nr_arena.KEY_BITS`) or menu pick
-on New Rules' arena. In a round, `play find NAME|SLOT` taps a pixel of that listed object where it shows (the view
+on New Rules' arena, football's tap or a play (0-8), the word game's option; `play cells A B C` drags through the word
+grid's cells (its report gives the board and width; `play press` taps off the board). Football's, the word game's and the
+grid's report says which they want (added in v1.1.1's full check, 2026-11-22: they were not drivable before). In a round, `play find NAME|SLOT` taps a pixel of that listed object where it shows (the view
 centres on it first if it's off screen), `play miss` taps where nothing is, `play hint` taps the hint orb,
 `play powerup focus|locator|clairvoyance|time_warp` a Power-Up's segment, `play pick SLOT` a listed name (the Psychic
 Locator's choice) and `play continue` the Level Summary's Continue; `pinch` in a round zooms it about its centre. All
@@ -448,7 +450,8 @@ Everything else a player can reach runs by command too (owner, 2026-11-21: the c
 Decision Tree's "Locked", Connection Error), the app's message card ("Added 3 episodes.") and Update Available, the
 episode picker's info card and Restore answer, the chooser's Options' question, or the menus' windows; `window` presses
 any of them. In a story `state` also gives the pause menu's `page`, a name the game turned down (`input_error`), the look
-picker's portraits (`picker`), the toast only while it shows, and `panels` where an episode has a Decision Tree or
+picker's portraits (`picker`), a dialogue page's `reveal` (its Text Animation, whether it is out, its letters), the toast only
+while it shows, and `panels` where an episode has a Decision Tree or
 Faceplace wall (beside the game or over the screen, the corner button, the Faceplace alert, the warp lock, the posts).
 `panels open|close` opens or closes them as Tab does; `tree` lists the tree's scenes (serial, label, current, which a
 warp reaches) and `tree warp SERIAL|LABEL`, `tree rewind` and `tree forward` tap them through the tree's own handling
@@ -477,7 +480,8 @@ screenshot and tap): `options [PAGE]` opens them at a page (in a story, the paus
 tap does (its label or key: a page opens, a switch flips, a choice opens its page, a pick is chosen, an action runs and
 its question shows as `window`); `do ACTION` runs a Data Management action by its key (`verify_library`, `back_up`,
 `mark_read`...); `pick TITLE|ID` ticks or unticks an episode in a tick list (Mark as Finished, Delete, Export, Reset
-Decision Tree) and `act` presses its verb button. `set` takes any option directly: a switch, a choice option,
+Decision Tree) and `act` presses its verb button. `set` takes any option directly: a switch, a choice option (passed to
+an open story too, as its pause menu does),
 `start_in auto|games|shs|cod`, `music_volume|sound_volume 0-100`. `state` names the open game (`game`) and the open
 Options page (`page`), and shows a window in words (a game's own windows carry string ids, now resolved; `window` takes
 the words); `run-until` stops when the story ends (`ended`); `game` lets go of a story kept for Resume, as the main

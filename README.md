@@ -170,6 +170,10 @@ Answer hints, Skip mini-games, Skip ad intros and Skip upsell intros only.
 - **Autoplay Dialogue** (Options → General) advances dialogue by itself 0.75 s
   after its text is out (title cards after 1.5 s); choices, name
   entry and mini-games still wait for you. Off by default.
+- **Text Animation** (Options → General) is how dialogue text comes out:
+  Letter by Letter (Android's, the default), Line Wipe (the iOS games' own:
+  each line wiped in from the left, a tap hurrying it) or Instant. With
+  Autoplay, a page still waits as long as its letters would have taken.
 - **Disable Choice Timer** (Options → Extras) stops timed choices' clocks and
   adds a last row, Let the Timer Run Out, for scenes that need no answer. Off by
   default.
@@ -260,20 +264,20 @@ fork does not publish to PyPI. Install from a release's downloaded wheels:
 
 ```sh
 # EXP readers, bytecode decoders and the inspect/extract CLI
-python -m pip install --find-links ./wheels "shshd-runtime[tools]==1.1.0"
+python -m pip install --find-links ./wheels "shshd-runtime[tools]==1.1.1"
 
 # Headless engine with one or both games, for a custom player UI
-python -m pip install --find-links ./wheels "shshd-runtime[engine,shs]==1.1.0"
-python -m pip install --find-links ./wheels "shshd-runtime[engine,shs,cod]==1.1.0"
+python -m pip install --find-links ./wheels "shshd-runtime[engine,shs]==1.1.1"
+python -m pip install --find-links ./wheels "shshd-runtime[engine,shs,cod]==1.1.1"
 
 # Full desktop player with both games
-python -m pip install --find-links ./wheels "shshd-runtime[player]==1.1.0"
+python -m pip install --find-links ./wheels "shshd-runtime[player]==1.1.1"
 
 # Visual episode creator (exp-runtime v0.6.0's), with both games and player previews
-python -m pip install --find-links ./wheels "shshd-runtime[creator]==1.1.0"
+python -m pip install --find-links ./wheels "shshd-runtime[creator]==1.1.1"
 
 # Creator MCP server without Qt (combine with [creator] for live editing)
-python -m pip install --find-links ./wheels "shshd-runtime[creator-mcp]==1.1.0"
+python -m pip install --find-links ./wheels "shshd-runtime[creator-mcp]==1.1.1"
 ```
 
 The bare `shshd-runtime` install supplies file tools; `[desktop]` is an alias

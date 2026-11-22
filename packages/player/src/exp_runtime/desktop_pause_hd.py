@@ -188,16 +188,22 @@ TITLE_LOOK_NAMES = {'default': 'Default', 'auto': 'Auto', 'brew07': "'07", 'shw'
 PER_GAME_LABEL = 'Per-Game Settings'
 PAGE_TITLES = {'per_game': PER_GAME_LABEL}
 PAGE_PARENTS = {'options:per_game': 'options:addons'}
+# General's Text Animation (owner, 2026-11-22): a dialogue page's text letter by letter (Android's, the default), in the
+# iOS builds' line wipe, or at once (dialogue_animation.TEXT_ANIMATIONS)
+TEXT_ANIMATION_LABEL = 'Text Animation'
+TEXT_ANIMATION_NAMES = {'letters': 'Letter by Letter', 'wipe': 'Line Wipe', 'instant': 'Instant'}
 CHOICE_NAMES = {'aspect_ratio': ASPECT_NAMES, 'preferred_language': LANGUAGE_NAMES, 'start_in': START_IN_NAMES,
-                'controller_confirm': CONFIRM_NAMES,
+                'text_animation': TEXT_ANIMATION_NAMES, 'controller_confirm': CONFIRM_NAMES,
                 'grid_controls': GRID_CONTROLS_NAMES, 'title_music': TITLE_MUSIC_NAMES, 'title_look': TITLE_LOOK_NAMES,
                 'dsi_backgrounds': DSI_BACKGROUNDS_NAMES, 'ch_dialogue': CH_DIALOGUE_NAMES,
                 'claire_powerups': CLAIRE_POWERUPS_NAMES}
 CHOICE_LABELS = {'aspect_ratio': ASPECT_LABEL, 'preferred_language': PREFERRED_LANGUAGE_LABEL, 'start_in': START_IN_LABEL,
+                 'text_animation': TEXT_ANIMATION_LABEL,
                  'controller_confirm': CONFIRM_BUTTON_LABEL, 'grid_controls': GRID_CONTROLS_LABEL,
                  'title_music': TITLE_MUSIC_LABEL, 'title_look': TITLE_LOOK_LABEL, 'dsi_backgrounds': DSI_BACKGROUNDS_LABEL,
                  'ch_dialogue': CH_DIALOGUE_LABEL, 'claire_powerups': CLAIRE_POWERUPS_LABEL}
 CHOICE_PARENTS = {'aspect_ratio': 'options:general', 'preferred_language': 'options:general', 'start_in': 'options:general',
+                  'text_animation': 'options:general',
                   'controller_confirm': 'options:controller', 'grid_controls': 'options:controller',
                   'title_music': 'options:addons', 'title_look': 'options:addons', 'dsi_backgrounds': 'options:extras',
                   'ch_dialogue': 'options:per_game', 'claire_powerups': 'options:per_game'}
@@ -252,7 +258,7 @@ SEPIA = (0.779, 0.166, 0.0, 102.1,
 # string bank's ~276~ token appears at all is the About page (checked against a real HD string bank), and only
 # this project's own override of it (`help_text_overrides.py`) is ever shown, so this reports shshd-runtime's
 # own release instead. The one line to edit on a release; nothing else about the About text needs to change.
-VERSION = '1.1.0'
+VERSION = '1.1.1'
 # The upstream exp-runtime release this fork last merged (owner, 2026-10-21: shown under the version, About pages'
 # `~upstream~`). Change it with each upstream merge.
 UPSTREAM_VERSION = 'v0.6.1'
@@ -298,6 +304,32 @@ SWITCH_MS = 200
 FOCUS_SHADE, VOLUME_STEP = .85, .1
 KEYS_ACTIVATE = (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE)
 PAGE_KEYS = {pygame.K_UP: -40, pygame.K_DOWN: 40, pygame.K_PAGEUP: -400, pygame.K_PAGEDOWN: 400}
+# shshd-runtime: how far (points) a press on a scrolling page moves before it scrolls the page instead of pressing what
+# it began on (a row, a link).
+DRAG_SLOP = 8
+
+
+def row_command(kind, key):
+    """The command an Options row of `kind` sends (a slider's: its first two parts; the track's Rect follows)."""
+    if kind == 'slider':
+        return 'pause_slider', key
+    if kind == 'pick':
+        return ('pause_cycle',) + tuple(key)
+    if kind == 'choice':
+        return 'pause_open', 'choice:' + key
+    if kind == 'folder':
+        return 'pause_cycle', key
+    return {'switch': 'pause_toggle', 'cycle': 'pause_cycle', 'page': 'pause_open'}.get(kind, 'pause_action'), key
+
+
+def drag_scroll(state, drag, y):
+    """A press on a scrolling page (`HdPauseMenu.scroll_area`) followed to frame point `y`: `drag` is ('scroll', the scroll
+    it began at, its y, moved). Returns the drag as it now stands, moved once past DRAG_SLOP, the page scrolled with it."""
+    _kind, start, origin, moved = drag[:4]
+    if not moved and abs(y - origin) < DRAG_SLOP:
+        return drag
+    state.scroll = min(state.max_scroll, max(0., start - (y - origin)))
+    return ('scroll', start, origin, True) + tuple(drag[4:])
 
 
 def place_controls(renderer, centre, scale, *, space='window', alpha=1.0):
@@ -644,17 +676,19 @@ class HdPauseMenu:
         track.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
         return track
 
-    def slider(self, layer, top, value, key=None):
+    def slider(self, layer, top, value, key=None, *, place=True):
         """A UISlider row's control line (track between the two speaker icons). Where the host shows its own (iOS:
-        a UISlider, graphics.native_controls), the icons are drawn and the track is placed for it instead."""
+        a UISlider, graphics.native_controls), the icons are drawn and the track is placed for it instead (`place`
+        False: not placed, a row scrolled partly out)."""
         middle = top + 86
         small, large = self.art(155, 53), self.art(155, 54)
         layer.blit(small, (round(108 * S), round(middle * S - small.get_height() / 2)))
         layer.blit(large, (round(620 * S), round(middle * S - large.get_height() / 2)))
         left, right = 143, 603
         if pygame.native_controls is not None and key is not None:
-            self.screen_controls.append(dict(kind='slider', key=key, left=left, right=right, middle=middle,
-                                             value=float(value)))
+            if place:
+                self.screen_controls.append(dict(kind='slider', key=key, left=left, right=right, middle=middle,
+                                                 value=float(value)))
             return pygame.Rect(left - 10, middle - 22, right - left + 20, 44)
         self.rect(layer, (74, 132, 213), (left, middle - 3, right - left, 6), 3)
         self.rect(layer, (150, 185, 235), (left, middle - 3, right - left, 2), 1)
@@ -759,6 +793,8 @@ class HdPauseMenu:
         layer = pygame.Surface((FRAME[0] * S, round(self.frame_height * S)), pygame.SRCALPHA).convert_alpha()
         strings, state, buttons = self.strings(), self.state, []
         self.screen_controls = []
+        # (a page that scrolls sets these again; one that doesn't keeps no scroll a text page or wheel left)
+        self.scroll_area, self.scroll_rows, state.max_scroll = None, False, 0.
         bottom_rule = None
         focus = state.focus
         if state.screen == 'pause':
@@ -802,76 +838,108 @@ class HdPauseMenu:
             category = (state.screen if state.screen in DATA_TITLES or state.screen in self.row_pages
                         or state.screen.startswith('choice:') else state.screen.split(':', 1)[1])
             rows = self.option_rows(category, settings, strings)
-            sliders = sum(1 for kind, _, _ in rows if kind == 'slider')
-            height = HEADER + (len(rows) - sliders) * ROW + sliders * SLIDER_ROW + FOOT
-            top = (self.frame_height - height) / 2
+            heights = [SLIDER_ROW if kind == 'slider' else ROW for kind, _, _ in rows]
+            height = HEADER + sum(heights) + FOOT
+            top, bottom = (self.frame_height - height) / 2, None
             title = (DATA_TITLES.get(category) or (self.row_pages[category][0] if category in self.row_pages else None)
                      or CHOICE_LABELS.get(category[7:] if category.startswith('choice:') else None)
                      or PAGE_TITLES.get(category)
                      or dict(OPTION_CATEGORIES).get(category, strings[10]))
-            body = self.panel(layer, top, top + height, title)
-            y = body
+            low, high = self.page_bounds()
+            # shshd-runtime: a page too tall to be centred whole (General's ten rows at 3:4, its back button cut off;
+            # owner, 2026-11-22) fills a text page's bounds, and its rows scroll as a text page's lines do.
+            scrolling = height > high - low
+            top, bottom = (low, high) if scrolling else (top, top + height)
+            body = self.panel(layer, top, bottom, title)
+            area = pygame.Rect(PANEL_X + BORDER, body, PANEL_W - 2 * BORDER, bottom - FOOT - body)
+            if scrolling:
+                self.scroll_area, self.scroll_rows = area, True
+                state.max_scroll = max(0., sum(heights) - area.height)
+                offset = 0.
+                for (kind, _label, key), row_height in zip(rows, heights):
+                    command = row_command(kind, key)
+                    if focus is not None and (focus[:2] if kind == 'slider' else focus) == command:
+                        # The row the arrow keys reached comes into view.
+                        state.scroll = min(max(state.scroll, offset + row_height - area.height), offset)
+                    offset += row_height
+                state.scroll = max(0., min(state.max_scroll, state.scroll))
+                layer.set_clip(pygame.Rect(area.x * S, area.y * S, area.width * S, area.height * S))
+            y = body - state.scroll
+
+            def add(rect, command):
+                """A row's button, cut to what shows of it: a row scrolled out keeps an empty one, which no pointer
+                hits but the arrow keys still reach (the next layout scrolls it into view)."""
+                rect = pygame.Rect(rect)
+                buttons.append((rect.clip(area) if scrolling else rect, command))
+
+            def whole(row_top, row_height):
+                """Whether a row shows whole: only then does the host place its own control over it (a UISwitch or
+                UISlider is not cut by the card)."""
+                return area.top - .5 <= row_top and row_top + row_height <= area.bottom + .5
+
             for index, (kind, label, key) in enumerate(rows):
                 if kind == 'slider':
                     self.rows_body(layer, y, SLIDER_ROW, self.row_color(index),
                                    lit=focus is not None and focus[:2] == ('pause_slider', key))
                     self.text(layer, label, PANEL_X + 31, y + 39 - self.cap_offset(ROW_PX), ROW_PX, self.LABEL_COLOR)
-                    track = self.slider(layer, y, settings[key + '_volume'], key=key)
-                    buttons.append((track, ('pause_slider', key, track)))
+                    track = self.slider(layer, y, settings[key + '_volume'], key=key,
+                                        place=not scrolling or whole(y, SLIDER_ROW))
+                    add(track, ('pause_slider', key, track))
                     y += SLIDER_ROW
                     continue
+                command = row_command(kind, key)
                 if kind == 'pick':
                     # A choice page's row: `key` is (option, value); the option's current value is ticked.
-                    option, value = key
-                    command = ('pause_cycle', option, value)
+                    option, _value = key
                     self.row(layer, y, label, background=self.row_color(index), lit=focus == command)
                     if label == settings.get(option):
                         self.check(layer, PANEL_X + PANEL_W - CONTROL_RIGHT - 6, y + ROW / 2)
-                    buttons.append((pygame.Rect(PANEL_X, y, PANEL_W, ROW), command))
+                    add((PANEL_X, y, PANEL_W, ROW), command)
                     y += ROW
                     continue
                 if kind == 'folder':
                     # Data Management's Backups / Exports Folder: the folder in use under the label; the row opens the
                     # host's folder browser (the command its value button sent).
-                    command = ('pause_cycle', key)
                     self.row(layer, y, label, background=self.row_color(index), lit=focus == command, value=settings[key])
                     self.chevron(layer, PANEL_X + PANEL_W - CONTROL_RIGHT - 8, y + ROW / 2)
-                    buttons.append((pygame.Rect(PANEL_X, y, PANEL_W, ROW), command))
+                    add((PANEL_X, y, PANEL_W, ROW), command)
                     y += ROW
                     continue
                 if kind == 'choice':
-                    command = ('pause_open', 'choice:' + key)
                     self.row(layer, y, label, background=self.row_color(index), lit=focus == command,
                              badge=switch_badge(key), tint=legacy_tag(LABEL_TINTS.get(key)), value=settings[key])
                     self.chevron(layer, PANEL_X + PANEL_W - CONTROL_RIGHT - 8, y + ROW / 2)
-                    buttons.append((pygame.Rect(PANEL_X, y, PANEL_W, ROW), command))
+                    add((PANEL_X, y, PANEL_W, ROW), command)
                     y += ROW
                     continue
-                command = ({'switch': 'pause_toggle', 'cycle': 'pause_cycle', 'page': 'pause_open'}.get(kind, 'pause_action'),
-                           key)
                 self.row(layer, y, label, background=self.row_color(index), lit=focus == command,
                          badge=switch_badge(key), tint=legacy_tag(LABEL_TINTS.get(key)))
                 if kind == 'switch' and pygame.native_controls is not None:
                     # The host's own control (the iOS host's UISwitch), placed over the row (place_controls).
-                    self.screen_controls.append(dict(kind='switch', key=key, right=PANEL_X + PANEL_W - CONTROL_RIGHT,
-                                                     middle=y + ROW / 2, on=bool(settings.get(key, False))))
-                    buttons.append((pygame.Rect(PANEL_X + PANEL_W - 250, y, 250, ROW), ('pause_toggle', key)))
+                    if not scrolling or whole(y, ROW):
+                        self.screen_controls.append(dict(kind='switch', key=key, right=PANEL_X + PANEL_W - CONTROL_RIGHT,
+                                                         middle=y + ROW / 2, on=bool(settings.get(key, False))))
+                    add((PANEL_X + PANEL_W - 250, y, 250, ROW), ('pause_toggle', key))
                 elif kind == 'switch':
                     self.switch(layer, PANEL_X + PANEL_W - CONTROL_RIGHT, y + ROW / 2,
                                 self.switch_position(key, settings.get(key, False)))
-                    buttons.append((pygame.Rect(PANEL_X + PANEL_W - 250, y, 250, ROW), ('pause_toggle', key)))
+                    add((PANEL_X + PANEL_W - 250, y, 250, ROW), ('pause_toggle', key))
                 elif kind == 'cycle':
                     # As wide as its value needs (Start In's "Surviving High School"), at least CYCLE_SIZE.
                     width = max(CYCLE_SIZE[0], self.font(CYCLE_POINTS).size(settings[key])[0] / self.scale + 28)
                     box = pygame.Rect(PANEL_X + PANEL_W - CONTROL_RIGHT - width,
                                       y + (ROW - CYCLE_SIZE[1]) / 2, width, CYCLE_SIZE[1])
                     self.cycle_button(layer, box, settings[key], pressed=self.pressed == ('pause_cycle', key))
-                    buttons.append((box, ('pause_cycle', key)))
+                    add(box, ('pause_cycle', key))
                 else:
-                    buttons.append((pygame.Rect(PANEL_X, y, PANEL_W, ROW), command))     # an action or a page
+                    add((PANEL_X, y, PANEL_W, ROW), command)     # an action or a page
                 y += ROW
-            bottom_rule = top + height - FOOT
-            buttons.append((self.back_button(layer, top + height, lit=focus == ('pause_back',)), ('pause_back',)))
+            if scrolling:
+                layer.set_clip(None)
+                self.rect(layer, self.SEPARATOR_COLOR, (area.x, area.y, area.width, 1))
+                buttons.insert(0, (area, ('pause_scroll',)))   # (under the rows: a press scrolls once it moves)
+            bottom_rule = bottom - FOOT
+            buttons.append((self.back_button(layer, bottom, lit=focus == ('pause_back',)), ('pause_back',)))
         elif state.screen == 'help':
             order = MAIN_HELP_ORDER if self.main_menu else HELP_ORDER
             height = HEADER + ROW * len(order) + FOOT
@@ -886,6 +954,8 @@ class HdPauseMenu:
             buttons.append((self.back_button(layer, top + height, lit=focus == ('pause_back',)), ('pause_back',)))
         else:
             self.text_page(layer, buttons)
+        if self.scroll_area is None:
+            state.scroll = 0.
         if bottom_rule is not None:
             self.rect(layer, self.SEPARATOR_COLOR, (PANEL_X + BORDER, bottom_rule, PANEL_W - 2 * BORDER, 1))
         if message:
@@ -895,11 +965,16 @@ class HdPauseMenu:
 
     pressed = None                  # the command under the pointer, for buttons drawn pressed (set by the host)
     buttons = ()                    # the last layout's buttons, for `key`
+    # shshd-runtime: the last layout's scrolling area (points), or None: a text page's body, or the rows of a page too
+    # tall for its frame (General's ten rows at 3:4, 2026-11-22). A press in it scrolls once it moves (`drag_scroll`).
+    scroll_area = None
+    scroll_rows = False             # the scrolling page is one of rows: the arrow keys move between them, not the page
 
     def key(self, key):
         state = self.state
         commands = [command for _, command in self.buttons]
-        if ('pause_scroll',) in commands and key in PAGE_KEYS:
+        if ('pause_scroll',) in commands and key in PAGE_KEYS and (
+                not self.scroll_rows or key in (pygame.K_PAGEUP, pygame.K_PAGEDOWN)):
             state.scroll = min(state.max_scroll, max(0., state.scroll + PAGE_KEYS[key]))
             return None
         targets = [command for command in commands if command[0] not in ('pause_scroll', 'pause_link')]
@@ -930,6 +1005,8 @@ class HdPauseMenu:
             # General's Vibration is the Controller page's when only a controller vibrates (settings['controller_vibration'])
             rows = [('switch', self.SWITCH_LABELS[key], key) for key in GENERAL_KEYS if key in settings
                     and not (key == 'device_vibration' and settings.get('controller_vibration'))]
+            if 'text_animation' in settings:
+                rows.append(('choice', TEXT_ANIMATION_LABEL, 'text_animation'))
             if 'aspect_ratio' in settings:
                 rows.append(('choice', ASPECT_LABEL, 'aspect_ratio'))
             if 'preferred_language' in settings:
@@ -1024,14 +1101,19 @@ class HdPauseMenu:
     top_pad = bottom_pad = 0
     BAR_GAP = 12
 
-    def text_page(self, layer, buttons):
-        state = self.state
-        title, body = self.text_lines(state.screen)
+    def page_bounds(self):
+        """(top, bottom) a card may fill: a text page's, and a page of rows too tall to be centred whole."""
         top, bottom = TALL[0], TALL[1] + self.frame_height - FRAME[1]
         if self.top_pad:
             top = max(top, self.top_pad + self.BAR_GAP)
         if self.bottom_pad:
             bottom = min(bottom, self.frame_height - self.bottom_pad - self.BAR_GAP)
+        return top, bottom
+
+    def text_page(self, layer, buttons):
+        state = self.state
+        title, body = self.text_lines(state.screen)
+        top, bottom = self.page_bounds()
         # Two-line titles get a taller header, as photographed (152 points).
         header = HEADER + 40 if len(self.title_lines(title)) > 1 else HEADER
         self.panel(layer, top, bottom, title, header=header)
@@ -1086,6 +1168,7 @@ class HdPauseMenu:
         self.rect(layer, self.SEPARATOR_COLOR, (area.x, area.bottom, area.width, 1))
         buttons.append((self.back_button(layer, bottom, lit=state.focus == ('pause_back',)), ('pause_back',)))
         buttons.append((area, ('pause_scroll',)))
+        self.scroll_area = area
         for rect, url in links:
             buttons.append((rect.clip(area), ('pause_link', url)))
 

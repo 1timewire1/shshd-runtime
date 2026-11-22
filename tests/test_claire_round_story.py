@@ -53,7 +53,7 @@ class RoundStoryTests(unittest.TestCase):
         self.assertTrue(session.claire_use('hint'))
         session.tick(500)
         state = json.loads(json.dumps(session.snapshot()))
-        self.assertEqual(state['version'], 44)
+        self.assertEqual(state['version'], 46)
         restored = Session.from_snapshot(story(), state)
         restored.engine.claire_round_source = source
         self.assertEqual(restored.engine.claire_round, session.engine.claire_round)      # exactly where it was (R3)

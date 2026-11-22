@@ -498,6 +498,12 @@ menu's entrance and exit transitions. SHS HD's `SHSEngine::notifyNewMenu`
   screen shows.
 - **Back.** Going back runs the same slide the other way. The page categories
   this player adds (General / Sound / Controller / Extras / Add-Ons / Data Management) slide like native pages.
+- **Pages too tall for the frame** (owner, 2026-11-22). A page of rows that would not fit centred (the main menu's General,
+  ten rows, at 3:4) takes a text page's bounds (`page_bounds`: the frame's height less 30 points above and 31 below, and a
+  phone's bars) and its rows scroll between the header and the footer, as a text page's lines do: a drag anywhere on them
+  (a press scrolls once it moves 8 points, `DRAG_SLOP`; else it is a tap on its row), the wheel, Page Up / Down. The arrow
+  keys still step row by row, scrolling the highlighted one into view. The host's own controls (iOS's UISwitches and
+  UISliders) are placed on whole rows only. A page that fits is laid out as before.
 - **Choice pages** (owner, 2026-11-09). An option that is one of a few values (General's Preferred Language and Start In,
   the Controller page's Confirm Button and Word Grid Controls) shows its current value under its name, in smaller
   letters as the episode lists' airdates, with a `>`. Its row slides in a page of the values, the current one ticked;
@@ -638,6 +644,16 @@ take no taps. Their text reveals at its own pace; then, instead of the Continue 
 1500 ms; `Desktop.AUTOPLAY_WAIT_MS` / `AUTOPLAY_TITLE_WAIT_MS`, set longer than the pill's 250 ms expansion to be
 safe) and advance as a tap would. It is not a full autoplay: choices, name entry, the mini-games
 and the portrait picker still wait for the player, and the gear still opens the pause menu.
+
+**Options → General → Text Animation** (this player's, owner 2026-11-22): a dialogue page's text **Letter by Letter**
+(Android's cursor, one source index a 1/30 s: the default, as before), in **Line Wipe** (the iOS builds' typed lines,
+`-[SHSTextLayer addTypingAnimations:lineTime:]`, SHS HD 1.4.38 00058634: each visible line's clip slides across it, a
+region's width in 0.6 s, the next line starting once this one's text is out; a tap re-adds them at 0.2 s, as
+`speedUpTyping`, so it hurries the wipe rather than ending it) or **Instant** (the page when its text would start).
+Either of the others keeps the page's clock running to where the letters would have ended, and Autoplay Dialogue
+waits for that too, so it reads the same at any setting. A page keeps the mode it began with; saves keep it (version
+45). Its choice page is on General in the main menu, the story's pause menu and the chooser's Options
+(`dialogue_animation.TEXT_ANIMATIONS`, `Session._text_reveal`, `DialogueRenderer.draw_wipe`).
 
 **Options → Extras → Disable Choice Timer** (this player's, off by default): a timed choice holds its clock
 (`Session.choice_timer`) and is drawn untimed, with one more row, last, **Let the Timer Run Out**, for the scenes

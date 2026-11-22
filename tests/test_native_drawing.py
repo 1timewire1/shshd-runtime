@@ -215,6 +215,27 @@ class NativeDrawingTests(unittest.TestCase):
         other = bytes(bytearray(pixels))                                    # equal bytes, another object
         self.assertIsNot(d.ImageAPI.frombytes(other, (4, 4), 'RGBA').snapshot(), first.snapshot())
 
+    def test_pixels_made_fresh_each_time_do_not_pile_up(self):
+        """A title card's atlases come as new bytes for each preview: the kept surfaces stay within FROM_BYTES_HELD
+        (a first-time grid held ~1 GB on the iPad), and the frame read every frame is still one image."""
+        saved = dict(d.ImageAPI._from_bytes), d.ImageAPI._from_bytes_held
+        d.ImageAPI._from_bytes.clear()
+        d.ImageAPI._from_bytes_held = 0
+        try:
+            bar = bytes(64)
+            for _ in range(40):
+                d.ImageAPI.frombytes(bytes(1024 * 1024 * 4), (1024, 1024), 'RGBA')        # 4 MB, never asked again
+                d.ImageAPI.frombytes(bar, (4, 4), 'RGBA')
+            held = sum(len(data) for data, _surface in d.ImageAPI._from_bytes.values())
+            self.assertEqual(held, d.ImageAPI._from_bytes_held)
+            self.assertLessEqual(held, d.ImageAPI.FROM_BYTES_HELD)
+            first, second = d.ImageAPI.frombytes(bar, (4, 4), 'RGBA'), d.ImageAPI.frombytes(bar, (4, 4), 'RGBA')
+            self.assertIs(first.snapshot(), second.snapshot())
+        finally:
+            d.ImageAPI._from_bytes.clear()
+            d.ImageAPI._from_bytes.update(saved[0])
+            d.ImageAPI._from_bytes_held = saved[1]
+
     def test_the_pause_sepia_is_the_hosts_matrix_with_pillows_rounding(self):
         """The HD pause overlay's 12-value sepia goes to the host's color_matrix (offsets, rounded as Pillow's convert),
         not a Python pass over the whole frame when the menu opens."""
