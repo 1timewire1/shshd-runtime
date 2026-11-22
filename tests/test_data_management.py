@@ -437,6 +437,10 @@ class LibraryActionTests(unittest.TestCase):
             (directory / name / 'x').write_bytes(b'x')
         (directory / 'library.json').write_text('{}')
         (directory / 'dsi_backgrounds.json').write_text('{}')                # DSi Backgrounds' record (dsi.py)
+        (directory / 'content_checks.json').write_text('{}')                 # ContentLibrary.CONTENT_CHECKS
+        (directory / 'ended_saves.json').write_text('{}')                    # menu.ENDED_CACHE
+        (directory / '.checks-abc.json').write_text('{}')                    # a checks write cut short
+        (directory / '.ended-abc.json').write_text('{}')
         self.assertEqual(remove_library(directory), 0)
         self.assertFalse(directory.exists())                                   # nothing else was there
         app = self.app()

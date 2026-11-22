@@ -116,9 +116,13 @@ FOLDER_LABEL = 22               # the rows' value: a longer folder name is short
 # delete cut short never leaves a library the app would try to open; and the folders a job stages in (`.sync-...`).
 # shshd-runtime: also DSi Backgrounds' record of the episodes that show them (dsi.COVERAGE_FILE; it kept the folder after a
 # delete on the g54, 2026-11-19).
+# Also the imports' checks (ContentLibrary.CONTENT_CHECKS) and the ended saves' cache (menu.ENDED_CACHE), and their
+# half-written copies: left behind, they kept a deleted library's folder, and Bulk Import took it for a library ("...
+# already has a library. Nothing was imported.", the iPad, 2026-11-22).
 LIBRARY_PARTS = ('library.json', 'content', 'saves', 'dtsaves', 'dtview', 'dtview_tree.json', 'player.json', 'thumbs',
-                 'hd_twins', 'fonts', 'dsi_backgrounds.json')
-LIBRARY_STAGES = ('.sync-', '.sync-send-', '.restore-', '.merge-', '.exp-import-', '.player-', '.library-')
+                 'hd_twins', 'fonts', 'dsi_backgrounds.json', 'content_checks.json', 'ended_saves.json')
+LIBRARY_STAGES = ('.sync-', '.sync-send-', '.restore-', '.merge-', '.exp-import-', '.player-', '.library-', '.checks-',
+                  '.ended-')
 
 
 def remove_library(directory):
