@@ -369,24 +369,30 @@ class HdPauseTests(unittest.TestCase):
         self.menu.slide = None
         return [('pause_toggle' if kind == 'switch' else 'pause_action', f'a{i}') for i in range(count)]
 
-    def test_a_host_row_pages_text_sits_over_its_rows(self):
-        # The legal page's message (owner, 2026-11-22: the first card version of it lost the window's text).
+    def test_a_host_row_pages_text_makes_the_windows_header(self):
+        # The legal page (owner, 2026-11-22): its header is the game's window's, a two-line title set smaller (44 points
+        # from 55 down) and the message under it, 41 points in, 26.6 apart; the first card version lost the message,
+        # the second set a big title and a band.
         module = self.module
         self.menu.show_rows('legal', 'Legal', [('a', 'Read A'), ('b', 'Read B')], 'help')
         self.menu.slide = None
         plain = dict((command, rect) for rect, command in self.commands())
-        self.menu.show_rows('legal', 'Legal', [('a', 'Read A'), ('b', 'Read B')], 'help',
-                            text='By purchasing and/or using this application, you agree to the terms. ' * 2)
+        text = 'By purchasing and/or using this application, you agree to the terms of the End User License Agreement.'
+        title = 'Privacy Policy/ EULA/ Terms & Conditions'
+        header, lines, points, first, message, first_message = self.menu.window_header(title, text)
+        self.assertEqual((len(lines), points, first), (2, 44, 55))
+        self.assertGreater(len(message), 1)
+        self.assertAlmostEqual(first_message, 55 + 43.5 + 78)
+        self.assertAlmostEqual(header, first_message + 26.6 * (len(message) - 1) + 24.4)
+        self.menu.show_rows('legal', title, [('a', 'Read A'), ('b', 'Read B')], 'help', text=text)
         self.menu.slide = None
-        lines = self.menu.wrapped(self.menu.row_texts['legal'], module.TEXT_PX,
-                                  module.PANEL_W - 2 * module.BORDER - 42)
-        self.assertGreater(len(lines), 1)
-        intro = len(lines) * module.TEXT_PITCH + 2 * module.INTRO_PAD
         texted = dict((command, rect) for rect, command in self.commands())
-        first = ('pause_action', 'a')
-        # The card grows by the text, centred, so the first row comes down by half of it plus all of it above the rows.
-        self.assertAlmostEqual(texted[first].top - plain[first].top, intro / 2, delta=1)
-        self.assertAlmostEqual(texted[('pause_back',)].bottom - plain[('pause_back',)].bottom, intro / 2, delta=1)
+        first_row = ('pause_action', 'a')
+        # The card grows by the header's extra height, centred: the first row comes down by half of it.
+        grown = header - module.HEADER
+        self.assertAlmostEqual(texted[first_row].top - plain[first_row].top, grown / 2, delta=1)
+        self.assertAlmostEqual(texted[('pause_back',)].bottom - plain[('pause_back',)].bottom, grown / 2, delta=1)
+        self.assertEqual(self.menu.window_header('Legal', text)[1:4], (['Legal'], 56, 58))   # (one line: full size)
 
     def test_a_page_of_rows_too_tall_for_its_frame_scrolls(self):
         # Owner, 2026-11-22: General's ten rows at 3:4 ran the card past the frame, its back button cut off.
