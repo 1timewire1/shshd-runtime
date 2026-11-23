@@ -12,6 +12,12 @@
 
 ### Fixed
 
+- **A letter notice ran off a tall screen's edge** (reported with an e-ink phone's photo of SHS's "New Move Learned!";
+  the owner saw the X360 Day of Diss's "Objective Complete" do it, 2026-11-22): HD's notice is centred over the
+  portrait, and over a left-hand one a long notice reaches into the frame's margin, which a 3:4 frame shows and a
+  taller one shows less of (none on a phone). It now moves in by as much as it would be cut, kept 4 units from the
+  edge, and stays put as its letters come (`desktop_dialogue.notice_shift`); in HD's frame it is where it was. The test
+  channel's `run-until` takes `notice`.
 - **Help & About's Privacy Policy / EULA / Terms & Conditions is a page of the menu card** (owner, 2026-11-22): it opened
   the game's own window (SHS HD's menu 16, CoD's 15), the one Help page that didn't slide in and out and, in Cause of
   Death's Claire Hart skin, the one left in CoD's look. Its title and items are now a page of the card

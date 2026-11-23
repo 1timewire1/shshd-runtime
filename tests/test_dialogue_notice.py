@@ -271,3 +271,19 @@ class NoticeTests(unittest.TestCase):
         ui.audio = False
         ui.tick(16)
         self.assertEqual(s.engine.notice_ms, remaining - 16)
+
+
+class NoticeEdgeTests(unittest.TestCase):
+    """A letter notice stays on the shown part of the frame (owner, 2026-11-22: "Objective Complete" and "New Move
+    Learned!" ran off a phone's left edge, where HD's frame had room in its margin)."""
+
+    def test_it_moves_only_as_far_as_it_would_be_cut(self):
+        from exp_runtime.desktop_dialogue import notice_shift
+        letters = [(-50, -30), (-30, 10), (10, 120)]          # over a left-hand portrait: starts left of the column
+        self.assertEqual(notice_shift(letters, 64, 640, 8), 0.)              # HD's frame: its margin shows it whole
+        self.assertEqual(notice_shift(letters, 0, 640, 8), 58)               # a phone (the frame is the column)
+        self.assertEqual(notice_shift(letters, 20, 640, 8), 38)              # a frame between the two
+        right = [(560, 700)]
+        self.assertEqual(notice_shift(right, 0, 640, 8), 640 - 8 - 700)      # over a right-hand portrait
+        self.assertEqual(notice_shift([(-500, 900)], 0, 640, 8), 508)        # wider than what shows: its start in view
+        self.assertEqual(notice_shift([], 0, 640, 8), 0.)

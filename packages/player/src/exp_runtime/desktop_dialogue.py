@@ -43,6 +43,22 @@ BADGE_UNITS = 24 / 41                   # SHS '11's icon height, 41 art pixels, 
 EFFECT_ANCHOR = (0.30, 0.30)
 
 
+def notice_shift(extents, edge, column, pad):
+    """How far a letter notice moves sideways to stay on the shown part of the frame: `extents` are its letters' (left,
+    right) in column pixels, `edge` the frame's margin shown each side of the `column`-wide column, `pad` the gap kept
+    from the frame's edge. 0 where it fits, as HD's frame always lets it; a notice wider than what shows keeps its
+    start in view."""
+    if not extents:
+        return 0.
+    low, high = -edge + pad, column + edge - pad
+    first, last = min(a for a, _ in extents), max(b for _, b in extents)
+    if last - first > high - low or first < low:
+        return low - first
+    if last > high:
+        return high - last
+    return 0.
+
+
 class DialogueRenderer:
     portrait_factor = 1             # every portrait's scale on this line (a two-speaker line's: DUET_RING_SCALE)
     # shshd-runtime: (animation, partner, portrait factor) of the line last drawn, and of the one before it, whose
@@ -1048,6 +1064,7 @@ class DialogueRenderer:
                                      round(y + (glyph.y * motion.scale - motion.glyph_rise(index)) * k)))
 
     COD_NOTICE_FONT = 'COD_NOTICE'
+    NOTICE_EDGE_PAD = 4         # layout units a notice moved in from the frame's edge keeps clear of it
 
     def cod_notice_font(self):
         """Cause of Death's letter-effect fonts (`SHSUIDialog::updateFonts` 00038b18, theme 1, which every CoD speaker
@@ -1103,6 +1120,20 @@ class DialogueRenderer:
         for c in text:
             pens.append(pen)
             pen += font.glyph(c).advance
+
+        def left_of(glyph, dx):
+            ox = origins[glyph.index][0]
+            return (ox / d - ox0 + glyph.x - pens[glyph.index]) * k + dx
+        # On the frame-wide layer: a long notice centred over a left-hand portrait can start left of the column, into
+        # HD's margin. A narrower frame shows less of that margin (none once the frame is the column: a phone), and the
+        # notice ran off the screen ("Objective Complete", "New Move Learned!"; owner, 2026-11-22): it is moved in by as
+        # much as it would be cut, from all its letters' places (not the shown ones', so it never shifts as they come).
+        extents = []
+        for glyph in layout.glyphs:
+            image, dx, _ = self.text._glyph(name, glyph, k)
+            left = left_of(glyph, dx)
+            extents.append((left, left + image.get_width()))
+        shift = notice_shift(extents, self.edge_units * k, 320 * k, self.NOTICE_EDGE_PAD * k)
         for glyph in layout.glyphs:
             state = hd_letter_state(text, elapsed, glyph.index)
             if state is None:
@@ -1112,10 +1143,9 @@ class DialogueRenderer:
             if alpha < 1:
                 image = image.copy()
                 image = faded(image, round(255 * alpha))
-            ox, oy = origins[glyph.index]
-            left = (ox / d - ox0 + glyph.x - pens[glyph.index]) * k + dx
+            oy = origins[glyph.index][1]
+            left = left_of(glyph, dx) + shift
             top = (oy / d - oy0 + cap + glyph.y - baseline + offset * cap) * k + dy
-            # On the frame-wide layer: a long notice centred over a left-hand portrait can start left of the column.
             self.wide.blit(image, (round(left) + self.margin, round(top)))
 
     # Real HD device confirmed (SHSEngine::initPermanents resource 0x9b=155,
