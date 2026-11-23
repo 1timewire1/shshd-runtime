@@ -6220,8 +6220,9 @@ class Desktop:
         beside the 576x768 game, so they fit at full height once the window
         is 4:3 or wider: a window already that wide is left alone, and a
         narrower one is widened to 4:3 at its own height (owner's choice)."""
-        if self.fixed_window:
-            return
+        is_fullscreen = getattr(pygame.display, 'is_fullscreen', None)
+        if self.fixed_window or (is_fullscreen is not None and is_fullscreen()):
+            return                          # (a full-screen window is the screen: set_mode would leave full screen)
         width, height = self.window.get_size()
         needed = max(1, round(height * 4 / 3))
         if width >= needed - 1:          # a pixel of rounding either way

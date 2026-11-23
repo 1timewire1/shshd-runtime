@@ -11,6 +11,12 @@
 
 ### Added
 
+- **Borderless full screen on a computer: Alt+Enter or F11** (owner, 2026-11-22). The window fills the display it is
+  on (not necessarily the main one) at that display's own resolution, without changing it, and the same keys bring it
+  back to its size and place (`Application.toggle_fullscreen`, SDL's desktop full screen). The frame fits it as it fits
+  any window; the side panels and a picked Aspect Ratio leave a full-screen window as it is. Not on phones. The test
+  channel's `key` takes `f11`.
+
 - **Narration with the narrator's portrait** (Claire Hart plan Stage 0, E; `claire-hart` branch): a presentation flag,
   `narration_portrait`, has a narrator line with art speak as a small dialogue box attached to the narrator's portrait (the
   lead's side), in narration's italic text, with no name plate and no relationship icons (owner, 2026-11-19); on for
