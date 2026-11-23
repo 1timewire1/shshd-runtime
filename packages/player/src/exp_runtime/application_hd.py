@@ -986,7 +986,10 @@ class HdShell:
         windows, menu = self.windows, self.data.menu(self.PRIVACY_MENU)
         rows = [(f'legal:{action.id}', windows.item_label(action, None))
                 for action in windows.items(self.PRIVACY_MENU) if not action.is_footer_button]
-        self.pause.show_rows(self.LEGAL_PAGE, windows.text_for(menu.title), rows, 'help')
+        # (with its message over the rows: "By purchasing and/or using this application...", which a first version
+        # of this page left out; owner, 2026-11-22)
+        self.pause.show_rows(self.LEGAL_PAGE, windows.text_for(menu.title), rows, 'help',
+                             text=windows.text_for(menu.message) or None)
 
     def confirm_new_game(self, title, callback):
         """Ask "Delete Saved Game?" before starting over an episode that has a save."""

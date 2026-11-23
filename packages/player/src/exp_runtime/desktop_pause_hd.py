@@ -41,6 +41,7 @@ PANEL_X, PANEL_W, BORDER, RADIUS = 82, 604, 6, 18
 HEADER, ROW, FOOT = 112, 88, 86
 TALL = (30, 993)                      # text pages fill the frame
 TITLE_PX, ROW_PX, TEXT_PX, TEXT_PITCH = 56, 28, 28.8, 31
+INTRO_PAD = 14                          # points above and below a host row page's text (show_rows: the legal page's)
 BACK = (14, 13)                       # back button inset from the panel's left / bottom
 SLIDER_ROW = 130
 SIDE_PANELS_LABEL = 'Side Panels'
@@ -419,12 +420,30 @@ class HdPauseMenu:
         self.text_pages = dict(self.text_pages, **{screen: (title, body, parent)})      # (the class's stays empty)
         self.open(screen)
 
-    def show_rows(self, screen, title, rows, parent):
+    def show_rows(self, screen, title, rows, parent, text=None):
         """Open a page of rows the host wrote (Restore Progress's backups, Sync's pages): `rows` are (key, label), each
         a ('pause_action', key), or (key, label, kind) for another kind ('switch': its value is `settings[key]`); its
-        back step to `parent`."""
+        back step to `parent`. `text`: a few lines over the rows (the legal page's, from its window's message)."""
         self.row_pages = dict(self.row_pages, **{screen: (title, tuple(rows), parent)})
+        self.row_texts = dict(self.row_texts, **{screen: text})
         self.open(screen)
+
+    row_texts = {}                  # screen -> the text over a host row page's rows, or None (show_rows)
+
+    def wrapped(self, text, points, width):
+        """`text`'s lines at `points`, broken at spaces to `width` points (paragraphs kept)."""
+        font, lines = self.font(points), []
+        for paragraph in text.split('\n'):
+            current = ''
+            for word in paragraph.split(' '):
+                trial = f'{current} {word}' if current else word
+                if current and font.size(trial)[0] / self.scale > width:
+                    lines.append(current)
+                    current = word
+                else:
+                    current = trial
+            lines.append(current)
+        return lines
 
     def text_lines(self, page):
         if page in self.text_pages:
@@ -828,7 +847,11 @@ class HdPauseMenu:
                         or state.screen.startswith('choice:') else state.screen.split(':', 1)[1])
             rows = self.option_rows(category, settings, strings)
             heights = [SLIDER_ROW if kind == 'slider' else ROW for kind, _, _ in rows]
-            height = HEADER + sum(heights) + FOOT
+            # A host page's text over its rows (the legal page's, from its window's message), as a text page's lines.
+            text = self.row_texts.get(category) if category in self.row_pages else None
+            intro_lines = self.wrapped(text, TEXT_PX, PANEL_W - 2 * BORDER - 42) if text else []
+            intro = len(intro_lines) * TEXT_PITCH + 2 * INTRO_PAD if intro_lines else 0
+            height = HEADER + intro + sum(heights) + FOOT
             top, bottom = (self.frame_height - height) / 2, None
             title = (DATA_TITLES.get(category) or (self.row_pages[category][0] if category in self.row_pages else None)
                      or CHOICE_LABELS.get(category[7:] if category.startswith('choice:') else None)
@@ -840,6 +863,12 @@ class HdPauseMenu:
             scrolling = height > high - low
             top, bottom = (low, high) if scrolling else (top, top + height)
             body = self.panel(layer, top, bottom, title)
+            if intro_lines:
+                self.rect(layer, self.see_through(self.PAGE_BACKGROUND), (PANEL_X + BORDER, body, PANEL_W - 2 * BORDER, intro))
+                for index, line in enumerate(intro_lines):
+                    self.text(layer, line, PANEL_X + BORDER + 21, body + INTRO_PAD + index * TEXT_PITCH, TEXT_PX,
+                              self.TEXT_COLOR)
+                body += intro
             area = pygame.Rect(PANEL_X + BORDER, body, PANEL_W - 2 * BORDER, bottom - FOOT - body)
             if scrolling:
                 self.scroll_area, self.scroll_rows = area, True
