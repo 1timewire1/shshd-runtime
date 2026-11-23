@@ -41,7 +41,8 @@ PANEL_X, PANEL_W, BORDER, RADIUS = 82, 604, 6, 18
 HEADER, ROW, FOOT = 112, 88, 86
 TALL = (30, 993)                      # text pages fill the frame
 TITLE_PX, ROW_PX, TEXT_PX, TEXT_PITCH = 56, 28, 28.8, 31
-INTRO_PAD = 14                          # points above and below a host row page's text (show_rows: the legal page's)
+INTRO_PAD = 14                          # points above and below a host row page's text in the skin (the legal page's)
+INTRO_LEFT = 31                         # ...and its inset, the rows' labels'
 BACK = (14, 13)                       # back button inset from the panel's left / bottom
 SLIDER_ROW = 130
 SIDE_PANELS_LABEL = 'Side Panels'
@@ -440,6 +441,38 @@ class HdPauseMenu:
         self.open(screen)
 
     row_texts = {}                  # screen -> the text over a host row page's rows, or None (show_rows)
+
+    # The game's own menu window's header, as desktop_hd_menu.layout lays it out: its title at 56 points 58 down, or at 44
+    # points from 55 down when it takes two lines (TITLE_WIDTH 564), the lines 43.5 apart; its message at 28 points, 41 in,
+    # its lines 26.6 apart, the first 78 under the last title line; the header ending 24.4 under the last message line.
+    WINDOW_TITLE = (56, 58), (44, 55), 43.5, PANEL_W - 40
+    WINDOW_MESSAGE = 28, 41, 26.6, 522, 78, 24.4
+
+    def window_header(self, title, text):
+        """(header height, title lines, their points, the first's centre, message lines, the first's centre) of a page
+        whose header is the game's window's (the legal page's)."""
+        (big, first_big), (small, first_small), pitch, width = self.WINDOW_TITLE
+        points, first = big, first_big
+        lines = self.wrapped(title, points, width)
+        if len(lines) > 1:
+            points, first = small, first_small
+            lines = self.wrapped(title, points, width)
+        size, _left, line_pitch, message_width, gap, below = self.WINDOW_MESSAGE
+        message = self.wrapped(text, size, message_width)
+        first_message = first + pitch * (len(lines) - 1) + gap
+        return first_message + line_pitch * (len(message) - 1) + below, lines, points, first, message, first_message
+
+    def draw_window_header(self, layer, top, head):
+        _header, lines, points, first, message, first_message = head
+        S, pitch = self.scale, self.WINDOW_TITLE[2]
+        size, left, line_pitch = self.WINDOW_MESSAGE[:3]
+        for index, line in enumerate(lines):
+            surface = self.font(points).render(line, True, self.TITLE_COLOR)
+            layer.blit(surface, surface.get_rect(center=(round(FRAME[0] / 2 * S), round((top + first + index * pitch) * S))))
+        for index, line in enumerate(message):
+            surface = self.font(size).render(line, True, self.TEXT_COLOR)
+            layer.blit(surface, surface.get_rect(
+                midleft=(round((PANEL_X + left) * S), round((top + first_message + index * line_pitch) * S))))
 
     def wrapped(self, text, points, width):
         """`text`'s lines at `points`, broken at spaces to `width` points (paragraphs kept)."""
@@ -860,11 +893,20 @@ class HdPauseMenu:
                         or state.screen.startswith('choice:') else state.screen.split(':', 1)[1])
             rows = self.option_rows(category, settings, strings)
             heights = [SLIDER_ROW if kind == 'slider' else ROW for kind, _, _ in rows]
-            # A host page's text over its rows (the legal page's, from its window's message), as a text page's lines.
+            # A host page's text over its rows (the legal page's, from its window's message). Plainly, the header is the
+            # window's own (desktop_hd_menu.layout: a two-line title set smaller, the message in the header under it);
+            # in the Claire Hart skin, whose panel keeps the title on its tab, the text sits on the panel over the rows
+            # at their labels' inset (owner, 2026-11-22: the first version's big title and band read wrong in both).
             text = self.row_texts.get(category) if category in self.row_pages else None
-            intro_lines = self.wrapped(text, TEXT_PX, PANEL_W - 2 * BORDER - 42) if text else []
-            intro = len(intro_lines) * TEXT_PITCH + 2 * INTRO_PAD if intro_lines else 0
-            height = HEADER + intro + sum(heights) + FOOT
+            skinned = getattr(self, 'ui', None) is not None
+            header, intro, intro_lines, window_head = HEADER, 0, [], None
+            if text and skinned:
+                intro_lines = self.wrapped(text, TEXT_PX, PANEL_W - 2 * BORDER - 2 * INTRO_LEFT)
+                intro = len(intro_lines) * TEXT_PITCH + 2 * INTRO_PAD
+            elif text:
+                window_head = self.window_header(self.row_pages[category][0], text)
+                header = window_head[0]
+            height = header + intro + sum(heights) + FOOT
             top, bottom = (self.frame_height - height) / 2, None
             title = (DATA_TITLES.get(category) or (self.row_pages[category][0] if category in self.row_pages else None)
                      or CHOICE_LABELS.get(category[7:] if category.startswith('choice:') else None)
@@ -875,11 +917,14 @@ class HdPauseMenu:
             # owner, 2026-11-22) fills a text page's bounds, and its rows scroll as a text page's lines do.
             scrolling = height > high - low
             top, bottom = (low, high) if scrolling else (top, top + height)
-            body = self.panel(layer, top, bottom, title)
+            if window_head is not None:
+                body = self.panel(layer, top, bottom, '', header=header)
+                self.draw_window_header(layer, top, window_head)
+            else:
+                body = self.panel(layer, top, bottom, title)
             if intro_lines:
-                self.rect(layer, self.see_through(self.PAGE_BACKGROUND), (PANEL_X + BORDER, body, PANEL_W - 2 * BORDER, intro))
                 for index, line in enumerate(intro_lines):
-                    self.text(layer, line, PANEL_X + BORDER + 21, body + INTRO_PAD + index * TEXT_PITCH, TEXT_PX,
+                    self.text(layer, line, PANEL_X + INTRO_LEFT, body + INTRO_PAD + index * TEXT_PITCH, TEXT_PX,
                               self.TEXT_COLOR)
                 body += intro
             area = pygame.Rect(PANEL_X + BORDER, body, PANEL_W - 2 * BORDER, bottom - FOOT - body)
