@@ -479,15 +479,16 @@ class ShellActionTests(unittest.TestCase):
         items = [SimpleNamespace(id=31, is_footer_button=False), SimpleNamespace(id=32, is_footer_button=False),
                  SimpleNamespace(id=33, is_footer_button=True)]
         shell.windows = SimpleNamespace(items=lambda menu: items, item_label=lambda action, v: f'Read {action.id}',
-                                        text_for=lambda string, v=None: 'Privacy Policy/ EULA')
+                                        text_for=lambda string, v=None: {99: 'Privacy Policy/ EULA', 98: 'By using it...'}[string])
         shown = []
-        shell.pause = SimpleNamespace(show_rows=lambda *args: shown.append(args))
-        shell.data = SimpleNamespace(menu=lambda number: SimpleNamespace(title=99), action=lambda number: number)
+        shell.pause = SimpleNamespace(show_rows=lambda *args, **options: shown.append((args, options)))
+        shell.data = SimpleNamespace(menu=lambda number: SimpleNamespace(title=99, message=98), action=lambda number: number)
         pressed = []
         shell.stack = SimpleNamespace(press=pressed.append)
         shell.activate(('pause_open', 'privacy'))
-        self.assertEqual(shown, [(shell.LEGAL_PAGE, 'Privacy Policy/ EULA',
-                                  [('legal:31', 'Read 31'), ('legal:32', 'Read 32')], 'help')])   # (the back button is the card's)
+        self.assertEqual(shown, [((shell.LEGAL_PAGE, 'Privacy Policy/ EULA',
+                                   [('legal:31', 'Read 31'), ('legal:32', 'Read 32')], 'help'),   # (back is the card's)
+                                  {'text': 'By using it...'})])         # its message over the rows, as the window had
         shell.activate(('pause_action', 'legal:32'))
         self.assertEqual(pressed, [32])                     # the window's own item: its "Exit Game?" first
 

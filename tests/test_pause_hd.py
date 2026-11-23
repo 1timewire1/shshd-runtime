@@ -369,6 +369,25 @@ class HdPauseTests(unittest.TestCase):
         self.menu.slide = None
         return [('pause_toggle' if kind == 'switch' else 'pause_action', f'a{i}') for i in range(count)]
 
+    def test_a_host_row_pages_text_sits_over_its_rows(self):
+        # The legal page's message (owner, 2026-11-22: the first card version of it lost the window's text).
+        module = self.module
+        self.menu.show_rows('legal', 'Legal', [('a', 'Read A'), ('b', 'Read B')], 'help')
+        self.menu.slide = None
+        plain = dict((command, rect) for rect, command in self.commands())
+        self.menu.show_rows('legal', 'Legal', [('a', 'Read A'), ('b', 'Read B')], 'help',
+                            text='By purchasing and/or using this application, you agree to the terms. ' * 2)
+        self.menu.slide = None
+        lines = self.menu.wrapped(self.menu.row_texts['legal'], module.TEXT_PX,
+                                  module.PANEL_W - 2 * module.BORDER - 42)
+        self.assertGreater(len(lines), 1)
+        intro = len(lines) * module.TEXT_PITCH + 2 * module.INTRO_PAD
+        texted = dict((command, rect) for rect, command in self.commands())
+        first = ('pause_action', 'a')
+        # The card grows by the text, centred, so the first row comes down by half of it plus all of it above the rows.
+        self.assertAlmostEqual(texted[first].top - plain[first].top, intro / 2, delta=1)
+        self.assertAlmostEqual(texted[('pause_back',)].bottom - plain[('pause_back',)].bottom, intro / 2, delta=1)
+
     def test_a_page_of_rows_too_tall_for_its_frame_scrolls(self):
         # Owner, 2026-11-22: General's ten rows at 3:4 ran the card past the frame, its back button cut off.
         module, state = self.module, self.menu.state

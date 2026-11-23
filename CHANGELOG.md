@@ -120,8 +120,9 @@
 - **Help & About's Privacy Policy / EULA / Terms & Conditions is a page of the menu card** (owner, 2026-11-22): it opened
   the game's own window (SHS HD's menu 16, CoD's 15), the one Help page that didn't slide in and out and, in Cause of
   Death's Claire Hart skin, the one left in CoD's look. Its title and items are now a page of the card
-  (`HdShell.open_legal_page`), dressed and slid as Help's other pages are; each row presses the window's own item, so
-  its "Exit Game?" and the link are as before, and back returns to Help.
+  (`HdShell.open_legal_page`), dressed and slid as Help's other pages are, the window's message ("By purchasing and/or
+  using this application...") over its rows (`show_rows`' `text`); each row presses the window's own item, so its "Exit
+  Game?" and the link are as before, and back returns to Help.
 - **Claire Hart Dialogue's name tab was missing on a portrait-less speaker** (owner, g54, 2026-11-22: Volume One's
   "Television", after narration): the tab waits for the box to settle, and a box gliding from the last line's frame
   ended on a rounded copy that never equalled a taller frame's fractional place, so only a tap brought the tab. The
