@@ -1424,6 +1424,45 @@ class Application:
         if getattr(self, 'game', None) is not None:
             self.game.window = self.window
 
+    @staticmethod
+    def is_fullscreen_key(event):
+        """Alt+Enter (either Enter, either Alt) or F11: the desktop's borderless full screen on and off."""
+        if event.type != pygame.KEYDOWN:
+            return False
+        if event.key == pygame.K_F11:
+            return True
+        return event.key in (pygame.K_RETURN, pygame.K_KP_ENTER) and bool(getattr(event, 'mod', 0) & pygame.KMOD_ALT)
+
+    def toggle_fullscreen(self):
+        """A computer's window to borderless full screen and back (owner, 2026-11-22): SDL's desktop full screen, which
+        fills the display the window is on (not the main one) at that display's own resolution without changing it,
+        and returns to the window's size and place. The frame fits the screen as it fits any window (Fit Screen's
+        rules; a picked shape is letterboxed, shape_window leaving a full-screen window alone). Not on a phone, whose
+        window is its screen, nor where the backend has no window to set (iOS). Returns whether it changed."""
+        if getattr(self, 'fixed_window', False):
+            return False
+        window_type = getattr(pygame, 'Window', None)
+        if window_type is None or pygame.display.get_surface() is None:
+            return False
+        try:
+            import warnings
+            with warnings.catch_warnings():
+                # (pygame-ce 2.5 marks from_display_module deprecated in favour of a Window made without the display
+                # module; this app's window is the display module's, and this is how to reach it.)
+                warnings.simplefilter('ignore', DeprecationWarning)
+                window = window_type.from_display_module()
+            if pygame.display.is_fullscreen():
+                window.set_windowed()
+            else:
+                window.set_fullscreen(desktop=True)
+        except pygame.error as error:
+            logging.warning('Full screen could not be changed: %s', error)
+            return False
+        self.window = pygame.display.get_surface()
+        if getattr(self, 'game', None) is not None:
+            self.game.window = self.window
+        return True
+
     def next_aspect_ratio(self):
         """The shape after the current one, for a button that steps through them."""
         current = self.settings.aspect(self.fixed_window)
@@ -3167,6 +3206,8 @@ class Application:
     def handle_event(self, event):
         if event.type == pygame.QUIT:
             return False
+        if Application.is_fullscreen_key(event) and self.toggle_fullscreen():
+            return True                     # (the Enter goes no further: it neither continues a line nor presses a row)
         if event.type in (pygame.WINDOWFOCUSLOST, pygame.WINDOWFOCUSGAINED):
             self.active = event.type == pygame.WINDOWFOCUSGAINED
             self.cancel_pointer()

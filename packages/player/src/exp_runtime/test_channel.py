@@ -147,7 +147,8 @@ def _keys():
     wanted.update({chr(c): 'K_' + chr(c) for c in range(ord('a'), ord('z') + 1)})
     wanted.update({str(d): f'K_{d}' for d in range(10)})
     wanted.update({'enter': 'K_RETURN', 'back': 'K_ESCAPE', 'f5': 'K_F5', 'f9': 'K_F9',
-                   'pageup': 'K_PAGEUP', 'pagedown': 'K_PAGEDOWN'})      # (a scrolling page's own keys)
+                   'pageup': 'K_PAGEUP', 'pagedown': 'K_PAGEDOWN',      # (a scrolling page's own keys)
+                   'f11': 'K_F11'})                                     # (the desktop's full screen)
     keys = {}
     for name, constant in wanted.items():
         code = getattr(pygame, constant, None)

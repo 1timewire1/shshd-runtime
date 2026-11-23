@@ -177,6 +177,7 @@ See [the localization evidence](MAIN_MENU.md#episode-title-languages).
 | N | Skip Ahead to the next stop (with Extras → Allow Skip Ahead on; not while a name is typed) |
 | U | Undo back to the last stop kept (with Extras → Allow Undo on; not while a name is typed) |
 | Tab | Show or hide the side panels |
+| Alt+Enter or F11 (a computer) | Borderless full screen on and off: the window fills the display it is on, at that display's own resolution, and returns to its size and place (`Application.toggle_fullscreen`, SDL's desktop full screen). The frame fits it as it fits any window: Fit Screen fills it, a picked shape is letterboxed |
 | Type, Backspace, Enter | Edit a name (up to 16 ASCII letters/digits, subject to native font width); Enter submits a nonempty name or dismisses its alert |
 | F5 (also Pause → Options → Save without the HD app, and the fallback screen's Save button) | Replace the current episode's manual save slot |
 | F9 (also Pause → Options → Load, and its Load button) | Restore that slot |

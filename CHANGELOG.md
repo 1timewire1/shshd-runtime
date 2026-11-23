@@ -2,6 +2,14 @@
 
 ## Unreleased (shshd-runtime)
 
+### Added
+
+- **Borderless full screen on a computer: Alt+Enter or F11** (owner, 2026-11-22). The window fills the display it is
+  on (not necessarily the main one) at that display's own resolution, without changing it, and the same keys bring it
+  back to its size and place (`Application.toggle_fullscreen`, SDL's desktop full screen). The frame fits it as it fits
+  any window; the side panels and a picked Aspect Ratio leave a full-screen window as it is. Not on phones. The test
+  channel's `key` takes `f11`.
+
 ### Fixed
 
 - **Help & About's Privacy Policy / EULA / Terms & Conditions is a page of the menu card** (owner, 2026-11-22): it opened

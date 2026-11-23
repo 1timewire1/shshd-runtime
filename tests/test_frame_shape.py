@@ -384,6 +384,32 @@ class WindowShapeTests(unittest.TestCase):
                 app.shape_window()
                 self.assertEqual(app.window.get_size(), size)
 
+    def test_alt_enter_or_f11_turns_borderless_full_screen_on_and_off_on_a_computer_only(self):
+        # Owner, 2026-11-22: SDL's desktop full screen (the display the window is on), and back to the window.
+        from unittest import mock
+        app = self.app('fit', (540, 720))
+        import pygame
+        from exp_runtime.application import Application
+        key = lambda k, mod=0: pygame.event.Event(pygame.KEYDOWN, key=k, mod=mod, unicode='')
+        self.assertTrue(Application.is_fullscreen_key(key(pygame.K_RETURN, pygame.KMOD_LALT)))
+        self.assertTrue(Application.is_fullscreen_key(key(pygame.K_KP_ENTER, pygame.KMOD_RALT)))
+        self.assertTrue(Application.is_fullscreen_key(key(pygame.K_F11)))
+        self.assertFalse(Application.is_fullscreen_key(key(pygame.K_RETURN)))       # (Enter alone still continues)
+        calls, state = [], {'full': False}
+        window = mock.Mock()
+        window.set_fullscreen.side_effect = lambda desktop: (calls.append(('full', desktop)), state.update(full=True))
+        window.set_windowed.side_effect = lambda: (calls.append(('windowed',)), state.update(full=False))
+        from exp_runtime import graphics
+        stand_in = SimpleNamespace(from_display_module=lambda: window)      # (pygame's own Window is a C type)
+        with mock.patch.object(graphics, 'Window', stand_in, create=True), \
+                mock.patch.object(pygame.display, 'is_fullscreen', lambda: state['full']):
+            self.assertTrue(app.toggle_fullscreen())
+            self.assertTrue(app.toggle_fullscreen())
+            self.assertEqual(calls, [('full', True), ('windowed',)])      # desktop (borderless) full screen, then back
+            app.fixed_window = True                                         # a phone: its window is its screen
+            self.assertFalse(app.toggle_fullscreen())
+        self.assertEqual(len(calls), 2)
+
 
 class MenuFrameTests(unittest.TestCase):
     """3 (menus, stage 1): a menu's frame is 768 points across and the frame's shape, never shorter than HD's 1024."""
