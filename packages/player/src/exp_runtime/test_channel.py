@@ -85,7 +85,7 @@ it's done, so real clocks (fades, timers) run as in play.
     reopen TITLE                as `open`, continuing the story from its autosave
     open TITLE                  start the episode whose title contains TITLE (or whose id starts with TITLE), from the
                                 beginning; of several copies, the newest import
-    run-until KIND [SECONDS]    advance lines until KIND shows (choice, brew_catch, word_game, text_input, prompt,
+    run-until KIND [SECONDS]    advance lines until KIND shows (choice, brew_catch, word_game, text_input, prompt, notice,
                                 stop = anything Skip Ahead stops at), or SECONDS (default 60) pass
     wait SECONDS                let the app run
     timing on|off               frame times since `on`: fps, median, p90, worst, and the slowest (100 ms+) with
@@ -1584,6 +1584,8 @@ class Commands:
                 # wish, 2026-11-20: run-until choice in Easter Egg Hunt waited out its time after the end).
                 return self.app.screen != 'game'
             action = game.session.pending
+            if kind == 'notice' and getattr(game.session.engine, 'notice_ms', 0):
+                return True                                 # a letter notice ("Objective Complete") is showing
             if game.host_prompt is not None:                # a mini-game's skip prompt: that game (or a stop it can't pass)
                 return not game.host_prompt.get('loading')  # (once its outcomes are worked out)
             if action is None or game.session.episode_ended:
@@ -1608,7 +1610,7 @@ class Commands:
         if self.game is None:
             return dict(result, reached=False, ended=True)
         action = self.game.session.pending if self.game is not None else None
-        result['reached'] = bool(result.get('reached')) and (kind in ('stop', 'any') or (action is not None and action.name == kind)
+        result['reached'] = bool(result.get('reached')) and (kind in ('stop', 'any', 'notice') or (action is not None and action.name == kind)
                                                                or (kind == 'prompt' and self.game.host_prompt is not None
                                                                    and not self.game.host_prompt.get('loading')))
         return result
