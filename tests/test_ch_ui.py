@@ -239,6 +239,29 @@ class ChScreenTests(unittest.TestCase):
         self.assertGreater(right, before)                              # (moved right, away from a left portrait)
         self.assertIsNot(ui.panel((560, 400), .6), ui.panel((560, 400), .6, tab_centre=420))
 
+    def test_a_title_too_long_for_the_tab_is_set_smaller_so_the_tab_stays_inside_the_frame(self):
+        """Owner 2026-11-22: the legal page's long title ran the tab over the panel's right edge."""
+        from exp_runtime.desktop_ch_ui import ChUi
+        ui = ChUi.of(a_chc()[0])
+        p = ui.ui['panel']
+        (left, right), (t0, t1, t2, t3) = p['caps'], p['tab']
+        width, s, title = 560, .6, 'Privacy Policy/ EULA/ Terms & Conditions'
+        room = ui.title_room(width, s)
+        middle, before = ui.tab_bounds(width, s, room)
+        tab = (t1 - t0 + t3 - t2) * s + middle
+        self.assertLessEqual(before + tab, width - (left + right) * s)  # (the widest title's tab clears both caps)
+        self.assertGreater(ui.font(40).size(title)[0], room)            # (this title at 40 would not fit)
+        drawn = []
+        real = ui.font
+        with mock.patch.object(ChUi, 'font', lambda self, px: (drawn.append(px), real(px))[1]):
+            ui.draw_panel(pygame.Surface((width, 400), pygame.SRCALPHA), pygame.Rect(0, 0, width, 400), s, title, 40)
+        self.assertLess(drawn[-1], 40)
+        self.assertLessEqual(real(drawn[-1]).size(title)[0], room)
+        drawn.clear()
+        with mock.patch.object(ChUi, 'font', lambda self, px: (drawn.append(px), real(px))[1]):
+            ui.draw_panel(pygame.Surface((width, 400), pygame.SRCALPHA), pygame.Rect(0, 0, width, 400), s, 'Help', 40)
+        self.assertEqual(set(drawn), {40})                               # (a short title keeps its size)
+
     def test_the_pause_menu_takes_classics_dress_and_keeps_its_taps(self):
         from exp_runtime.desktop_cod_pause import CodPauseMenu
         from exp_runtime.desktop_pause_hd import PANEL_X, ROW

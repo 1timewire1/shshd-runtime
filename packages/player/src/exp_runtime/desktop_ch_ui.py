@@ -133,6 +133,17 @@ class ChUi:
             return middle, room * (t0 - left) / max(1, (t0 - left) + (w - right - t3))
         return middle, max(0., min(room, tab_centre - left * s - tab / 2))
 
+    TAB_MARGIN = 16                         # art pixels the widest tab keeps from each of the header's caps
+
+    def title_room(self, width, s):
+        """The widest title, pixels, whose tab still fits a panel `width` across: TAB_MARGIN short of each cap (a wider
+        one ran the tab over the frame's right edge, owner 2026-11-22: the legal page's long title)."""
+        p = self.ui['panel']
+        left, right = p['caps']
+        t0, t1, t2, t3 = p['tab']
+        middle = width - (left + right + 2 * self.TAB_MARGIN) * s - (t1 - t0 + t3 - t2) * s
+        return max(0., middle + ((t1 - t0) + (t3 - t2) - 2 * self.TAB_CLEAR) * s)
+
     def panel(self, size, s, title_width=0, tab_centre=None):
         """Classic's panel at `size`: its header (with the cream tab) and footer kept at scale `s`, its teal middle
         stretched; the tab's middle wide enough for a title `title_width` pixels across, the tab centred on `tab_centre`
@@ -163,7 +174,11 @@ class ChUi:
 
     def draw_panel(self, target, rect, s, title, title_px, *, alpha=255, tab_centre=None):
         """The panel at `rect` with `title` on its tab in Romic Bold, Classic's brown; the tab centred on `tab_centre`
-        (pixels from the panel's left, beside a portrait) or the panel's middle."""
+        (pixels from the panel's left, beside a portrait) or the panel's middle. A title too wide for the tab to fit
+        is set smaller until it does."""
+        room = self.title_room(rect.width, s)
+        while title and title_px > 8 and self.font(title_px).size(title)[0] > room:
+            title_px -= 1
         font = self.font(title_px)
         words = font.render(title, True, self.TITLE) if title else None
         width = words.get_width() if words else 0
