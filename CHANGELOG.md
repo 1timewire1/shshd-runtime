@@ -23,7 +23,8 @@
   It switches at once as the window turns or resizes. In the 4:3 frame each scene shows whole, as Classic framed it,
   rather than its 3:4 slice (`WHOLE_BACKDROPS`, `Desktop.wide_frame`), and the dialogue is drawn 1.35x larger
   (`WIDE_DIALOGUE`, the owner's pick from 1.2 / 1.35 / 1.5), with the gear and bar at their size. With either dialogue
-  look. Wider than 4:3, Claire Hart's green shows beside it.
+  look. Wider than 4:3, Claire Hart's green shows beside it. A save's picture is still taken at 3:4 (`snapshot` turns the 4:3
+  frame off for it), so the episode picker's tiles aren't squeezed.
 
 - **Borderless full screen on a computer: Alt+Enter or F11** (owner, 2026-11-22). The window fills the display it is
   on (not necessarily the main one) at that display's own resolution, without changing it, and the same keys bring it

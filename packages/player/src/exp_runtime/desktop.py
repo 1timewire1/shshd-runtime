@@ -5896,8 +5896,12 @@ class Desktop:
         # What the last presented frame left (the drawing reads the frame's size from it, as `present` sets it after
         # the story is drawn), kept for the live frame that follows.
         presented = {key: self.__dict__[key] for key in self.PRESENTED if key in self.__dict__}
+        wide = self.__dict__.get('ch_43', missing := object())
         if not shaped:
             self.aspect_ratio = '3:4'
+            # ...and not Claire Hart's 4:3 (wide_frame): a save's picture is 3:4, its slice and dialogue as at 3:4 (a 4:3
+            # frame was squeezed into it; owner, 2026-11-24).
+            self.ch_43 = False
             # This render's own shape from its first draw: else the story is laid out for the live frame and presented
             # in a 3:4 one, which from 9:16 (a narrower frame) lost the choice and the portrait (2026-11-18, 9:20 save).
             self._frame_width, self._frame_tall = self.frame_units()
@@ -5923,6 +5927,10 @@ class Desktop:
             self.menu_open = opened
             self.capture = was_capture
             self.aspect_ratio = shape
+            if wide is missing:
+                self.__dict__.pop('ch_43', None)
+            else:
+                self.ch_43 = wide
         frame = self.bg_viewport.clip(self.window.get_rect())
         if shaped:
             size = (size[0], max(1, round(frame.height * size[0] / max(1, frame.width))))

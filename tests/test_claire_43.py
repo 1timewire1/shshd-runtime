@@ -60,6 +60,30 @@ class WideFrameTests(unittest.TestCase):
         self.assertFalse(Desktop.ch_43_switch(SimpleNamespace()))                  # (no story open)
 
 
+class SnapshotTests(unittest.TestCase):
+    def setUp(self):
+        import pygame
+        pygame.init()
+        pygame.display.set_mode((1, 1))
+        self.addCleanup(pygame.quit)
+
+    def test_a_saves_picture_is_drawn_at_3_4_not_4_3(self):
+        """Owner, 2026-11-24: a save taken in the 4:3 frame squeezed it into the 3:4 thumbnail."""
+        import pygame
+        from exp_runtime.desktop import Desktop
+        fake = a_desktop((1280, 720))
+        seen = []
+        fake.__dict__.update(menu_open=False, capture=False, location_pan=None, PRESENTED=Desktop.PRESENTED,
+                             window=pygame.Surface((1280, 720)), bg_viewport=pygame.Rect(160, 0, 960, 720),
+                             frame_units=lambda: Desktop.frame_units(fake),
+                             render=lambda: seen.append((fake.wide_frame(), fake.aspect_ratio)))
+        Desktop.snapshot(fake)
+        self.assertEqual(seen, [(False, '3:4')])
+        self.assertTrue(fake.wide_frame())                                  # (the live frame keeps its 4:3)
+        Desktop.snapshot(fake, shaped=True)                                 # the end menu's backdrop: the frame's own shape
+        self.assertEqual(seen[-1][0], True)
+
+
 class WholeSceneTests(unittest.TestCase):
     def setUp(self):
         import pygame
