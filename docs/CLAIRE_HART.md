@@ -86,9 +86,11 @@ add-on's resources are in [ADDONS.md](ADDONS.md#chc-claire-hart-classic-claire-h
 The plans and the engine study (`CLAIRE_HART_PLAN.md`, `CLAIRE_HART_ENGINE.md`, `CLAIRE_HART_ROUNDS_PLAN.md`,
 `CLAIRE_HART_SKIN_PLAN.md`, `CLAIRE_HART_43_PLAN.md`) are in `reference/Other Games/docs` beside the repository.
 
+Sync Devices carries both add-ons (g54 to PC, 2026-11-24: about 3 minutes over Wi-Fi). A transfer cut short starts over
+next time; the receiving library is unchanged until all of it has arrived.
+
 ## Not verified yet
 
 - **The iPad:** cases, rounds, the skin and Claire Hart 4:3 are checked on the PC and the g54, not yet on iOS (ROADMAP 5.13).
-- **Sync Devices** with the two add-ons (0.5 and 1.1 GB): their transfer, and resuming one cut short.
 - **Lines over 300 characters** (318 in Classic): how CoD's box pages them hasn't been looked at line by line.
 - **Romic** is inferred from Classic's asset list and a screenshot.
