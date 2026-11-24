@@ -25,6 +25,21 @@ class SyncFlowTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
 
+    def test_a_new_sync_clears_the_stages_a_killed_one_left(self):
+        """A receiver killed mid-transfer left its stage in the library (348 MB, 2026-11-24): the next sync clears it."""
+        from exp_runtime.sync_flow import clear_stale_stages
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            for name in ('.sync-abc', '.sync-send-def'):
+                (home / name / 'cod').mkdir(parents=True)
+                (home / name / 'cod' / 'part.exp').write_bytes(b'half')
+            (home / 'content').mkdir()
+            (home / '.restore-xyz').mkdir()
+            (home / 'library.json').write_text('{}')
+            clear_stale_stages(home)
+            self.assertEqual(sorted(p.name for p in home.iterdir()), ['.restore-xyz', 'content', 'library.json'])
+            clear_stale_stages(home / 'missing')                         # (no folder yet: nothing to do)
+
     def test_received_names_win_and_the_receivers_others_stay_and_device_options_stay(self):
         app = app_with(self.root)
         flow = SyncFlow(app)

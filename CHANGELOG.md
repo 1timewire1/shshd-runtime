@@ -136,6 +136,10 @@
 
 ### Fixed
 
+- **A sync cut short left its files in the library**: a receiver closed or killed mid-transfer left everything received
+  so far in a hidden `.sync-...` folder (348 MB of Claire Hart's add-on, 2026-11-24), and only Delete Library removed it.
+  A new sync now clears such leftovers before it starts (`sync_flow.clear_stale_stages`). The library itself was never
+  touched: what arrives is applied only once all of it has.
 - **Back Up Progress and Sync Devices failed on a save dated before 1980** ("ZIP does not support timestamps before 1980"):
   the progress zips now store such a file as of 1980 (`strict_timestamps=False`). Found on the g54, whose restored saves
   were dated 1970 (2026-11-24); every sync from it failed before sending anything.

@@ -261,6 +261,7 @@ class SyncFlow:
         # The stage sits by the libraries (a whole library sent is moved from it into its place).
         home = app.library.directory if app.library is not None else app.library_path(next(iter(GAMES))).parent
         home.mkdir(parents=True, exist_ok=True)
+        clear_stale_stages(home)
         self.stage = Path(tempfile.mkdtemp(prefix='.sync-', dir=home))
         try:
             self.receiver = lan_sync.Receiver(
@@ -444,6 +445,18 @@ class SyncFlow:
         self.stage = self.provider = None
 
 
+def clear_stale_stages(folder):
+    """Remove the stages (`.sync-...`, `.sync-send-...`) a sync left in `folder` when its app was closed or killed mid-way:
+    the app runs one sync at a time and removes its own as it ends, so any found as a new one starts is stale. A cut-off
+    transfer of Claire Hart's add-ons left 348 MB this way on the PC (2026-11-24), and nothing but Delete Library took it."""
+    try:
+        stale = [path for path in Path(folder).iterdir() if path.is_dir() and path.name.startswith('.sync-')]
+    except OSError:
+        return
+    for path in stale:
+        shutil.rmtree(path, ignore_errors=True)
+
+
 def library_files(directory):
     """A library's own files (application.LIBRARY_PARTS: not a job's stage, nor anything else of the player's in its
     folder), as [(path in the library, file)]: what a whole library sent carries."""
@@ -520,6 +533,7 @@ class SendProvider:
 
     def items(self, games, wanted, addons=None):
         from .progress_bundle import write_bundle
+        clear_stale_stages(self.app.library_path(games[0]))
         folder = self.folder = Path(tempfile.mkdtemp(prefix='.sync-send-', dir=self.app.library_path(games[0])))
         progress = 'progress' in self.categories
         items = []
