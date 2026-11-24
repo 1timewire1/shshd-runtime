@@ -22,7 +22,8 @@
   portraits, Dim Backdrops, the green backdrop, the scenes' slices and Claire Hart 4:3, the title look and tune on Auto (the
   CoD profile's `ADDON_FEATURE_PACKS`). CoD episodes now declare their primary, extras' aliases and mini-games (so a
   Creator-made round's pause menu offers Power-Ups and Use Translated Mini-Games). Browse library images and MCP name `chc`'s
-  pictures from its spec ("Aaron Mitchels, Angry", "scene Claires Office"). New `docs/CLAIRE_HART.md`; CREATOR.md gains the
+  pictures from its spec ("Aaron Mitchels, Angry", "scene Claires Office"), and list its 185 looks ("look Claire"): used from
+  the add-on, a look is a character's portrait, its five faces read from `chc` in CoD's order as the cases' are. New `docs/CLAIRE_HART.md`; CREATOR.md gains the
   round node and a worked example, and ADDONS.md the add-on's revision 2 and the 4:3 switch.
 
 - **Claire Hart cases in their own 4:3** (owner, 2026-11-22; `reference/Other Games/docs/CLAIRE_HART_43_PLAN.md`,

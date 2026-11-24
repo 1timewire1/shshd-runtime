@@ -211,15 +211,19 @@ the translators' packs (31000-31799) get none of this: their game's own tables a
 
 #### Example: a Claire Hart scene in a CoD project
 
-A short case of your own in Claire Hart's dress, as made and played while this was written (2026-11-24):
+A short case of your own in Claire Hart's dress, as made and played while this was written (2026-11-24); the template
+`primary_chc` is this episode:
 
 1. New project, game **Cause of Death**, with a library holding `chc` (and `chcrounds` for the round).
 2. **Add-ons and settings…**: primary **Claire Hart Classic**; tick **Narration shows the narrator's portrait** if a
    **Player / narrator** node names the narrator.
 3. A **Background** node: **Browse library images**, pick a Claire Hart scene (`chc` 26000–26786, listed by name, such as
    "scene Claires Office", 26160) and **Use from add-on**. The export keeps its number and holds no picture.
-4. A few narration and dialogue lines. Portraits come from `chc` the same way, each listed as its character and face
-   ("Aaron Mitchels, Angry"); its story-object pictures ("story object bracelet") go in **Story object picture** nodes.
+4. **Characters…**: a character whose portrait is one of `chc`'s **looks** ("look Claire", 30175: **Use from add-on**).
+   A look is five numbers in a row, one a face from Normal to Surprised, which the player reads from `chc` in CoD's order
+   (`chc` stores each face once, in its own order), so nothing is copied. A **Player / narrator** node can make her the
+   narrator. Then a few narration and dialogue lines, and its story-object pictures ("story object bracelet") in **Story
+   object picture** nodes.
 5. **Real minigames?** asking about Claire Hart's rounds: 1 to a **Hidden-object round (Claire Hart)** node (round 11, Case 1's first, in
    Claire's Office), 0 to a line such as "Claire searches her office."
 6. Export. The `.exp` is a few kilobytes and requires `chc` (and `chcrounds`, an extra). On a player with both, the lines take
@@ -357,7 +361,9 @@ These came with the Surviving Hollywood translation and work on any SHS project 
 the same facing left, its eight silhouettes and its backgrounds by sky, listed first; MCP's `asset_list` names them too and
 finds them by name. Take one by reference (**Use from add-on**) for a character's portrait. Claire Hart Classic's (`chc`, CoD;
 `claire-hart` branch) are named the same way from its spec: each portrait as its character and face ("Will Yu, Surprised"),
-each scene, track and story object by name (`assets.claire_hart_labels`).
+each scene, track and story object by name (`assets.claire_hart_labels`), and its 185 looks first, as "look Claire" at
+30000 + 5 × the look, each shown by its Normal face, for a character's portrait (`assets.addon_looks`: the CoD profile's
+`LOOK_BANKS`; a look is used from the add-on, never copied).
 
 ### Optional art
 

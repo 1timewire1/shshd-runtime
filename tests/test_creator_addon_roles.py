@@ -89,6 +89,26 @@ class RoleTests(unittest.TestCase):
                                                     26160: 'scene Claires Office', 26800: 'scene Shadows/Van Der Walt Den',
                                                     26900: 'track Beach EP21', 27050: 'story object bracelet'})
 
+    def test_a_claire_hart_look_is_a_portrait_taken_by_reference(self):
+        """chc's looks (LOOK_BANKS: 30000 + 5 x look) are listed and taken by reference for a character's portrait, its five
+        faces read through the spec in CoD's order; nothing is copied (Stage 6)."""
+        import json
+        from exp_runtime.creator.addons import use_addon_asset
+        from exp_runtime.creator.assets import addon_asset_ids, addon_asset_labels, addon_looks
+        spec = dict(looks=[[28012, 28010, 28011, 28013, 28014]], look_names=['Claire'], scenes={'ClairesOffice': [26160, 224]},
+                    pictures={'references/characters/Claire/Avatar_Claire': [0, 0, 28012]})
+        archive = SimpleNamespace(entries={26998, 26160, *range(28010, 28015)}, read=lambda r: json.dumps(spec).encode())
+        chc = (dict(addon='chc', title='Claire Hart Classic', revision=2), archive)
+        cod = SimpleNamespace(addon={'chc': chc}.get, addons=[chc[0]], game_id='cod')
+        self.assertEqual(addon_looks(cod, 'chc'), {30000: ('Claire', [28012, 28010, 28011, 28013, 28014])})
+        self.assertIn(30000, addon_asset_ids(cod, 'chc'))
+        self.assertEqual(addon_asset_labels(cod, 'chc')[30000], 'look Claire')
+        project = story(Node('a', text='Hi', next='z'), game='cod')
+        asset = use_addon_asset(project, cod, 'chc', 30000)
+        self.assertEqual((asset.id, asset.data, asset.addon, asset.name), (30000, None, 'chc', 'Claire Hart Classic: Claire'))
+        self.assertEqual(project.addons, [dict(id='chc', revision=2)])
+        self.assertEqual(addon_looks(SimpleNamespace(addon={'chc': chc}.get, game_id='shs'), 'chc'), {})   # (SHS has no banks)
+
     def test_a_plain_episode_is_marked_as_the_creators_and_a_translation_is_not(self):
         self.assertEqual(record(story(Node('a', text='Hi', next='z'))), dict(creator=True))
         self.assertEqual(record(story(Node('a', text='Hi', next='z'), pack_id=31400)), {})   # the X360 translator builds here

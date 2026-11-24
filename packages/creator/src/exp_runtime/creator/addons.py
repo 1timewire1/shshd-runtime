@@ -208,6 +208,19 @@ def use_addon_asset(project, library, addon_id, resource):
     record, archive = found
     if library.game_id != project.game:
         raise ProjectError('The library must match the project game')
+    from .assets import addon_looks
+    look = addon_looks(library, addon_id).get(resource)
+    if look is not None:
+        # A look (Claire Hart's): five numbers in a row the player reads through the add-on's spec, for a character's portrait.
+        existing = next((asset for asset in project.assets if asset.id == resource), None)
+        if existing is not None:
+            if existing.addon != addon_id:
+                raise ProjectError(f'The project already takes resource {resource} of its own or from another add-on.')
+            return existing
+        asset = Asset(resource, f'{record["title"]}: {look[0]}', None, addon_id)
+        project.assets.append(asset)
+        require_addon(project, addon_id, record['revision'])
+        return asset
     if not 26000 <= resource <= 32767 or resource not in archive.entries:
         raise ProjectError(f'The {addon_id} add-on has no episode resource {resource}.')
     data = archive.read(resource)
@@ -222,7 +235,9 @@ def use_addon_asset(project, library, addon_id, resource):
             holder = f'from the {existing.addon} add-on' if existing.addon else 'of its own'
             raise ProjectError(f'The project already takes resource {resource} {holder}. Copy this one in instead.')
         return existing
-    asset = Asset(resource, f'{record["title"]} {resource}', None, addon_id)
+    from .assets import addon_asset_labels
+    label = addon_asset_labels(library, addon_id).get(resource)        # (a named add-on's: "scene Claires Office")
+    asset = Asset(resource, f'{record["title"]}: {label}' if label else f'{record["title"]} {resource}', None, addon_id)
     project.assets.append(asset)
     require_addon(project, addon_id, record['revision'])
     return asset

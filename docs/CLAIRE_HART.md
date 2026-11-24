@@ -71,7 +71,8 @@ behind CoD's buttons. Auto takes them after a case.
 A Cause of Death project can take `chc` as its **primary add-on** (**Add-ons and settings…**). It then looks as a case does:
 Claire Hart UI with Claire Hart Cases, the narrator's portrait, dimmed scenes, the green backdrop, the scenes' slices and
 Claire Hart 4:3, and the title look and tune on Auto. **Browse library images** names `chc`'s pictures: each portrait by its
-character and face, each scene, track and story object by name. The **Hidden-object round (Claire Hart)** node plays one of
+character and face, each scene, track and story object by name, and lists its 185 looks ("look Claire"), which a character
+takes as its portrait by reference: the player reads its five faces from `chc` as a case's are. The **Hidden-object round (Claire Hart)** node plays one of
 Classic's rounds from `chcrounds`, behind **Real minigames?**. See
 [CREATOR.md](CREATOR.md#example-a-claire-hart-scene-in-a-cod-project) for a worked example.
 

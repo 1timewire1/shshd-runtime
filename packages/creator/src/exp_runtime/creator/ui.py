@@ -222,6 +222,22 @@ class LibraryBrowser(QDialog):
         ok = self.buttons.button(QDialogButtonBox.StandardButton.Ok)
         try:
             resource = int(text.split(' ', 1)[0])
+            from .assets import addon_looks
+            look = addon_looks(self.library, self.addon).get(resource)
+            if look is not None:
+                # A look (Claire Hart's): its Normal face; used by reference for a character's portrait, never copied.
+                pixmap = QPixmap()
+                if not pixmap.loadFromData(image_png(self.library.addon(self.addon)[1].read(look[1][0]))):
+                    raise ProjectError('Image could not be decoded')
+                self.preview.setPixmap(pixmap.scaled(380, 360, Qt.AspectRatioMode.KeepAspectRatio,
+                                                    Qt.TransformationMode.SmoothTransformation))
+                self.preview.setToolTip(f'{look[0]}: five faces, Normal to Surprised. Use it from the add-on as a '
+                                        "character's portrait (Characters…).")
+                self.resource = resource
+                ok.setEnabled(False)
+                self.use_addon.setEnabled(True)
+                return
+            self.preview.setToolTip('')
             data = self.library.addon(self.addon)[1].read(resource)
             copyable = True
             if is_image(data):

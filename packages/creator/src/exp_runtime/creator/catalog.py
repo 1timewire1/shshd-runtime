@@ -13,9 +13,11 @@ def library_assets(workspace, library, *, episode=None, kind=None, query='', off
             held = content.addon(addon)
             if held is None:
                 raise ProjectError(f'The library has no {addon} add-on')
-            read, ids = held[1].read, sorted(held[1].entries)
-            from .assets import addon_asset_labels
+            from .assets import addon_asset_labels, addon_looks
             labels = addon_asset_labels(content, addon)
+            looks = addon_looks(content, addon)          # (a look is listed as its Normal face: Claire Hart's)
+            read = lambda resource, archive=held[1]: archive.read(looks[resource][1][0] if resource in looks else resource)
+            ids = sorted(set(held[1].entries) | set(looks))
         else:
             resources = content.open_episode(episode) if episode else content
             read = resources.archive.read if episode else content.read_asset
