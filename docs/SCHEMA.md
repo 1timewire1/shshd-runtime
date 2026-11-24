@@ -387,6 +387,7 @@ exp-runtime never read 3. Every member is optional:
 | `date_first` | `true` | Title and date cards show the date as the title |
 | `three_word_games` | `true` | A word game (71) may have three words, one or two of them good |
 | `big_pickers` | `true` | A portrait picker (78) may offer up to ten photos |
+| `narration_portrait` | `true` | A narrator line whose narrator has art shows its portrait, the box attached to it, no name plate (Claire Hart's narration). The only member a Cause of Death episode may declare (its profile's `PRESENTATION_RECORD`); SHS episodes may declare every member |
 | `minigames` | `true` | The episode plays translated mini-games, so the player offers their switch for it |
 | `aliases` | `{"resource": [addon, resource]}` | A picture or sound taken from an extra add-on, under one of the episode's numbers. One aliased to the episode's first required add-on counts as that add-on's own number for its switches ("'08 Backgrounds") |
 | `optional_art` | `{addon: {"resource": addon resource}}` | Pictures an optional add-on draws instead of the episode's own while it's imported and its switch is on (the profile's `OPTIONAL_ART`): the BREW Surviving Hollywood Preview with `shshw` and "Hollywood Art" |
@@ -517,3 +518,17 @@ as shown and loads in either language. The SHS '11 translator writes it
 Translations (`creator/features.languages_record`). A choice's options joined
 with `|`, or an option and its detail line, that have no entry of their own
 take each part's.
+
+## Backdrop slices extension (shshd-runtime)
+
+An episode may contain resource **7**, UTF-8 JSON with `format:
+"shshd-backdrop-slices"`, `version: 1` and `slices`, `{"<resource>": x}`
+(`backdrop_slices.py`; Claire Hart plan decision M, owner 2026-11-19). Claire
+Hart's scenes are 4:3 while Cause of Death's frame is 3:4: for a pack in its game
+profile's `BACKDROP_SLICES` (CoD: 31500, `chc`'s spec at 26998), a backdrop shows
+as its 3:4 slice, a window as tall as the picture whose left edge is `x` pixels
+in, filling the frame (a taller frame covers centred). The episode's record wins
+over the add-on spec's `scenes`, so a translated case can move a slice without a
+new add-on. The Claire Hart translator writes it
+(`tools/translate/claire_hart.py`). Native players and upstream exp-runtime
+never read resource 7.

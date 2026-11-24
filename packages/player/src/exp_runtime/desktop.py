@@ -8,6 +8,7 @@ import os
 import random
 import re
 from types import SimpleNamespace
+import weakref
 import webbrowser
 
 os.environ.setdefault('PYGAME_HIDE_SUPPORT_PROMPT', '1')
@@ -20,6 +21,7 @@ from .audio import music_cue
 from .games import GAMES, game_id, has_translated_minigames
 from .content import feature_pack, free_setting, optional_art_offered, pack_setting
 from .dsi import picture_for as dsi_picture_for
+from .backdrop_slices import pan_box
 from .desktop_text import BitmapTextRenderer
 from .desktop_dialogue import DialogueRenderer
 from .desktop_choice import ChoiceRenderer
@@ -44,6 +46,7 @@ from .desktop_x360_puzzle import X360PuzzleRenderer, cell_at, on_board
 from .desktop_x360_slot import X360SlotRenderer
 from .desktop_shs11_memory import Shs11MemoryRenderer, memory_spec
 from .desktop_brew_catch import BrewCatchRenderer
+from .desktop_claire_round import ClaireRoundRenderer, SOUND_BUTTON as CLAIRE_BUTTON
 from .desktop_shs11_reflex import Shs11ReflexRenderer
 from .gamepad import REPEAT_DELAY_MS, REPEAT_MS
 from .x360_games import DOWN, LEFT, RIGHT, SHAKE_WINDOW_STICK_MS, UP
@@ -52,7 +55,7 @@ from .x360_diss import (ROUND_BACKGROUNDS as X360_ROUND_BACKGROUNDS, ROUND_EPISO
                         SOUND_GOOD as X360_SOUND_GOOD, SOUND_REMIX as X360_SOUND_REMIX)
 from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, GRID_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
-from .desktop_pause_hd import (ASPECT_NAMES, TEXT_ANIMATION_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE, LANGUAGE_NAMES,
+from .desktop_pause_hd import (ASPECT_NAMES, CH_DIALOGUE_NAMES, CLAIRE_POWERUPS_NAMES, TEXT_ANIMATION_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE, LANGUAGE_NAMES,
                                drag_scroll, focus_step, place_controls)
 from . import backdrop_fit, frame_shape
 from .desktop_hd_menu import HdMenuWindows
@@ -109,6 +112,7 @@ STORY_SCALE = 2
 # window is wider so there's real room for the background layer to use it.
 DEFAULT_WINDOW_SIZE = (round(SIZE[1] * 3 / 4), SIZE[1])
 FRAME_UNITS = (384, 512)
+BAR_UNITS = 72                  # the column's bottom bar and gear band, in its 480 units (the edge layer's height)
 HD_BG_SHIFT = (48, -20.5)
 UI_BOTTOM_INSET = 5.5
 INK = (245, 241, 233)
@@ -125,6 +129,11 @@ WEB_LINK = re.compile(r'(https?|itms(-apps)?)://', re.I)
 
 
 OPAQUE_ENOUGH = 250
+# shshd-runtime: the pictures `_image` cut from a 4:3 scene about its 3:4 slice (Claire Hart decision M), a quarter wider so
+# they pan with the speaker as CoD's own scenes do (`_slice_placement`).
+SLICED_BACKDROPS = weakref.WeakSet()
+# ...and the whole 4:3 scene each was cut from, drawn in its place in Claire Hart's 4:3 frame (Desktop.wide_frame).
+WHOLE_BACKDROPS = weakref.WeakKeyDictionary()
 # "DSi Pixels" (the DSiWare add-on's backgrounds): nearest neighbour, the DS's own pixels (the default), or smooth scaling.
 DSI_PIXELS = ('sharp', 'smooth')
 
@@ -384,6 +393,10 @@ class Desktop:
     _word_grid_skin = False         # ...their minigames in the HD word game's look: the "Use Word Grid Skin" switch
     ch_portraits = True             # CoD with its portrait addon: the CH "HD Portraits in CoD" switch (set_ch_portraits)
     ch_backdrop = True              # ...and its "Backdrop", in place of SHS HD's collage (_window_backdrop)
+    dim_backdrops = True            # Claire Hart's translations: the "Dim Backdrops" switch (backdrop_dim)
+    ch_43 = True                    # ...and "Claire Hart 4:3": their cases in their own 4:3 where there's room (wide_frame)
+    _ch_dialogue = 'cases'          # Claire Hart UI: Off, Claire Hart Cases or Everywhere (set_ch_dialogue)
+    _claire_powerups = 'once'       # Claire Hart's rounds' Power-Ups: Once Each Round, Unlimited or Off
     _arena_minigames = True         # translated episodes: the "Use Translated Mini-Games" switch (arena_minigames)
     x360_tutorial = None            # a tutorial taken in the X360 look: the game's music request it began under
     arena_skin = False              # ...drawn in the X360 prototype's look: the "Use X360 Arena Skin" switch (x360_arena_switch)
@@ -629,6 +642,8 @@ class Desktop:
         self.shs11_reflex_renderer._images = self.shs11_memory_renderer._images
         self.shs11_reflex_renderer._glyphs = self.shs11_memory_renderer._glyphs
         self.brew_catch_renderer = BrewCatchRenderer(session.resources)
+        self.claire_round_renderer = ClaireRoundRenderer(session.resources)
+        self._warm_claire_rounds(session)
         self.x360_leash_renderer = X360LeashRenderer(session.resources)
         self.x360_puzzle_renderer = X360PuzzleRenderer(session.resources)
         self.cutscene_renderer = CutsceneRenderer(session.resources)
@@ -806,6 +821,7 @@ class Desktop:
                         raise ContentError(f'Resource {asset_id} is not a single RGBA image')
                     frame = pack.images[0]
                     self.images[asset_id] = pygame.image.frombytes(frame.pixels, (frame.width, frame.height), 'RGBA').convert_alpha()
+                self._slice_backdrop(asset_id)
             except (ContentError, pygame.error, OSError) as error:
                 self.images[asset_id] = None
                 logging.warning('Image %s cannot be displayed: %s', asset_id, error)
@@ -1344,6 +1360,10 @@ class Desktop:
                        else 'Diss battle: catch the word that rhymes with the needle.')
             prompt = self._open_prompt(action, 'Skip this mini-game?', summary,
                                        self.SKIP_OPTIONS, lambda index: self._resolve_x360_diss(action, index))
+        if (prompt is None and self.skip_minigames and action is not None and action.name == 'claire_round'
+                and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
+            prompt = self._open_prompt(action, 'Skip this mini-game?', 'A hidden-object round. Its score changes nothing that '
+                                       'follows.', ('Skip', 'Play'), lambda index: self._resolve_claire_round(action, index))
         if (prompt is None and self.skip_minigames and action is not None and action.name == 'x360_puzzle'
                 and self.minigame_played is not action and self.session.minigame_unstarted and not self.error):
             prompt = self._open_prompt(action, 'Skip this mini-game?', 'A jewel puzzle. Its score changes nothing that follows.',
@@ -1444,6 +1464,25 @@ class Desktop:
             return
         self._attempt(lambda: self.session.skip_minigame(index == 0))
 
+    def _resolve_claire_round(self, action, index):
+        """A Claire Hart round's skip prompt: Skip goes straight on, Play plays it."""
+        if self.session.pending is not action:
+            return
+        if index == 1:
+            self.minigame_played = action
+            self.session.start_minigame()
+            return
+        self._attempt(lambda: self.session.skip_minigame(True))
+
+    # -- shshd-runtime: Claire Hart's rounds (desktop_claire_round.py) ---------------------------------------------------------
+    CLAIRE_LEFT = (pygame.K_LEFT, pygame.K_q, pygame.K_a, pygame.K_PAGEUP)        # (a controller's L: PAGEUP, gamepad.py)
+    CLAIRE_RIGHT = (pygame.K_RIGHT, pygame.K_e, pygame.K_d, pygame.K_PAGEDOWN)    # (and its R: PAGEDOWN)
+
+    def _claire_ready(self):
+        action = self.session.pending
+        return (action is not None and action.name == 'claire_round' and not self.menu_open and not self.error
+                and self.host_prompt is None and self.claire_round_renderer.view is not None)
+
     def _loading_view(self, loading):
         """The stand-in a skip prompt's loading band draws from: the state service 91's band reads. The scene's pan too:
         Android's band places its background by it (a CoD word quiz's skip prompt closed the app while its outcomes were
@@ -1451,6 +1490,176 @@ class Desktop:
         engine = self.session.engine
         return SimpleNamespace(engine=SimpleNamespace(panel=engine.panel, loading=loading,
                                                       background_pan=engine.background_pan))
+
+    def _warm_claire_rounds(self, session):
+        """A Claire Hart case (one needing `chc`) opening with the rounds add-on in: its spec parsed now, behind the opening,
+        once for the library (ContentLibrary.addon_json), not at the case's first round (owner, 2026-11-21: ~200 ms a
+        parse on the g54, and both the engine and the renderer parsed it); and the choice panel's fonts, which its rounds'
+        skip prompt is the case's first use of (~300 ms on the g54 at a start's first round; the library keeps them)."""
+        library = getattr(session.resources, 'library', None)
+        record = getattr(session.resources, 'record', None)
+        if not getattr(session.engine, 'claire_rounds_ready', False) or library is None or record is None:
+            return
+        try:
+            if any(addon == 'chc' for addon, _ in library.episode_requires(record)):
+                library.addon_json('chcrounds', 26000)
+                from .choice import BODY_FONT
+                from .vector_text import load_font
+                for name in ('PajamaHipY26', BODY_FONT):
+                    self.story_text.font(name)
+                load_font(library, 'ArialRoundedMTBold15')
+        except (ContentError, OSError, ValueError, AttributeError, KeyError, pygame.error) as error:
+            logging.warning('Claire Hart rounds not read ahead: %s', error)
+
+    CLAIRE_PRELOAD_MS = 6                   # a frame's share of a round's preload while its skip prompt shows
+    CLAIRE_PRELOAD_AFTER_MS = 350           # (after the prompt's own entrance: those frames stay smooth)
+    _claire_preload = None                  # (the round, its preload steps or None once done)
+
+    def _preload_claire(self):
+        """While a round's skip prompt shows: its first frame's art read and drawn ahead (ClaireRoundRenderer.preload_steps),
+        CLAIRE_PRELOAD_MS a frame, so Play opens on a ready scene."""
+        game = self.session.engine.claire_round
+        if game is None or self.choice_renderer.age_ms < self.CLAIRE_PRELOAD_AFTER_MS:
+            return
+        current = self._claire_preload
+        if current is None or current[0] is not game:
+            current = self._claire_preload = (game, self.claire_round_renderer.preload_steps(game))
+        steps = current[1]
+        if steps is None:
+            return
+        end = pygame.time.get_ticks() + self.CLAIRE_PRELOAD_MS
+        try:
+            while pygame.time.get_ticks() < end:
+                next(steps)
+        except StopIteration:
+            self._claire_preload = (game, None)
+        except (ContentError, pygame.error, OSError, ValueError, KeyError, IndexError) as error:
+            logging.warning('Claire Hart round not read ahead: %s', error)     # (its first frame reads it, as before)
+            self._claire_preload = (game, None)
+
+    def _claire_sounds(self, renderer):
+        """Play the sounds the round's renderer queued (Classic's, from chcrounds)."""
+        due, renderer.sounds = renderer.sounds, []
+        if not self.sound_enabled:
+            return
+        library = self.session.resources.library
+        for name in dict.fromkeys(due):
+            resource = renderer.sound_resource(name)
+            if resource is None:
+                continue
+            try:
+                self._sound(('claire', name), lambda r=resource: library.addon_resource('chcrounds', r)).play()
+            except (ContentError, pygame.error, TypeError) as error:
+                logging.warning('Sound %s cannot be played: %s', name, error)
+
+    def _claire_point(self, pos):
+        """Window point `pos` on the round's canvas (the whole frame: fills_frame)."""
+        renderer, frame = self.claire_round_renderer, self.bg_viewport
+        width, height = renderer.canvas.get_size()
+        return (pos[0] - frame.x) * width / frame.width, (pos[1] - frame.y) * height / frame.height
+
+    def _claire_pointer(self, event):
+        """Taps, drags (panning once a press moves 5 points), the wheel (zoom), and the edge arrows (hovered with a mouse,
+        held with a finger) on a Claire Hart round."""
+        renderer, game = self.claire_round_renderer, self.session.engine.claire_round
+        if renderer.canvas is None or renderer.view is None or game is None:
+            return True
+        if event.type == pygame.MOUSEWHEEL:
+            x, y = self._claire_point(pygame.mouse.get_pos())
+            renderer.view.zoom_at(0.05 if event.y > 0 else -0.05, x, y)
+            return True
+        x, y = self._claire_point(event.pos)
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button != 1:
+                return True
+            meaning = renderer.hit(game, x, y)
+            if meaning and meaning[0] == 'arrow':
+                renderer.held, renderer.drag = meaning[1], None
+            else:
+                renderer.drag = ((x, y), (x, y), False)
+                renderer.pressed = 'continue' if meaning == ('continue',) else None
+            return True
+        if event.type == pygame.MOUSEMOTION:
+            if renderer.drag is not None and event.buttons[0]:
+                start, last, moving = renderer.drag
+                if moving or abs(x - start[0]) > 10 or abs(y - start[1]) > 10:
+                    renderer.view.pan(x - last[0], y - last[1])
+                    renderer.drag = (start, (x, y), True)
+                return True
+            if not event.buttons[0]:
+                over = [side for side, rect in zip((-1, 1), renderer.arrows()) if rect.collidepoint(x, y)]
+                renderer.held = over[0] if over else 0
+            return True
+        if event.button != 1:
+            return True
+        drag, renderer.drag, renderer.pressed = renderer.drag, None, None
+        renderer.held = 0
+        if drag is not None and drag[2]:
+            return True                                 # (a pan, not a tap)
+        meaning = renderer.hit(game, x, y)
+        if not meaning:
+            return True
+        kind = meaning[0]
+        if kind == 'scene':
+            self._attempt(lambda: self.session.claire_tap(meaning[1]))
+        elif kind == 'hint':
+            self._attempt(lambda: self.session.claire_use('hint'))
+        elif kind == 'powerup':
+            renderer.sounds.append(CLAIRE_BUTTON)
+            self._attempt(lambda: self.session.claire_use(meaning[1]))
+        elif kind == 'label' and game.locating:
+            self._attempt(lambda: self.session.claire_pick(meaning[1]))
+        elif kind == 'continue':
+            renderer.sounds.append(CLAIRE_BUTTON)
+            self._attempt(self.session.claire_continue)
+        elif kind == 'menu':
+            renderer.sounds.append(CLAIRE_BUTTON)
+            self.command(('menu',))
+        return True
+
+    def claire_pinch_start(self, centre):
+        """Two fingers landing on a Claire Hart round (the Android host's pinch): (its zoom then, the scene point between
+        them), or None when no round is being played."""
+        if not self._claire_ready():
+            return None
+        view = self.claire_round_renderer.view
+        self.claire_round_renderer.drag = None
+        return view.zoom, view.to_scene(*self._claire_point(centre))
+
+    def claire_pinch(self, start, factor, centre):
+        """The fingers `factor` times as far apart as they began: touchdetector's 1x to 2x, the scene point that was between
+        them kept there."""
+        if not self._claire_ready() or start is None:
+            return
+        zoom, (sx, sy) = start
+        view = self.claire_round_renderer.view
+        view.zoom = max(1.0, min(2.0, zoom * factor))
+        x, y = self._claire_point(centre)
+        view.cx += sx - view.to_scene(x, y)[0]
+        view.cy += sy - view.to_scene(x, y)[1]
+        view.clamp()
+
+    def _claire_key(self, event):
+        """The arrows, Q / E (A / D) and a controller's L / R pan while held; OK goes on from the Level Summary."""
+        if not self._claire_ready():
+            return False
+        renderer, game = self.claire_round_renderer, self.session.engine.claire_round
+        if event.key in self.CLAIRE_LEFT:
+            renderer.held = -1
+            return True
+        if event.key in self.CLAIRE_RIGHT:
+            renderer.held = 1
+            return True
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE) and game is not None and game.over:
+            renderer.sounds.append(CLAIRE_BUTTON)
+            self._attempt(self.session.claire_continue)
+            return True
+        return False
+
+    def _claire_key_up(self, event):
+        renderer = getattr(self, 'claire_round_renderer', None)
+        if renderer is not None and event.key in self.CLAIRE_LEFT + self.CLAIRE_RIGHT:
+            renderer.held = 0
 
     def _resolve_x360_puzzle(self, action, index):
         """The jewel puzzle's skip prompt: Skip goes straight on, Play plays it."""
@@ -1835,6 +2044,15 @@ class Desktop:
     # A speaker's bubble may hold extra rows in a frame taller than HD's (owner, 2026-11-11): as many whole rows (HD's
     # 26-unit line step) as fit in this share of the height the frame adds.
     EXTRA_ROWS_SHARE = .5
+    # Claire Hart's 4:3 frame (wide_frame): the column's dialogue drawn this much larger, to use the room (owner's pick
+    # of 1.2 / 1.35 / 1.5, 2026-11-22: claire_hart/43_dialogue_sizes.png).
+    WIDE_DIALOGUE = 1.35
+    WIDE_STATUS_MARGIN = .1         # ...where the margins beside it take this share of the width, nothing hangs below a status bar
+
+    def column_zoom(self, units):
+        """How much larger than HD's the column is drawn in a frame `units` (width, tall) in size: WIDE_DIALOGUE in
+        Claire Hart's 4:3 frame (wider than HD's 384 units), else 1."""
+        return self.WIDE_DIALOGUE if units[0] > FRAME_UNITS[0] else 1
     ROW_UNITS = 26
 
     def _sync_story_scale(self):
@@ -1847,14 +2065,21 @@ class Desktop:
         # A narrator's bubble keeps HD's distance from the frame's edge (its 32-unit margin less this frame's), and every
         # bubble sits nearer the middle of a taller frame, as the choice does (owner, 2026-11-11: narration was cut at a
         # phone's edge, and the bubbles read low).
-        self.session.dialogue_offset = (FRAME_UNITS[0] / 2 - 160 - self._edge_units,
+        # (Claire Hart's 4:3 frame keeps the bubbles in the column, enlarged with it: wide_frame.)
+        self.session.dialogue_offset = (0 if width > FRAME_UNITS[0] else FRAME_UNITS[0] / 2 - 160 - self._edge_units,
                                         (tall - FRAME_UNITS[1]) / 2)
         # A phone's status bar over the frame's top (Android draws an app under it): what hangs from the frame's top (a
         # game's HUD, the Faceplace alert) keeps below it.
         window_w, window_h = self.usable_size()     # (the frame keeps above a phone's navigation bar)
         scale = min(window_w / width, window_h / tall) if window_w > 0 and window_h > 0 else 1.
         self._top_pad = max(0., self.top_inset * window_h - (window_h - tall * scale) / 2) / scale
-        for game in (getattr(self, 'football_hd', None), getattr(self, 'word_hd', None), getattr(self, 'shs11_hd', None)):
+        if self.column_zoom((width, tall)) != 1 and window_w - width * scale >= window_w * self.WIDE_STATUS_MARGIN:
+            # Claire Hart's 4:3 frame on a phone in landscape: the status bar's time and icons sit at the screen's ends,
+            # over the margins beside the frame, so the round's top bar keeps Classic's place (g54, 2026-11-24: it sat
+            # under a strip). An iPad's 4:3 screen leaves none, and keeps the pad.
+            self._top_pad = 0.
+        for game in (getattr(self, 'football_hd', None), getattr(self, 'word_hd', None), getattr(self, 'shs11_hd', None),
+                     getattr(self, 'claire_round_renderer', None)):     # (a Claire Hart round's top bar too: R7)
             if game is not None:
                 game.top_pad = round(self._top_pad * 768 / width)       # (in its canvas's points)
         from .desktop_nr_arena import NATIVE
@@ -1868,10 +2093,15 @@ class Desktop:
                      getattr(self, 'shs11_memory_renderer', None), getattr(self, 'shs11_reflex_renderer', None),
                      getattr(self, 'x360_slot_renderer', None), getattr(self, 'x360_leash_renderer', None),
                      getattr(self, 'x360_puzzle_renderer', None), getattr(self, 'x360_diss_renderer', None),
-                     getattr(self, 'x360_battle_renderer', None)):
+                     getattr(self, 'x360_battle_renderer', None), getattr(self, 'claire_round_renderer', None)):
             if card is not None:
                 card.frame_units = (width, tall)        # drawn over the whole frame, its shape (desktop_title)
         scale = STORY_SCALE * FRAME_UNITS[0] / width
+        zoom = self.column_zoom((width, tall))
+        if zoom != 1:
+            # Claire Hart's 4:3 frame: drawn at the enlarged column's own density (a phone then needs no resample).
+            px = min(window_w / width, window_h / tall) if window_w > 0 and window_h > 0 else STORY_SCALE / 2
+            scale = round(px * zoom, 3)
         self.dialogue_renderer.edge_units = self._edge_units        # its bar's margins (cached with its scale)
         for renderer in (self.dialogue_renderer, self.choice_renderer, self.input_renderer, self.message_renderer):
             set_story_scale(renderer, scale)
@@ -2062,6 +2292,8 @@ class Desktop:
                 logging.error('Panel rendering stopped: %s', error)
         # The skip prompt (`_minigame_ask`) is drawn as a choice, from a stand-in for the session.
         source = ask['session'] if ask else self._choice_source()
+        if ask and not ask.get('loading') and action is not None and action.name == 'claire_round' and not self.error:
+            self._preload_claire()              # (the round behind it read ahead, a little a frame)
         if (action and (action.name in ('choice', 'word_game') or ask) and not self.error and not closed
                 and not (ask and ask.get('loading'))
                 and hasattr(self.session.resources, 'read_asset')):
@@ -2139,14 +2371,15 @@ class Desktop:
             except (ContentError, pygame.error, OSError, ValueError) as error:
                 self.error = str(error)
                 logging.error('Cutscene rendering stopped: %s', error)
-        if (action and action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle', 'shs11_memory', 'shs11_reflex', 'brew_catch') and not ask and not closed
+        if (action and action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'claire_round') and not ask and not closed
                 and not self.error):
             try:
                 engine = self.session.engine
                 renderer = {'x360_leash': self.x360_leash_renderer, 'x360_puzzle': self.x360_puzzle_renderer,
                             'x360_slot': self.x360_slot_renderer, 'x360_diss': self.x360_diss_renderer,
                             'x360_battle': self.x360_battle_renderer, 'brew_catch': self.brew_catch_renderer,
-                            'shs11_memory': self.shs11_renderer(action), 'shs11_reflex': self.shs11_renderer(action)}[action.name]
+                            'shs11_memory': self.shs11_renderer(action), 'shs11_reflex': self.shs11_renderer(action),
+                            'claire_round': self.claire_round_renderer}[action.name]
                 if action.name in ('shs11_memory', 'shs11_reflex', 'x360_diss', 'x360_battle'):
                     self._warm_shs11_sounds(getattr(engine, action.name), action.name)
                 if action.name == 'x360_leash':
@@ -2166,6 +2399,14 @@ class Desktop:
                     self.story_lift = max(0., (tall - picture * (2 - screen / renderer.canvas.get_height())) / 2)
                 self.panel_alpha = renderer.alpha(getattr(engine, action.name))
                 # The Word Grid skin draws the whole frame, its background too: nothing goes under it.
+                if renderer is self.claire_round_renderer:
+                    # Claire Hart's round draws the whole frame, its own bottom bar too (menu button, list, wheel).
+                    self._claire_sounds(renderer)
+                    self.pending_background = self.edge_layer = None
+                    self.buttons = []
+                    self.scroll = self.max_scroll = 0
+                    self._present()
+                    return
                 self.pending_background = None if renderer is self.shs11_hd else self.dialogue_renderer.image(
                     action.details.get('background_id', engine.panel.background_id))     # (a grid names its own)
                 if self.pending_background is not None:
@@ -2446,6 +2687,100 @@ class Desktop:
         addon = getattr(GAMES.get(game_id(self.session.resources)), 'PORTRAIT_ADDON', None)
         return addon is not None and hasattr(library, 'addon') and library.addon(addon[0]) is not None
 
+    @property
+    def ch_dialogue(self):
+        return self._ch_dialogue
+
+    @ch_dialogue.setter
+    def ch_dialogue(self, value):
+        """Claire Hart Dialogue's choice, kept by the library too (content.EpisodeResources.dialogue_skin); the line on screen
+        takes it at once (its page is laid out again)."""
+        self._ch_dialogue = value if value in CH_DIALOGUE_NAMES else 'cases'
+        library = getattr(getattr(self.__dict__.get('_session'), 'resources', None), 'library', None)
+        if library is not None:
+            library.ch_dialogue = self._ch_dialogue
+        renderer = self.__dict__.get('dialogue_renderer')
+        if renderer is not None:
+            renderer.cached_key = renderer._rest_drawn = None
+
+    @property
+    def claire_powerups(self):
+        return self._claire_powerups
+
+    @claire_powerups.setter
+    def claire_powerups(self, value):
+        """The Power-Ups setting, kept by the library too (a round opened next takes it); a round being played takes it at
+        once."""
+        from .claire_rounds import POWERUP_MODES
+        self._claire_powerups = value if value in POWERUP_MODES else 'once'
+        session = self.__dict__.get('_session')
+        library = getattr(getattr(session, 'resources', None), 'library', None)
+        if library is not None:
+            library.claire_powerups = self._claire_powerups
+        engine = getattr(session, 'engine', None)
+        if engine is not None:
+            engine.claire_powerups = self._claire_powerups
+            if engine.claire_round is not None:
+                engine.claire_round.powerups = self._claire_powerups
+
+    def claire_powerups_switch(self):
+        """Whether this is a Claire Hart case and the library holds its rounds (chcrounds)."""
+        # (a pack's TRANSLATED_MINIGAMES entry is None for all its episodes: minigames_switch asks it rightly; pack_setting's
+        # None read as "not one", and the setting never showed in a case, owner 2026-11-20)
+        library = getattr(self.session.resources, 'library', None)
+        return (game_id(self.session.resources) == 'cod' and self.minigames_switch()
+                and any(a.get('addon') == 'chcrounds' for a in getattr(library, 'addons', None) or ()))
+
+    def ch_dialogue_switch(self):
+        """Whether the game's add-on carries Claire Hart Dialogue (the profile's DIALOGUE_SKIN) in this library."""
+        entry = getattr(GAMES.get(game_id(self.session.resources)), 'DIALOGUE_SKIN', None)
+        library = getattr(self.session.resources, 'library', None)
+        return entry is not None and hasattr(library, 'addon_has') and library.addon_has(entry[0], entry[1])
+
+    def dim_switch(self):
+        """shshd-runtime: whether this episode's backdrops are darkened by the "Dim Backdrops" switch (the game profile's
+        TRANSLATED_BACKDROP_DIM: Claire Hart's translations)."""
+        return pack_setting(self.session.resources, 'TRANSLATED_BACKDROP_DIM') is not None
+
+    def ch_43_switch(self):
+        """Whether this episode's scenes are 4:3 ones cut to a 3:4 slice (the profile's BACKDROP_SLICES: Claire Hart's
+        cases), which "Claire Hart 4:3" shows whole in a 4:3 frame."""
+        session = self.__dict__.get('_session')
+        resources = getattr(session, 'resources', None)      # (none before a story opens)
+        return resources is not None and pack_setting(resources, 'BACKDROP_SLICES') is not None
+
+    def wide_frame(self):
+        """Whether the frame is Claire Hart's 4:3 (CLAIRE_HART_43_PLAN.md): the switch on, a Claire Hart case, and a window
+        (above a phone's navigation bar) at least 4:3. Asked as each frame is laid out, so turning a phone or resizing the
+        window switches it at once."""
+        return bool(self.ch_43) and frame_shape.has_wide_room(self.usable_size()) and self.ch_43_switch()
+
+    def backdrop_dim(self):
+        """The level this episode's backdrops are darkened to (0-255), or None to draw them as they are."""
+        session = self.__dict__.get('_session')
+        resources = getattr(session, 'resources', None)      # (none before a story opens)
+        pending = getattr(session, 'pending', None)
+        if pending is not None and pending.name == 'presentation':
+            return None             # a title card's picture is a store picture's scene, which Claire Hart never dims (owner,
+                                    # 2026-11-20), and the picker's previews are photos of it
+        return pack_setting(resources, 'TRANSLATED_BACKDROP_DIM') if self.dim_backdrops and resources is not None else None
+
+    def _dimmed(self, background):
+        """`background` darkened to backdrop_dim() (Claire Hart's backdrop node colour, a multiply), made once a picture and
+        kept while it is in use; the picture itself when it isn't dimmed."""
+        level = self.backdrop_dim()
+        if level is None or level >= 255:
+            return background
+        cache = self.__dict__.setdefault('_dimmed_art', {})
+        found = cache.get(id(background))
+        if found is None or found[0] is not background or found[1] != level:
+            if len(cache) >= 4:
+                cache.clear()
+            dark = background.copy()
+            dark.fill((level, level, level), special_flags=pygame.BLEND_RGB_MULT)
+            found = cache[id(background)] = (background, level, dark)
+        return found[2]
+
     def minigames_switch(self):
         """shshd-runtime: whether this episode has minigames the "Use Translated Mini-Games" switch changes (the game
         profile's TRANSLATED_MINIGAMES)."""
@@ -2484,6 +2819,7 @@ class Desktop:
         self._drop_portraits()
         self.dialogue_renderer.drop_translated_badges()
         self.brew_catch_renderer.drop_images()
+        self.claire_round_renderer.drop_images()
         self._frame_backdrop_cache = (None, {})          # both box colours' backdrops, as scaled so far
         self.badge_hd._tab_cache = None                  # a time badge on screen, with its icon
 
@@ -2507,6 +2843,7 @@ class Desktop:
         self._drop_portraits()
         self.dialogue_renderer.drop_translated_badges()
         self.brew_catch_renderer.drop_images()
+        self.claire_round_renderer.drop_images()
         self._frame_backdrop_cache = (None, {})
         self.badge_hd._tab_cache = None
 
@@ -2592,6 +2929,20 @@ class Desktop:
         if library is not None:
             library.shs11_language = self.shs11_language
 
+    def _slice_backdrop(self, asset_id):
+        """A translated pack's 4:3 scene cut to the window it pans across about its 3:4 slice
+        (content.EpisodeResources.backdrop_slice, backdrop_slices.pan_box; Claire Hart decision M), in place of the whole
+        picture in `images`."""
+        slicer = getattr(self.session.resources, 'backdrop_slice', None)
+        x = slicer(asset_id) if slicer is not None else None
+        image = self.images.get(asset_id)
+        if x is None or image is None:
+            return
+        sliced = image.subsurface(pan_box(image.get_size(), x)).copy()
+        self.images[asset_id] = sliced
+        SLICED_BACKDROPS.add(sliced)
+        WHOLE_BACKDROPS[sliced] = image          # (kept: a 4:3 frame shows it whole, and the frame may switch at any time)
+
     def _dsi_screen(self, background):
         """shshd-runtime: the DSi screen to draw in place of `background` (DSi Backgrounds), or None: the left screen while the
         location is aligned left (a speaker on the left), the right one while it's aligned right, and the last one shown for
@@ -2642,7 +2993,7 @@ class Desktop:
 
     def _drop_portraits(self):
         self.images.clear()
-        cached = [DialogueRenderer.portrait, DialogueRenderer.hd_portrait, DialogueRenderer.portrait_parts,
+        cached = [DialogueRenderer.portrait, DialogueRenderer.hd_portrait, DialogueRenderer._portrait_parts,
                   CharacterPickerRenderer.portrait, HdCharacterPickerRenderer.portrait]
         if HdWordRenderer is not None:
             cached.append(HdWordRenderer.portrait_image)
@@ -2700,11 +3051,16 @@ class Desktop:
         self._present_scale = scale
         frame = pygame.Rect(0, 0, max(1, round(units[0] * scale)), max(1, round(units[1] * scale)))
         frame.center = (width // 2, usable // 2)
-        # A whole 3:4 picture is as wide as the frame (narrower than HD's from 9:16, so a fifth smaller there).
-        picture = pygame.Rect(0, 0, frame.width, max(1, round(units[0] * 4 / 3 * scale)))
+        # A whole 3:4 picture is as wide as the frame (narrower than HD's from 9:16, so a fifth smaller there); in Claire
+        # Hart's 4:3 frame (wide_frame) it is as tall as the frame, centred across it.
+        across = min(units[0], units[1] * 3 / 4)
+        picture = pygame.Rect(0, 0, max(1, round(across * scale)), max(1, round(across * 4 / 3 * scale)))
+        picture.x = (frame.width - picture.width) // 2
         self._frames = (frame, picture.move(frame.x, frame.bottom - picture.height),
                         picture.move(frame.x, frame.centery - picture.height // 2), picture.move(frame.x, frame.y))
-        target_size = (max(1, round(320 * scale)), max(1, round(480 * scale)))
+        # Claire Hart's 4:3 frame draws the column's dialogue WIDE_DIALOGUE larger (the gear and bar as they are).
+        zoom = self.column_zoom(units)
+        target_size = (max(1, round(320 * scale * zoom)), max(1, round(480 * scale * zoom)))
         with frame_log.section('present'):
             # A screen with its own layer leaves the canvas empty: no pass, and nothing to blit.
             if self._canvas_empty():
@@ -2722,6 +3078,11 @@ class Desktop:
         # 3.9 px per unit; the right border matched to a pixel).
         self.viewport = pygame.Rect(frame.x + round(edge * scale),
                                     frame.bottom - target_size[1] - round(UI_BOTTOM_INSET * scale), *target_size)
+        if zoom != 1:
+            # Enlarged about the top of the column's bar, so the bubbles keep their place above the (unenlarged) bar;
+            # the column's top runs past the frame's, where nothing of a line is drawn.
+            self.viewport.x = frame.centerx - target_size[0] // 2
+            self.viewport.y += round(BAR_UNITS * (zoom - 1) * scale)
         self.bg_viewport = frame
         bg_size = frame.size
         with frame_log.section('backdrop'):
@@ -2796,7 +3157,7 @@ class Desktop:
             ui_layers.append((layer, area))
         if self.edge_layer is not None and not self.capture:
             # HD's bottom bar and gear run to the edges of its frame.
-            edge_height = round(self.viewport.height * 72 / 480)
+            edge_height = round(self.viewport.height * BAR_UNITS / 480 / zoom)
             edge_size = (self.bg_viewport.width, edge_height)
             # The layer is the same surface until the bar changes (bottom_bar_layer's cache).
             if self._edge_scaled[:2] != (self.edge_layer, edge_size):
@@ -3092,7 +3453,14 @@ class Desktop:
         # open before any is set, issue #8) or one still fading in shows black, not the window's backdrop.
         background = self.pending_background
         dsi = self._dsi_screen(background)
-        if dsi is not None:
+        if dsi is None and background is not None and background in SLICED_BACKDROPS:
+            whole = WHOLE_BACKDROPS.get(background)
+            if whole is not None and self.__dict__.get('_frame_width', FRAME_UNITS[0]) > FRAME_UNITS[0]:
+                # Claire Hart's 4:3 frame: the whole scene, as Classic framed it, fitted to the frame, no pan.
+                background, placement = whole, self._whole_placement(whole, target_size)
+            else:
+                placement = self._slice_placement(background, target_size)
+        elif dsi is not None:
             # A DSi screen is the frame's own 3:4: it fills HD's frame, and covers a taller one centred, its sides cut
             # (owner, 2026-11-15); the speaker's side picks the screen rather than panning it.
             background, origin = dsi, self.pending_background_origin
@@ -3372,6 +3740,26 @@ class Desktop:
             sx, sy = tw / window.width, th / window.height
             return (-window.x * sx, -window.y * sy, bw * sx, bh * sy)
 
+    @staticmethod
+    def _whole_placement(background, target_size):
+        """Where a whole 4:3 scene lies in Claire Hart's 4:3 frame, (x, y, width, height) in target pixels: covering it,
+        centred (the same shape, so exactly the frame)."""
+        bw, bh = background.get_size()
+        tw, th = target_size
+        k = max(tw / bw, th / bh)
+        return (tw - bw * k) / 2, (th - bh * k) / 2, bw * k, bh * k
+
+    def _slice_placement(self, background, target_size):
+        """Where a sliced scene lies (SLICED_BACKDROPS), (x, y, width, height) in target pixels: as tall as the frame (or
+        wide, in a frame too wide for it), centred upright, panned across as CoD's scenes are, flush left for a speaker on
+        the left, flush right for one on the right, narration leaving it where it was (location_pan.py, 0.25 s)."""
+        bw, bh = background.get_size()
+        tw, th = target_size
+        k = max(th / bh, tw / bw)
+        width, height = bw * k, bh * k
+        centre = self.location_pan.x(self.session.engine.panel.location_align, width, pygame.time.get_ticks(), frame=tw)
+        return centre - width / 2, (th - height) / 2, width, height
+
     def _location_pans(self, cy):
         """Whether the location layer pans by speaker (location_pan.py): a dialogue scene's picture (focal y 180)
         with HD's art, and every Cause of Death scene."""
@@ -3435,6 +3823,7 @@ class Desktop:
         """Draw `background` laid over `placement` (see _background_placement), clipped to the frame. Where the
         picture does not reach the frame's edge (Cause of Death's art is exactly its screen wide, so the frame's side
         margins can reach past it), the art keeps its scale and the rest stays uncovered."""
+        background = self._dimmed(background)     # (Claire Hart's translations: Dim Backdrops)
         bw, bh = background.get_size()
         x, y, w, h = placement
         tw, th = target_size
@@ -3807,12 +4196,19 @@ class Desktop:
                     **({'word_grid_skin': self.word_grid_skin} if self.smartphone_switch() and self.word_grid_switch() else {}),
                     **({'grids_as_memory': self.grids_as_memory} if self.memory_grid_switch() else {}),
                     **(dict(ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop) if self.ch_switch() else {}),
+                    **({'dim_backdrops': self.dim_backdrops} if self.dim_switch() else {}),
+                    **({'ch_43': self.ch_43} if getattr(self, 'ch_43_switch', None) and self.ch_43_switch() else {}),
+                    **({'ch_dialogue': CH_DIALOGUE_NAMES[self.ch_dialogue]} if self.ch_dialogue_switch() else {}),
+                    **({'claire_powerups': CLAIRE_POWERUPS_NAMES[self.claire_powerups]}
+                       if getattr(self, 'claire_powerups_switch', None) and self.claire_powerups_switch() else {}),
                     **({'arena_minigames': self.arena_minigames} if self.minigames_switch() else {}),
                     **({'arena_skin': self.arena_skin} if self.hires_switch() and self.x360_arena_switch() else {}))
 
     def frame_units(self):
         """The frame's size in layout units for General's Aspect Ratio in this window (frame_shape.frame_units), above a
-        phone's navigation bar (usable_size)."""
+        phone's navigation bar (usable_size); Claire Hart's 4:3 where it applies (wide_frame)."""
+        if self.wide_frame():
+            return frame_shape.WIDE_UNITS
         return frame_shape.frame_units(self.aspect_ratio, self.usable_size(), self.fixed_window)
 
     def nav_height(self):
@@ -4002,6 +4398,27 @@ class Desktop:
             self.pause_hd.back()
             self._menu_sound()
             return
+        if kind == 'pause_cycle' and command[1] == 'claire_powerups':
+            # Add-Ons' Power-Ups (Claire Hart's rounds), picked on its choice page (or stepped to the next); the app keeps it.
+            choices = list(CLAIRE_POWERUPS_NAMES)
+            self.claire_powerups = (command[2] if len(command) > 2
+                                    else choices[(choices.index(self.claire_powerups) + 1) % len(choices)])
+            if self.on_settings:
+                self.on_settings()
+            if len(command) > 2:
+                self.pause_hd.back()
+            self._menu_sound()
+            return
+        if kind == 'pause_cycle' and command[1] == 'ch_dialogue':
+            # Add-Ons' Claire Hart Dialogue, picked on its choice page (or stepped to the next); the app keeps it.
+            choices = list(CH_DIALOGUE_NAMES)
+            self.ch_dialogue = command[2] if len(command) > 2 else choices[(choices.index(self.ch_dialogue) + 1) % len(choices)]
+            if self.on_settings:
+                self.on_settings()
+            if len(command) > 2:
+                self.pause_hd.back()
+            self._menu_sound()
+            return
         if kind == 'pause_cycle' and command[1] == 'dsi_backgrounds':
             # Extras' DSi Backgrounds, picked on its choice page (or stepped to the next): Off, or on with its pixels Sharp
             # or Smooth (owner, 2026-11-19); the app keeps it (on_settings).
@@ -4110,6 +4527,10 @@ class Desktop:
                 self.set_ch_portraits(not self.ch_portraits)
             elif command[1] == 'ch_backdrop':
                 self.ch_backdrop = not self.ch_backdrop
+            elif command[1] == 'ch_43':
+                self.ch_43 = not self.ch_43
+            elif command[1] == 'dim_backdrops':
+                self.dim_backdrops = not self.dim_backdrops
             elif command[1] == 'arena_minigames':
                 self.arena_minigames = not self.arena_minigames
             elif command[1] == 'arena_skin':
@@ -4334,7 +4755,8 @@ class Desktop:
             event = self._portrait_game_event(event)
         if event.type == pygame.KEYUP:
             self._puzzle_key_up(event)
-        if event.type == pygame.KEYDOWN and (self._arena_key(event) or self._slot_key(event) or self._memory_key(event) or self._leash_key(event) or self._puzzle_key(event) or self._football_key(event) or self._grid_key(event)):
+            self._claire_key_up(event)
+        if event.type == pygame.KEYDOWN and (self._claire_key(event) or self._arena_key(event) or self._slot_key(event) or self._memory_key(event) or self._leash_key(event) or self._puzzle_key(event) or self._football_key(event) or self._grid_key(event)):
             return True
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             if self.menu_open:
@@ -4414,6 +4836,9 @@ class Desktop:
             if command is not None:
                 self.command(command)
             return True
+        if (action and action.name == 'claire_round' and not self.menu_open and not self.error and not asking
+                and event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL)):
+            return self._claire_pointer(event)
         if (action and action.name in ('x360_slot', 'x360_diss', 'x360_battle', 'brew_catch') and not self.menu_open and not self.error
                 and not asking and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1):
             x, y, height = self._game_point(event.pos, {'x360_slot': self.x360_slot_renderer,
@@ -5477,8 +5902,12 @@ class Desktop:
         # What the last presented frame left (the drawing reads the frame's size from it, as `present` sets it after
         # the story is drawn), kept for the live frame that follows.
         presented = {key: self.__dict__[key] for key in self.PRESENTED if key in self.__dict__}
+        wide = self.__dict__.get('ch_43', missing := object())
         if not shaped:
             self.aspect_ratio = '3:4'
+            # ...and not Claire Hart's 4:3 (wide_frame): a save's picture is 3:4, its slice and dialogue as at 3:4 (a 4:3
+            # frame was squeezed into it; owner, 2026-11-24).
+            self.ch_43 = False
             # This render's own shape from its first draw: else the story is laid out for the live frame and presented
             # in a 3:4 one, which from 9:16 (a narrower frame) lost the choice and the portrait (2026-11-18, 9:20 save).
             self._frame_width, self._frame_tall = self.frame_units()
@@ -5504,6 +5933,10 @@ class Desktop:
             self.menu_open = opened
             self.capture = was_capture
             self.aspect_ratio = shape
+            if wide is missing:
+                self.__dict__.pop('ch_43', None)
+            else:
+                self.ch_43 = wide
         frame = self.bg_viewport.clip(self.window.get_rect())
         if shaped:
             size = (size[0], max(1, round(frame.height * size[0] / max(1, frame.width))))

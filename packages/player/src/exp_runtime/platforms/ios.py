@@ -343,6 +343,24 @@ class Host:
         panels = (getattr(game, 'side_panels', None)
                   if game is not None and (game.panels_open or game.panels_overlay) else None)
         centre = tuple(event['point'])
+        # shshd-runtime: on a Claire Hart round (not over the tree), the scene zooms (Desktop.claire_pinch_start).
+        if event['phase'] == 'began':
+            self.pinch_round = None
+            if (game is not None and hasattr(game, 'claire_pinch_start')
+                    and not (panels is not None and panels.tree_rect is not None and panels.tree_rect.collidepoint(centre))):
+                start = game.claire_pinch_start(centre)
+                if start is not None:
+                    self.pinch_round = [start, 1.0]
+                    return
+        elif getattr(self, 'pinch_round', None) is not None:
+            if event['phase'] == 'ended' or game is None:
+                self.pinch_round = None
+                return
+            scale = float(event['scale'])
+            if scale > 0:
+                self.pinch_round[1] *= scale
+            game.claire_pinch(self.pinch_round[0], self.pinch_round[1], centre)
+            return
         if event['phase'] == 'began':
             self.pinch_at = None
             if panels is not None and panels.tree_rect is not None and panels.tree_rect.collidepoint(centre):

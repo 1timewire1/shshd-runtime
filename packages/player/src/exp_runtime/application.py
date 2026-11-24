@@ -1279,6 +1279,45 @@ class Application:
         return any(record.get('pack_id') in packs for record in self.library.episodes) if packs else False
 
     @library_answer
+    def dim_backdrops_offered(self):
+        """Whether the library has an episode whose backdrops the "Dim Backdrops" switch darkens (the game profile's
+        TRANSLATED_BACKDROP_DIM: Claire Hart's translations)."""
+        packs = getattr(GAMES.get(self.library.game_id), 'TRANSLATED_BACKDROP_DIM', {}) if self.library else {}
+        return bool(packs) and bool(set(packs) & self.library.feature_packs())
+
+    @library_answer
+    def ch_43_offered(self):
+        """Whether the library has an episode whose 4:3 scenes the "Claire Hart 4:3" switch shows whole (the game profile's
+        BACKDROP_SLICES: Claire Hart's translations; CLAIRE_HART_43_PLAN.md)."""
+        packs = getattr(GAMES.get(self.library.game_id), 'BACKDROP_SLICES', {}) if self.library else {}
+        return bool(packs) and bool(set(packs) & self.library.feature_packs())
+
+    @library_answer
+    def ch_dialogue_offered(self):
+        """Whether the library's add-on carries Claire Hart Dialogue's skin (the game profile's DIALOGUE_SKIN)."""
+        entry = getattr(GAMES.get(self.library.game_id), 'DIALOGUE_SKIN', None) if self.library else None
+        return entry is not None and hasattr(self.library, 'addon_has') and self.library.addon_has(entry[0], entry[1])
+
+    @library_answer
+    def claire_powerups_offered(self):
+        """Whether the library holds Claire Hart's rounds (chcrounds), whose power-ups the Power-Ups setting rules."""
+        return self.library is not None and any(a.get('addon') == 'chcrounds' for a in getattr(self.library, 'addons', ()))
+
+    def apply_claire_powerups(self):
+        """The Power-Ups setting reaches the library (a round opened next) and a paused episode (its round now)."""
+        if self.library is not None:
+            self.library.claire_powerups = self.state.claire_powerups
+        if self.game:
+            self.game.claire_powerups = self.state.claire_powerups
+
+    def apply_ch_dialogue(self):
+        """Claire Hart Dialogue reaches the library (content.EpisodeResources.dialogue_skin) and a paused episode."""
+        if self.library is not None:
+            self.library.ch_dialogue = self.state.ch_dialogue
+        if self.game:
+            self.game.ch_dialogue = self.state.ch_dialogue
+
+    @library_answer
     def portrait_addon_offered(self):
         """Whether the library has the game's optional portrait addon (the profile's PORTRAIT_ADDON), so its switches
         change something."""
@@ -1650,6 +1689,8 @@ class Application:
             library.hd_art_mode = state.hd_art          # the player's choice (player.json), unless the environment sets it
         library.hires_portraits = state.hires_portraits
         library.ms3_characters = state.ms3_characters
+        library.ch_dialogue = getattr(state, 'ch_dialogue', 'cases')
+        library.claire_powerups = getattr(state, 'claire_powerups', 'once')
         library.java_look = state.java_look
         library.brew_08_backgrounds = state.brew_08_backgrounds
         library.hollywood_art = state.hollywood_art
@@ -2450,6 +2491,10 @@ class Application:
         self.game.undo = self.state.undo
         self.game.shs11_seen_this_run = self.__dict__.setdefault('shs11_seen_this_run', set())     # (for as long as the app runs)
         self.game.ch_portraits, self.game.ch_backdrop = self.state.ch_portraits, self.state.ch_backdrop
+        self.game.dim_backdrops = self.state.dim_backdrops
+        self.game.ch_43 = getattr(self.state, 'ch_43', True)
+        self.game.ch_dialogue = self.state.ch_dialogue
+        self.game.claire_powerups = getattr(self.state, 'claire_powerups', 'once')
         self.game.arena_minigames = self.state.arena_minigames
         self.game.arena_skin = self.state.arena_skin
         # The app's lock (string 271: "complete Football Season") is Football Star's; another episode's own tree is never locked.
@@ -2571,6 +2616,10 @@ class Application:
         self.state.skip_ahead = self.game.skip_ahead
         self.state.undo = self.game.undo
         self.state.ch_portraits, self.state.ch_backdrop = self.game.ch_portraits, self.game.ch_backdrop
+        self.state.dim_backdrops = self.game.dim_backdrops
+        self.state.ch_43 = getattr(self.game, 'ch_43', True)
+        self.state.ch_dialogue = self.game.ch_dialogue
+        self.state.claire_powerups = getattr(self.game, 'claire_powerups', 'once')
         self.state.arena_minigames = self.game.arena_minigames
         self.state.arena_skin = self.game.arena_skin
         self.state.music_volume = round(self.game.music_volume * 100)
@@ -2835,7 +2884,7 @@ class Application:
                 if key not in ('music', 'sound', 'vibration', 'device_vibration', 'choice_hints', 'skip_minigames',
                                'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
                                'hires_portraits', 'ms3_characters', 'java_look', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'skip_ahead', 'undo', 'ch_portraits', 'ch_backdrop',
-                               'arena_minigames', 'brew_08_backgrounds', 'hollywood_art', 'dsi_backgrounds',
+                               'dim_backdrops', 'ch_43', 'arena_minigames', 'brew_08_backgrounds', 'hollywood_art', 'dsi_backgrounds',
                                'arena_skin'):
                     raise ValueError('Unknown preference')
                 previous = getattr(self.state, key)
@@ -2880,6 +2929,7 @@ class Application:
                     self.game.disable_choice_timer = self.state.disable_choice_timer
                     self.game.arena_minigames = self.state.arena_minigames
                     self.game.arena_skin = self.state.arena_skin
+                    self.game.ch_43 = getattr(self.state, 'ch_43', True)
                     self.game._sync_music()
             elif kind in ('save', 'load') and self.paused_menu:
                 self.game.command((kind,))

@@ -66,6 +66,8 @@ class CodShell(HdShell):
         self.stack = MenuStack(self.data, self.perform)
         self.main.backdrop_enabled = lambda: app.state.hd_backdrop
         self.main.ch_backdrop_enabled = lambda: app.state.ch_backdrop
+        from .hd_ui import HdUi
+        HdUi.look_source = app.title_look       # Add-Ons' Title Screen Look (Claire Hart's, cod/profile.py TITLE_LOOKS)
         self.pause = CodPauseMenu(SimpleNamespace(library=library), art)
         self.pause.main_menu = True
         self.stage = 'loading'
@@ -86,19 +88,21 @@ class CodShell(HdShell):
         """Derive CoD's HD common frames (ContentLibrary.cod_hd_common, about 2 s, cached for the process) on a thread
         while the launch screens show, so the episode loading screen's runner and the story's chrome do not hold up
         the first frame that needs them. The bytes are read here; the thread only computes."""
+        # The dialogue and choice skins too (2026-11-21: made at a story's first choice, 1.9 s), through the library, which
+        # keeps what it makes on disk (ContentLibrary._derived): from the second start these are reads.
         try:
-            hd = self.library.shs_hd_resource(155) if getattr(self.library, 'shs_hd_art', None) is not None else None
-            cod = self.library.android_asset(126) if hd is not None else None
+            jobs = self.library.cod_hd_jobs() if getattr(self.library, 'shs_hd_art', None) is not None else []
         except Exception:
-            hd = None
-        if hd is None:
+            jobs = []
+        if not jobs:
             self.art_ready.set()            # nothing to derive
             return
+        library = self.library
 
         def derive():
             try:
-                from .cod.hd_art import derived_common
-                derived_common(cod, hd)
+                for kind, inputs, compute in jobs:
+                    library._derived(kind, inputs, compute)
             except Exception:
                 pass
             finally:

@@ -1,7 +1,12 @@
-"""The `chslim` addon, "Claire Hart (Slim)": Claire Hart Classic's sharper originals of Cause of Death's portraits, and a little
-of Claire Hart's interface for its translated episodes, built from the player's own files.
+"""The `chslim` addon, "Claire Hart (Slim)": Claire Hart Classic's sharper originals of Cause of Death's portraits, built from
+the player's own files. With `--chc`, the start of `chc`, "Claire Hart Classic", the translated cases' add-on: the same
+pictures under the same IDs and map, plus the rest of EXTRA_PEOPLE and Claire Hart's interface, superseding chslim.
 
-    python tools/translate/chslim.py --mirror CLAIRE_HART_DIR --pairs PAIRS.txt --catalog COD_CATALOG --cod-library LIBRARY --extras DIR --out DIR
+    python tools/translate/chslim.py --mirror CLAIRE_HART_DIR --pairs PAIRS.txt --catalog COD_CATALOG --cod-library LIBRARY --extras DIR --out DIR [--chc]
+
+Revision 2 (owner, 2026-11-19): chslim keeps only what CoD shows (its portraits, the backdrop, the two pictures made for
+it). Claire Hart's own episodes won't be played from it (Other Games/docs/CLAIRE_HART_PLAN.md, "chslim for translation"),
+so the rest of EXTRA_PEOPLE, the bubbles and the fonts moved to `chc`, which began as chslim revision 1 exactly.
 
 CoD's episodes can't name an addon, so this one is optional (cod/profile.py PORTRAIT_ADDON): the player finds a picture by a
 hash of CoD's bytes in the map at SPEC. Every portrait of Claire Hart has a lasting ID (PORTRAIT_BASE + its place in the mirror's
@@ -22,7 +27,9 @@ from PIL import Image
 from exp_runtime.addons import RESOURCE as ADDON_RECORD, provides_bytes
 from exp_runtime.exp import ExpArchive, Metadata, encode_exp
 
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'chslim', 'Claire Hart (Slim)', 1
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'chslim', 'Claire Hart (Slim)', 2
+# The translated cases' add-on, begun as chslim revision 1 (plan Stage 0): it stands in for chslim, which it holds all of.
+CHC_ID, CHC_TITLE, CHC_REVISION = 'chc', 'Claire Hart Classic', 2      # (2: the skin's other screens, 29109 on)
 PACK_ID = 31500                         # its metadata's pack: no episode of it exists yet
 SPEC = 28000                            # the map and contents (cod/profile.py PORTRAIT_ADDON)
 BACKDROP, SPEAKER_BOX, NARRATOR_BOX, FONT, FONT_BOLD = 28001, 28002, 28003, 28004, 28005
@@ -135,9 +142,16 @@ def library_pictures(folder):
             yield data
 
 
-def build(mirror, pairs, catalog, sources, extras):
-    """The addon's `.exp` bytes and a report. `mirror`: the Claire Hart Classic folder (bundle_names.csv and raw/), `pairs`: read_pairs',
-    `catalog`: the CoD catalogue's portraits folder, `sources`: library_pictures', `extras`: the EDITED pictures' folder."""
+def build(mirror, pairs, catalog, sources, extras, *, chc=False):
+    """The addon's `.exp` bytes and a report (`contents`' resources, encoded)."""
+    resources, report = contents(mirror, pairs, catalog, sources, extras, chc=chc)
+    return encode_exp(resources), report
+
+
+def contents(mirror, pairs, catalog, sources, extras, *, chc=False):
+    """The addon's resources {ID: bytes} and a report. `mirror`: the Claire Hart Classic folder (bundle_names.csv and raw/), `pairs`: read_pairs',
+    `catalog`: the CoD catalogue's portraits folder, `sources`: library_pictures', `extras`: the EDITED pictures' folder.
+    `chc`: the Claire Hart Classic add-on instead, with EXTRA_PEOPLE's other pictures and the whole INTERFACE."""
     mirror = Path(mirror)
     with open(mirror / 'bundle_names.csv', encoding='utf-8-sig', newline='') as file:
         rows = [row for row in csv.DictReader(file) if row['part'] == 'native']
@@ -153,15 +167,17 @@ def build(mirror, pairs, catalog, sources, extras):
         cod = Image.open(catalog / f'{number}.png').convert('RGBA')
         picture = Image.open(files[path]).convert('RGBA')
         resources[ids[path]] = png(framed(picture, crop or (0, 0, *picture.size), cod))
-    extra = sorted(p for p in characters if p.split('/')[2] in EXTRA_PEOPLE and p not in crops)
+    extra = sorted(p for p in characters if p.split('/')[2] in EXTRA_PEOPLE and p not in crops) if chc else []
     for path in extra:
         resources[ids[path]] = png(whole(Image.open(files[path]).convert('RGBA')))
     mapped = {number: pair for number, pair in pairs.items() if number not in NOT_MAPPED}
     wanted = {number: pixels((catalog / f'{number}.png').read_bytes())
               for number in {*mapped, *(number for number, _, _ in EDITED)}}
     found = hashes(wanted, sources)
-    spec = dict(portraits={}, resources={}, backdrop=BACKDROP, speaker_box=SPEAKER_BOX, narrator_box=NARRATOR_BOX, font=FONT,
-                font_bold=FONT_BOLD, characters={path: ids[path] for path in sorted(crops) + extra})
+    spec = dict(portraits={}, resources={}, backdrop=BACKDROP)
+    if chc:                             # (in revision 1's order: chc's map is chslim revision 1's, byte for byte)
+        spec.update(speaker_box=SPEAKER_BOX, narrator_box=NARRATOR_BOX, font=FONT, font_bold=FONT_BOLD)
+    spec['characters'] = {path: ids[path] for path in sorted(crops) + extra}
     for number, (path, _) in mapped.items():
         for key in found[number]:
             spec['portraits'][key] = ids[path]
@@ -172,14 +188,20 @@ def build(mirror, pairs, catalog, sources, extras):
                 spec['portraits'][key] = EDITED_BASE + index
             else:
                 spec['resources'][f'{key}:{resource}'] = EDITED_BASE + index
-    for resource, path in INTERFACE:
+    for resource, path in INTERFACE if chc else INTERFACE[:1]:
         resources[resource] = files[path].read_bytes()
     resources[SPEC] = json.dumps(spec, separators=(',', ':')).encode('utf-8')
-    resources[ADDON_RECORD] = provides_bytes(ADDON_ID, ADDON_TITLE, ADDON_REVISION)
-    resources[1] = Metadata(PACK_ID, 0, (ADDON_TITLE + ' (addon)',) * 5).to_bytes()
+    if chc:
+        # Claire Hart Dialogue's art and spec, 29100 on (ch_dialogue_skin.py; owner, 2026-11-19).
+        from ch_dialogue_skin import build as dialogue_skin
+        resources.update(dialogue_skin(mirror))
+        resources[ADDON_RECORD] = provides_bytes(CHC_ID, CHC_TITLE, CHC_REVISION, supersedes=((ADDON_ID, ADDON_REVISION),))
+    else:
+        resources[ADDON_RECORD] = provides_bytes(ADDON_ID, ADDON_TITLE, ADDON_REVISION)
+    resources[1] = Metadata(PACK_ID, 0, ((CHC_TITLE if chc else ADDON_TITLE) + ' (addon)',) * 5).to_bytes()
     report = dict(pictures=len(crops), extra=len(extra), edited=len(EDITED), mapped=len(mapped),
                   unfound=sorted(number for number, keys in found.items() if not keys), hashes=len(spec['portraits']))
-    return encode_exp(resources), report
+    return resources, report
 
 
 def main(argv=None):
@@ -190,12 +212,14 @@ def main(argv=None):
     parser.add_argument('--cod-library', type=Path, required=True)
     parser.add_argument('--extras', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--chc', action='store_true', help="Claire Hart Classic's add-on instead (CH_Classic.exp)")
     args = parser.parse_args(argv)
     data, report = build(args.mirror, read_pairs(args.pairs.read_text(encoding='utf-8')), args.catalog,
-                         library_pictures(args.cod_library), args.extras)
+                         library_pictures(args.cod_library), args.extras, chc=args.chc)
     args.out.mkdir(parents=True, exist_ok=True)
-    (args.out / 'CH_Slim.exp').write_bytes(data)
-    print(f'addon: {ADDON_TITLE!r} -> {args.out / "CH_Slim.exp"} ({len(data) // 1024} KB), {report}')
+    name, title = ('CH_Classic.exp', CHC_TITLE) if args.chc else ('CH_Slim.exp', ADDON_TITLE)
+    (args.out / name).write_bytes(data)
+    print(f'addon: {title!r} -> {args.out / name} ({len(data) // 1024} KB), {report}')
     return 1 if report['unfound'] else 0
 
 

@@ -10,6 +10,8 @@ Each member names what the runtime reads, all optional:
 - `portrait_effects`: {key, images}: the global number holding a line's emoticon (emoticon_effects, 1-6) and the
   episode image of each of the six effects, null for one the episode lacks (Session.portrait_effect).
 - `music_loops`: {intro: loop}: music resources that are an intro running into a loop (music_stream.MusicStream.chain).
+- `narration_portrait`: true: a narrator line shows the narrator's portrait (where the lead's stands) when the narrator has
+  art for its expression, in the narration box (EngineState.dialogue_presentation; Claire Hart's narration).
 
 Members for episodes made in the Creator (owner, 2026-11-09; CREATOR_ADDONS_PLAN.md):
 
@@ -53,12 +55,14 @@ FORMAT = 'shshd-presentation'
 VERSION = 1
 EFFECTS = 6
 MEMBERS = ('duet', 'narration_theme', 'portrait_effects', 'music_loops', 'creator', 'addons', 'word_forms', 'date_first',
-           'three_word_games', 'big_pickers', 'minigames', 'aliases', 'optional_art', 'journal', 'name_keys')
+           'three_word_games', 'big_pickers', 'minigames', 'aliases', 'optional_art', 'journal', 'name_keys',
+           'narration_portrait')
 # The packs the translators use (tools/translate: BREW 31000-31200, New Rules 31300, the X360 prototype 31400, Claire Hart
 # 31500, SHS '11 31600, Surviving Hollywood 31700): their episodes take their game's settings from the profile's tables and declare none of the members
 # above for an episode made in the Creator.
 TRANSLATION_PACKS = range(31000, 31800)
-FLAGS = ('creator', 'word_forms', 'date_first', 'three_word_games', 'big_pickers', 'minigames')
+# narration_portrait (Claire Hart plan, E): a narrator line shows the narrator's portrait when the narrator has art.
+FLAGS = ('creator', 'word_forms', 'date_first', 'three_word_games', 'big_pickers', 'minigames', 'narration_portrait')
 EDITIONS = ('', '07', '08')
 
 

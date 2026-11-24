@@ -15,7 +15,7 @@ NODE_ADDONS = {'shs11_reflex': 'shs11', 'x360_slot': 'shsx360', 'x360_leash': 's
                'nr_arena': 'shsnr'}
 # ...and the add-on a node plays from when the library has it, without needing it: SHS '11's Memory wears '11's own look with
 # its add-on, else SHS HD's art (owner, 2026-11-17). Added with the node when the library has it, and kept while the node is.
-OPTIONAL_NODE_ADDONS = {'shs11_memory': 'shs11', 'shs11_reflex': 'shs11'}
+OPTIONAL_NODE_ADDONS = {'shs11_memory': 'shs11', 'shs11_reflex': 'shs11', 'claire_round': 'chcrounds'}
 # What a primary add-on brings (its settings that need its pictures and sounds; the runtime's ADDON_FEATURE_PACKS) and what any
 # declared add-on adds: id -> (brought as the primary, played as an extra too). For the Add-Ons panel.
 ADDON_FEATURES = {
@@ -32,10 +32,16 @@ ADDON_FEATURES = {
     'shsdsi': ((), ('Optional art only (never required): your pictures shown as its DSi locations while DSi Backgrounds is on',)),
     'shshw': (("Surviving Hollywood's panel behind the scene", "The catch game in Hollywood's own look (nothing from BREW's)",
                "Its title tune and title screen, where Title Screen Music and Look are on Auto"), ()),
+    # Cause of Death's (Claire Hart plan Stage 6, owner 2026-11-24): Claire Hart Classic's pack 31500 settings (cod/profile.py).
+    'chc': (("Claire Hart UI's speech bubbles and screens with Claire Hart Cases", "Narration with the narrator's portrait",
+             'Backdrops darkened as Claire Hart drew them (Dim Backdrops)', "Claire Hart's green beside the scene",
+             "Its scenes as a 3:4 slice that fills the frame, whole with Claire Hart 4:3",
+             "Its title tune and title screen, where Title Screen Music and Look are on Auto"), ()),
+    'chcrounds': ((), ("Claire Hart's hidden-object rounds",)),
 }
 # Node kinds only this runtime answers, and how to name them to a person.
 MECHANIC_NODES = {'minigames_available': 'the translated mini-games', 'x360_slot': 'the X360 slot machine',
-                  'brew_catch': "the BREW games' catch game",
+                  'brew_catch': "the BREW games' catch game", 'claire_round': "Claire Hart's hidden-object rounds",
                   'shs11_memory': "SHS '11's Memory", 'shs11_reflex': "SHS '11's Reflex",
                   'x360_leash': 'the X360 leash game', 'x360_puzzle': 'the X360 jewel puzzle',
                   'x360_diss': 'X360 Diss Practice', 'x360_battle': 'the X360 Diss Battle',
@@ -49,7 +55,8 @@ MECHANIC_NODES = {'minigames_available': 'the translated mini-games', 'x360_slot
 MECHANIC_SERVICES = ((range(200, 214), "New Rules' minigame arena"), (range(214, 218), 'the X360 mini-games'),
                      (range(218, 219), 'storyboard cutscenes'), (range(219, 221), "SHS '11's mini-games"),
                      (range(221, 222), "the BREW games' catch game"), (range(222, 223), 'the X360 mini-games'),
-                     (range(223, 224), 'running a scene and coming back'), (range(224, 225), "the word grid's part score"))
+                     (range(223, 224), 'running a scene and coming back'), (range(224, 225), "the word grid's part score"),
+                     (range(225, 226), 'story-object pictures'), (range(226, 227), "Claire Hart's hidden-object rounds"))
 
 
 def node_addon(project, kind):
@@ -201,6 +208,19 @@ def use_addon_asset(project, library, addon_id, resource):
     record, archive = found
     if library.game_id != project.game:
         raise ProjectError('The library must match the project game')
+    from .assets import addon_looks
+    look = addon_looks(library, addon_id).get(resource)
+    if look is not None:
+        # A look (Claire Hart's): five numbers in a row the player reads through the add-on's spec, for a character's portrait.
+        existing = next((asset for asset in project.assets if asset.id == resource), None)
+        if existing is not None:
+            if existing.addon != addon_id:
+                raise ProjectError(f'The project already takes resource {resource} of its own or from another add-on.')
+            return existing
+        asset = Asset(resource, f'{record["title"]}: {look[0]}', None, addon_id)
+        project.assets.append(asset)
+        require_addon(project, addon_id, record['revision'])
+        return asset
     if not 26000 <= resource <= 32767 or resource not in archive.entries:
         raise ProjectError(f'The {addon_id} add-on has no episode resource {resource}.')
     data = archive.read(resource)
@@ -215,7 +235,9 @@ def use_addon_asset(project, library, addon_id, resource):
             holder = f'from the {existing.addon} add-on' if existing.addon else 'of its own'
             raise ProjectError(f'The project already takes resource {resource} {holder}. Copy this one in instead.')
         return existing
-    asset = Asset(resource, f'{record["title"]} {resource}', None, addon_id)
+    from .assets import addon_asset_labels
+    label = addon_asset_labels(library, addon_id).get(resource)        # (a named add-on's: "scene Claires Office")
+    asset = Asset(resource, f'{record["title"]}: {label}' if label else f'{record["title"]} {resource}', None, addon_id)
     project.assets.append(asset)
     require_addon(project, addon_id, record['revision'])
     return asset

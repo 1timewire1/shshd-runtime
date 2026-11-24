@@ -23,7 +23,7 @@ KINDS = ('dialogue', 'choice', 'background', 'set', 'branch', 'music', 'sound', 
          'word_game', 'football', 'grid', 'scene', 'flag', 'speakers', 'set_text', 'text_default',
          'expression_default', 'character_art', 'character_name', 'picker', 'vibrate', 'faceplace',
          'faceplace_post', 'faceplace_link', 'tree', 'tree_node', 'tree_result', 'append_text', 'loading',
-         'open_url', 'survey', 'quest', 'journal_updated', 'start_calendar', 'calendar_back', 'schedule_event', 'cancel_event', 'set_clock', 'skip_ahead', 'run_due', 'call_scene', 'return_scene', 'nr_arena', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'end', 'native')
+         'open_url', 'survey', 'quest', 'journal_updated', 'start_calendar', 'calendar_back', 'schedule_event', 'cancel_event', 'set_clock', 'skip_ahead', 'run_due', 'call_scene', 'return_scene', 'nr_arena', 'minigames_available', 'cutscene_available', 'cutscene', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle', 'shs11_memory', 'shs11_reflex', 'brew_catch', 'claire_round', 'story_object', 'end', 'native')
 OPERATORS = ('==', '!=', '<', '<=', '>', '>=')
 
 
@@ -224,7 +224,12 @@ def _string(value, label, limit=60000):
 FREE_SETTINGS = {'word_forms': '"a(n)" and "word(s)" picked by the word or number (BREW)',
                  'date_first': 'Title cards show the date first (BREW)',
                  'three_word_games': 'Word games of three words (BREW)',
-                 'big_pickers': 'Portrait pickers of up to ten photos (BREW)'}
+                 'big_pickers': 'Portrait pickers of up to ten photos (BREW)',
+                 'narration_portrait': "Narration shows the narrator's portrait (set the narrator with a Player / narrator node)"}
+# ...and the game each is for (the Add-Ons dialog offers a project its own): the BREW ones SHS's; the narrator's portrait CoD's,
+# as Claire Hart's translations show it (owner, 2026-11-19).
+FREE_SETTING_GAMES = {'word_forms': 'shs', 'date_first': 'shs', 'three_word_games': 'shs', 'big_pickers': 'shs',
+                      'narration_portrait': 'cod'}
 # A primary add-on's editions, where it serves more than one game: BREW's '07 and '08 stories have different switches.
 ADDON_EDITIONS = {'shsbrew': ('08', '07')}
 JOURNAL_STATS = 8                       # the most stats a quest journal shows

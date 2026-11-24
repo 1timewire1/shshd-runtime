@@ -141,7 +141,7 @@ All rows derive from `native-yield-dispatcher.c`. Additional evidence is in `nat
 
 shshd-runtime completes the rows marked "SHS" with the HD build's `SHSScript::syscall` behaviour (`engine.SHS_HD_YIELDS`), for both SHS editions; Cause of Death still stops at them.
 
-IDs beyond 100 take the inspected Android dispatcher's default path. The HD build's 101-120 are in section 6 and shshd-runtime's own 200-224 in sections 5.1-5.6a; any other unknown ID stays an explicit stop. The Python host intentionally does not treat unknown IDs as successful no-ops.
+IDs beyond 100 take the inspected Android dispatcher's default path. The HD build's 101-120 are in section 6 and shshd-runtime's own 200-225 in sections 5.1-5.6b; any other unknown ID stays an explicit stop. The Python host intentionally does not treat unknown IDs as successful no-ops.
 
 ### Imported SHS corpus follow-up
 
@@ -688,6 +688,38 @@ it reads football's score with 95 after 94. Surviving Hollywood's translated reh
 demo scores the letters typed right when time runs out (Tardy-Slip `web/shw/screens.js` `Spelling.check`), so Glamlet's
 soliloquy can give its middle reaction (owner, 2026-11-17). Native players and upstream exp-runtime stop at it as an
 unknown service.
+
+## 5.6b Story-object pictures (shshd-runtime service 225)
+
+Service **225** (`picture`) puts an episode-bank picture (the episode's own, or a required add-on's: Claire Hart Classic's are
+chc's 27000 on) in the dialogue box, as Claire Hart's `showStoryObject` does (CLAIRE_HART_ENGINE.md §4.7; plan decision P). It
+completes at once with 0. The picture waits for the next dialogue line and shows with it, in a framed square along the box's
+bottom, right-aligned (`dialogue.story_object_slots`; the box grows a row for them, upward for a speaker so its bottom stays,
+downward for a narrator). More pictures before a line join the row, up to 8 (`STORY_OBJECT_ROW`). The row goes at the next
+change of speaker (character, name and presentation), as Classic's go when the next box comes in; `picture` −1
+(`STORY_OBJECT_CLEAR`) empties it at once, as a box coming in for the same speaker does there; Skip Ahead empties it too, as
+Classic's Skip does. Saves keep the row, what waits for the next line and whose lines it is shown with (save version 43).
+
+A story asks **70 selector 206** (`STORY_OBJECT_QUERY`) first. Cause of Death's dispatcher answers 1; native players, upstream
+exp-runtime and this player's SHS answer 0, and the story shows a message naming the item instead (the Creator's **Story object
+picture** node compiles both ways).
+
+## 5.6c Claire Hart's hidden-object rounds (shshd-runtime service 226)
+
+Service **226** (`key`) plays Claire Hart Classic's hidden-object round `key`: its original episode's number × 10 + the round
+(`claire_round_services.round_key`: E018's third is 183), from the optional `chcrounds` add-on, whose spec at 26000 names the
+round's scene, its objects and its story objects (the session's `claire_round_source`; reference/Other Games/docs/
+CLAIRE_HART_ROUNDS_PLAN.md). Its rules are build 157's (`claire_rounds.ClaireRound`: 12 objects to find, 6 listed at a time, the
+round's story objects among them and listed first, the combo, misclicks and the spam lock, the timer, the bonuses and stars, the
+free hint and the four power-ups under the **Power-Ups** setting). The player draws it over the whole frame
+(`desktop_claire_round.py`) and hands in what a tap hits; the round ends on its Level Summary, whose Continue completes the call
+with the round's total score (`Session.claire_continue`). The story reads no result: Ask to Skip's Skip completes it with 0. Saves
+keep the round whole, so a save mid-round resumes it exactly (save version 44). A key the add-on hasn't stops as an unhandled
+yield.
+
+A story asks **70 selector 207** (`CLAIRE_ROUNDS_QUERY`) first. Cause of Death's dispatcher answers 1 where `chcrounds` is in the
+library and Use Translated Mini-Games is on; native players, upstream exp-runtime and this player's SHS answer 0, and the story
+takes its other path (the translated cases' stand-in line naming the place searched and what was found).
 
 ## 5.7 The BREW packs' text and menus
 

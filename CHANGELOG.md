@@ -2,7 +2,39 @@
 
 ## Unreleased (shshd-runtime)
 
+### Changed
+
+- **Claire Hart's rounds: Classic's HUD text** (owner, 2026-11-22: "match Claire Hart's layout exactly"). The scene's
+  name, the combo, the score and HINT are Romic regular at Classic's sizes (the bold face drew them short), and the
+  count is bold at its size. The name, score, menu icon and the six names sit where Classic's do, measured against
+  its play-test photos at 800 x 600. The same at every frame shape. Our changes stay: the menu button opens the pause
+  menu and Classic's top-right gear stays out.
+- **v1.1.1 merged into the Claire Hart branch** (2026-11-22). Saves are **version 46**, joining the two lines that
+  branched from 42: this branch's 43 (story-object pictures) and 44 (hidden-object rounds), and v1.1.1's 45 (Text
+  Animation). Every one of them loads, each gaining what its own line left out; v1.1.1 refuses 46 as newer and keeps
+  the save.
+
 ### Added
+
+- **Claire Hart Classic in the Creator** (Claire Hart plan Stage 6, owner 2026-11-24; `claire-hart` branch). A Cause of Death
+  project can take `chc` as its primary add-on (Add-ons and settings…, now open to CoD projects, which also reaches CoD's
+  **Narration shows the narrator's portrait**). It then has a case's look: the skin with Claire Hart Cases, narrator
+  portraits, Dim Backdrops, the green backdrop, the scenes' slices and Claire Hart 4:3, the title look and tune on Auto (the
+  CoD profile's `ADDON_FEATURE_PACKS`). CoD episodes now declare their primary, extras' aliases and mini-games (so a
+  Creator-made round's pause menu offers Power-Ups and Use Translated Mini-Games). Browse library images and MCP name `chc`'s
+  pictures from its spec ("Aaron Mitchels, Angry", "scene Claires Office"), and list its 185 looks ("look Claire"): used from
+  the add-on, a look is a character's portrait, its five faces read from `chc` in CoD's order as the cases' are. New `docs/CLAIRE_HART.md`; CREATOR.md gains the
+  round node and a worked example, and ADDONS.md the add-on's revision 2 and the 4:3 switch.
+
+- **Claire Hart cases in their own 4:3** (owner, 2026-11-22; `reference/Other Games/docs/CLAIRE_HART_43_PLAN.md`,
+  ROADMAP 4.1c; `claire-hart` branch). A new switch, **Claire Hart 4:3** (Per-Game Settings, CH tag, on by default),
+  shows a Claire Hart case in a 4:3 frame whenever the window is at least 4:3: a phone or iPad turned to landscape, a
+  maximized or full-screen window. Narrower windows show it as before, and the window is never widened to make room.
+  It switches at once as the window turns or resizes. In the 4:3 frame each scene shows whole, as Classic framed it,
+  rather than its 3:4 slice (`WHOLE_BACKDROPS`, `Desktop.wide_frame`), and the dialogue is drawn 1.35x larger
+  (`WIDE_DIALOGUE`, the owner's pick from 1.2 / 1.35 / 1.5), with the gear and bar at their size. With either dialogue
+  look. Wider than 4:3, Claire Hart's green shows beside it. A save's picture is still taken at 3:4 (`snapshot` turns the 4:3
+  frame off for it), so the episode picker's tiles aren't squeezed.
 
 - **Borderless full screen on a computer: Alt+Enter or F11** (owner, 2026-11-22). The window fills the display it is
   on (not necessarily the main one) at that display's own resolution, without changing it, and the same keys bring it
@@ -10,8 +42,107 @@
   any window; the side panels and a picked Aspect Ratio leave a full-screen window as it is. Not on phones. The test
   channel's `key` takes `f11`.
 
+- **Narration with the narrator's portrait** (Claire Hart plan Stage 0, E; `claire-hart` branch): a presentation flag,
+  `narration_portrait`, has a narrator line with art speak as a small dialogue box attached to the narrator's portrait (the
+  lead's side), in narration's italic text, with no name plate and no relationship icons (owner, 2026-11-19); on for
+  Claire Hart Classic's pack 31500 (`TRANSLATED_NARRATION_PORTRAITS`). Stand-in review sheet:
+  `reference/screenshots/verify/claire_hart/narration_portrait_stand_in.png`. A Cause of Death project in the Creator turns
+  it on with **Narration shows the narrator's portrait** (Add-Ons; the episode declares it, the one member CoD takes); the
+  Add-Ons dialog now offers each free setting only for its game (the BREW ones for SHS).
+- **Story-object pictures** (Claire Hart plan Stage 0, P; `claire-hart` branch): a new service, 225, shows a picture
+  (an episode's own, or a required add-on's) in a framed square along the bottom of the dialogue box from the next line
+  on, as Claire Hart Classic shows the items Claire finds. Up to 8 stack in a row, which goes at the next change of
+  speaker, at a clear, or on Skip Ahead; the box grows a row to hold them. Cause of Death answers its question (service
+  70 selector 206); other players show a message naming the item. The Creator's **Story object picture** node makes
+  both ([ENGINE_ABI.md](docs/ENGINE_ABI.md#56b-story-object-pictures-shshd-runtime-service-225)). Saves are version 43.
+  Stand-in review sheet: `reference/screenshots/verify/claire_hart/story_objects_stand_in.png`.
+- **Dim Backdrops** (Claire Hart plan Stage 0, F; `claire-hart` branch): Claire Hart's translated cases darken their
+  backdrops as the game drew them, to 110/255 (pack 31500, `TRANSLATED_BACKDROP_DIM`), at draw time, so the add-on keeps
+  full-brightness art. A shared Add-Ons switch with the CH tag, on by default, offered once the library has a case and in
+  their pause menu; it changes the picture at once. Stand-in sheet:
+  `reference/screenshots/verify/claire_hart/backdrop_dim_stand_in.png`. Title cards, and so the picker's previews of
+  them, are left bright, as Claire Hart's store pictures are (owner, 2026-11-20).
+- **Claire Hart's pack 31500 registered** (Claire Hart plan Stage 0; `claire-hart` branch): its cases (titles tagged `(CHC)`)
+  are filed under Claire Hart with the CH badge; they take chc's green backdrop under their 4:3 scenes and reach chc's
+  portraits through look banks (look n's expression e at 30000 + 5n + e, from chc's spec at 26998;
+  [ADDONS.md](docs/ADDONS.md#chc-claire-hart-classic-in-progress-on-the-claire-hart-branch)). Probe sheet:
+  `reference/screenshots/verify/claire_hart/pack_31500_probe.png`.
+- **Title Screen Look for Cause of Death: Claire Hart** (Claire Hart plan Stage 0; owner, 2026-11-19; `claire-hart`
+  branch): Add-Ons' Title Screen Look now works in CoD, with Claire Hart Classic's Play Now screen (its forest, and Claire and
+  Paul over the gem banner) from `chc` in place of CoD's painting, behind the same buttons; the episode lists follow it, and
+  Auto takes it after a Claire Hart case. Stand-in sheet: `reference/screenshots/verify/claire_hart/title_look_stand_in.png`.
+  Title Screen Music has Claire Hart's too: the 13 s main jingle, which Classic plays once at its episode select after Play
+  Now, played once on CoD's main menu in place of its own tune (`chc` 26990).
+- **Claire Hart Dialogue** (Claire Hart plan Stage 0; owner, 2026-11-19; `claire-hart` branch): an Add-Ons choice, Off /
+  Claire Hart Cases / All Episodes, that draws CoD's dialogue in Claire Hart's own speech bubbles and Romic Bold, in its dark
+  red, with a new portrait ring in the bubble's style attached as CoD's is: the name in the bubble's tab beside the ring, no
+  tail, Claire Hart's narrator box for narration (with the ring when the narrator has a portrait), its Play Now button as
+  Continue, and its story-object squares. Narration is Romic Bold slanted by the player (Romic has no italic; owner,
+  2026-11-19), as CoD's narration is italic. CoD's emphasis takes Claire Hart's gold. A glyph a font lacks now draws nothing
+  instead of the face's box (`vector_text.ttf_covered`). Art in `chc` 29100 on (`tools/translate/ch_dialogue_skin.py`).
+  Review sheet: `reference/screenshots/verify/claire_hart/dialogue_skin_stand_in.png`. A new speaker's tab now comes in
+  with the box's strip, ahead of the name (which had shown over the backdrop until the box finished growing), and the
+  ring stays whole over the box instead of being cut square at its corner as the box finished opening (owner,
+  2026-11-20; `dialogue_entrance_before_after.png`). The text wraps around the ring's own circle, so no line runs
+  under it, and a narrator's ring is 80% as large, telling narration from speech besides its missing tab (owner,
+  2026-11-20; `ring_options.png`, `ring_wrap_final.png`): about 5% more pages in the Claire Hart cases.
+- **Claire Hart Classic's reader and `chc` revision 1** (Claire Hart plan Stage 1; `claire-hart` branch):
+  `tools/translate/claire_hart.py` reads Classic's cases (`report`; `ids` writes the E-number table) and writes the story
+  add-on (`addon`, 454 MB): all 835 portraits folded into 185 looks of CoD's five expressions (the spec's look banks), the 787
+  scenes' backdrops with each one's 3:4 slice (at Cause of Death's own cut of it, else centred), the 33 tracks as MP3, the
+  645 story-object pictures, the Title Screen Look and jingle, and Claire Hart Dialogue, used by a case or not, beside
+  chslim revision 1's pictures under their IDs. Review sheets: `reference/screenshots/verify/claire_hart/chc_rev1_*.png`.
+- **Claire Hart Classic's hidden-object rounds, played for real** (Claire Hart plan Stage 3; `claire-hart` branch;
+  [ENGINE_ABI.md](docs/ENGINE_ABI.md#56c-claire-harts-hidden-object-rounds-shshd-runtime-service-226)): with the optional
+  `chcrounds` add-on and Use Translated Mini-Games on, each case's rounds are Classic's own: 12 objects to find in the scene, six
+  names at a time, the clue items the next chapter reads among them, the combo, the misclick lock, the free hint and the four
+  power-ups, then the Level Summary, in Classic's own art, sounds and effects. The round fills the frame at any shape to 9:21;
+  drag, the edge arrows (hover or hold), the arrow keys, Q / E or a controller's L / R pan it, and the wheel or a pinch zooms it.
+  A new **Power-Ups** setting (Add-Ons' Per-Game Settings and the pause menu, CH tag): Once Each Round (the default),
+  Unlimited or Off. A save mid-round resumes it exactly; Ask to Skip offers Skip or Play. Without the add-on, the round is the
+  case's line naming the place searched, as before. `claire_hart.py rounds` builds the add-on (1.1 GB) from the player's own
+  Claire Hart files.
+- **Claire Hart Classic's cases as Cause of Death episodes** (Claire Hart plan Stage 2; `claire-hart` branch):
+  `claire_hart.py build` turns each case into one translated episode (pack 31500, the case's place × 10, requiring
+  `chc`): a title card per original episode over the scene its store picture shows, every line with its speaker's look
+  and face (a narrator of its own, so Claire's own lines keep her name plate), backdrops, music as Classic restarts it,
+  story objects, and each hidden-object round as a line naming the place searched and what's found. Its rules follow a
+  check of Classic's decompiled story player. A new episode record, **backdrop slices** (resource 7,
+  [SCHEMA.md](docs/SCHEMA.md#backdrop-slices-extension-shshd-runtime)), and the cod profile's `BACKDROP_SLICES` show a
+  4:3 scene as its 3:4 slice filling the frame, the episode's own slice first, so moving one needs no new add-on.
+  Pilot: Case 1, Case 6, Case 45 and Christmas Special II, matching Classic line for line. From the owner's play of it
+  (2026-11-20): the part's player (Claire, or Troy in his cases) is on the left and narrates, with their own portrait
+  and no name plate; a round line is in their voice ("I searched my office and found the Belt."); later parts drop the
+  repeated introduction, episodes their store sign-off; joined names get their space (Jillian Gish, Will Yu).
+- **Mini-games on the test channel** ([RUNTIME.md](docs/RUNTIME.md#test-channel-this-fork)): `state` reports the open
+  mini-game (the Creator's playtest report, now shared as `minigame_report.py`; a Claire Hart round lists its names,
+  Power-Ups and hint), and `play` presses, picks a cell or arena key, or in a round finds a listed object, misses, uses
+  the hint or a Power-Up, picks a name and continues, by real taps through the round's own hit tests; `pinch` zooms a
+  round. Checked on a PC with six rounds from three random cases (72 of 72 finds, zoomed finds too).
+- **The test channel reaches every screen** ([RUNTIME.md](docs/RUNTIME.md#test-channel-this-fork)): `window` sees and
+  presses a story's own windows ("Exit Game?", "Locked"), the app's message card and Update Available, the picker's info
+  card and the chooser's questions; `panels`, `tree` (warp, Rewind, Fast Forward) and `wall` (posts, links) for the side
+  panels; `picker` for the episode picker and its New Game / Continue popup; Help's pages and text through `rows`; the game
+  chooser's Options and tick lists (`game chooser`, `ticks`); `buttons` / `button` for the chooser, Setup, the file browser
+  and the menus without HD art; held keys. `state` adds the look picker's portraits, a refused name, the in-story Options
+  page and the side panels.
+
+### Changed
+
+- **chslim revision 2, and `chc` begun** (owner, 2026-11-19; `claire-hart` branch): chslim keeps only what CoD shows (17 MB,
+  was 21); Claire Hart's own extras (the rest of Troy, Paul and Claire, the speech bubbles, the Romic fonts) move to `chc`,
+  Claire Hart Classic's add-on, which starts as chslim revision 1 exactly and supersedes chslim
+  (`tools/translate/chslim.py --chc`).
+
 ### Fixed
 
+- **A sync cut short left its files in the library**: a receiver closed or killed mid-transfer left everything received
+  so far in a hidden `.sync-...` folder (348 MB of Claire Hart's add-on, 2026-11-24), and only Delete Library removed it.
+  A new sync now clears such leftovers before it starts (`sync_flow.clear_stale_stages`). The library itself was never
+  touched: what arrives is applied only once all of it has.
+- **Back Up Progress and Sync Devices failed on a save dated before 1980** ("ZIP does not support timestamps before 1980"):
+  the progress zips now store such a file as of 1980 (`strict_timestamps=False`). Found on the g54, whose restored saves
+  were dated 1970 (2026-11-24); every sync from it failed before sending anything.
 - **A letter notice ran off a tall screen's edge** (reported with an e-ink phone's photo of SHS's "New Move Learned!";
   the owner saw the X360 Day of Diss's "Objective Complete" do it, 2026-11-22): HD's notice is centred over the
   portrait, and over a left-hand one a long notice reaches into the frame's margin, which a 3:4 frame shows and a
@@ -26,11 +157,67 @@
   `window_header`), and in the Claire Hart skin, whose panel keeps the title on its tab, the message sits on the panel
   at the rows' inset. Each row presses the window's own item, so its "Exit Game?" and the link are as before, and back
   returns to Help.
-- **The episode lists ran under a phone's status bar** (owner, g54, 2026-11-22; worst in the Claire Hart branch's skin,
-  where the camera hole covered the "On" of Episodes On Demand): Now Airing's and Episodes On Demand's card, and Data
-  Management's tick lists, now keep clear of the status and navigation bars as the text pages do
+- **Claire Hart Dialogue's name tab was missing on a portrait-less speaker** (owner, g54, 2026-11-22: Volume One's
+  "Television", after narration): the tab waits for the box to settle, and a box gliding from the last line's frame
+  ended on a rounded copy that never equalled a taller frame's fractional place, so only a tap brought the tab. The
+  glide now ends on the box itself (`DialogueAnimation.box_rect`), and the tab takes a box within half a point.
+- **The episode lists ran under a phone's status bar** (owner, g54, 2026-11-22; every game, worst in the Claire Hart
+  skin, where the camera hole covered the "On" of Episodes On Demand): Now Airing's and Episodes On Demand's card, and
+  Data Management's tick lists, now keep clear of the status and navigation bars as the text pages do
   (`HdEpisodeList.card_layout`; the app gives the list the bars' pads, which only the tile grid had). The game chooser's
   tick list also takes the frame's height on a tall screen.
+- **A save on Claire Hart's narration couldn't be loaded** (Claire Hart plan check 3, 2026-11-21): a narration line beside
+  the narrator's portrait (Stage 0 E) has no relationship state, and the loader refused any line in a speaker's layout
+  without one, so Resume and Undo failed on 55 of Case 1's 169 lines. It now takes that narration, checked against its
+  narrator.
+- The test channel's `rows` on Help & About no longer fails, and `state`'s `notice` is the toast only while it shows.
+- **Large add-ons import from a ZIP or RAR** (Claire Hart plan Stage 5, the g54, 2026-11-21): Claire Hart's tester ZIPs
+  were refused ("ZIP member exceeds supported size": `chc` is 480 MB, `chcrounds` 1.1 GB, past an episode's 64 MB). An
+  add-on past that size (8 GB at most) is now streamed to the library and hashed on the way, never held in memory, from a
+  ZIP, a RAR, Bulk Import or a loose file; an episode that large is still refused, saying only an add-on may be.
+- **A Claire Hart case closed the app in a frame taller than 3:4** (the g54 at 20:9, 2026-11-21): its frame backdrop's
+  strip is at the picture's very top, and lengthening it grew the empty part above by empty rows, so the picture came out
+  short (`backdrop_fit.lengthen`). That part now grows from the picture's first row.
+- **A Cause of Death word quiz closed the app with Ask to Skip Mini-Games on** (found 2026-11-21; in v1.1.0): while its
+  skip prompt's outcomes were worked out, Android's loading band read the scene's pan from a stand-in engine that had none.
+  The stand-in now carries it (`Desktop._loading_view`).
+- **Entering a Claire Hart round no longer holds the screen** (Claire Hart plan Stage 5, owner, 2026-11-21): on the g54 a
+  round's skip prompt held a frame ~200 ms, and 1.8 s the first time. The rounds spec (2.4 MB) is now parsed once per
+  library, while the case opens, not twice at its first round (`ContentLibrary.addon_json`); the round's scene and bars
+  are read and drawn ahead a few milliseconds a frame while its prompt shows (`ClaireRoundRenderer.preload_steps`); and
+  Cause of Death's HD dialogue and choice skins, derived from SHS HD's in pure Python at every start (the 1.8 s: any CoD
+  story's first choice paid it), are kept in the library's `derived` folder once made, and made at launch on a thread.
+- **Claire Hart rounds on taller phones** (rounds plan R7, the owner's choice, 2026-11-21): the top bar now sits below a
+  phone's status bar, the bar's colour run up under it and fading darker toward the screen's edge; in frames taller than
+  3:4 the HUD grows toward 20:9 (the bottom bar 1.45x, its menu and wheel sockets with it and its middle stretched; the
+  top bar, names and count 1.3x; the Level Summary to 88% of the width), and taps follow. At 3:4 it's Classic's as
+  before. The score showed two stars (the bar art's and a second the renderer drew): one now.
+- **Claire Hart UI: Claire Hart Dialogue on CoD's other screens** (`CLAIRE_HART_SKIN_PLAN.md`; the owner's choices 2026-11-21:
+  Classic's panel with its title tab, dark rows with a gold-edged highlight, Classic's bar as the timer, Romic Bold):
+  chc revision 2 adds Classic's UI pieces (29109 on: the panel, its Yes/No popup, the rows, the capsule, the combo bar, the
+  close button; `ch_dialogue_skin.py`), the cases still needing revision 1; `desktop_ch_ui.ChUi` draws them for any screen
+  (sliced, kept by size); the **message panel** (`CodMessageRenderer.draw_skinned`) and the story's windows ("Exit Game?",
+  Connection Error, as Classic's own Yes/No popup: `CodMenuWindows.draw_popup`) are in them, and so are **choices**, the
+  rounds' **skip prompt** and the **timed word quiz** (`ChoiceRenderer.draw_skinned`: CoD's rows, scrolling, taps and timer
+  place kept; the panel's top brought down to Classic's header, the options in dark bars with the focused or picked one
+  lit gold, the combo bar running down in place of the circle timer, the quiz's score on the teal capsule with its "+n"
+  teal and "-n" red, the dialogue skin's ring round a portrait, whole, with the tab moved beside it, and an option's detail
+  line under it). The **pause menu** with its pages (`CodPauseMenu`: the panel as the card, rows as dark bars lit gold,
+  values under their labels, the back and value buttons as the Play Now pill, a gold tick; UIKit's switches and slider
+  kept), **text entry** (`InputRenderer._draw_cod_skinned`: the name in the teal capsule, a gold caret; the refused name's
+  alert as Classic's popup) and the **portrait picker** (`CodCharacterPickerRenderer`: the panel, the skin's rings, the
+  check button as the pill) follow, their places and taps CoD's. The setting is now **Claire Hart UI** (owner, 2026-11-22),
+  its All Episodes now **Everywhere**: every episode and the main menu's screens too (`ContentLibrary.menu_skin`): the title
+  screen's buttons as Play Now pills in Romic, Options, Help & About and Data Management (its tick lists, the file browser),
+  Now Airing and Episodes On Demand's list with its New Game / Continue and info cards, the prompts ("Play with sound?",
+  Update Available) and the busy card as Classic's popup (`ChUi.window`); the episode grid and the game chooser keep their
+  looks, and Claire Hart Cases leaves the menus CoD's. A library with chc revision 1 keeps CoD's own look. The test channel's `state` reports the scene badge (`badge`).
+  After the g54 pass (owner, 2026-11-22): **Choice Hints read on the skin** (CoD's pastel row tints washed out to one
+  grey-green on the dark rows; each kind now takes a stronger tint of its own and a bar of its colour down the row's left
+  edge, `SKIN_HINT_COLORS`), the **switches' OFF** keeps the control's grey (the skin's text colouring had turned it
+  off-white on the white track), and the **episode lists' tags** are Options' gold badge at its size. The **episode
+  grid's** back and Restore buttons are the pill and its New Game / Continue, info and alert cards Classic's popup, as
+  the list's (`CodSkinnedCards`), while the grid itself (its tiles, its rows' labels) keeps CoD's look (owner, 2026-11-22).
 
 ## 1.1.1 (shshd-runtime)
 

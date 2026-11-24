@@ -25,7 +25,8 @@ from . import graphics as pygame
 
 from .content import ContentError
 from .desktop_hd_menu import CARD_LEFT, CARD_W, HdMenuWindows
-from .hd_ui import BUTTON_SIZE, S
+from .hd_ui import BUTTON_SIZE, FRAME, S
+from .menu_engine import NO_STRING
 from .menu import MenuStrings
 from .ui_assets import ImagePack
 
@@ -139,6 +140,42 @@ class CodMenuWindows(CodButtons, HdMenuWindows):
     # -- art ----------------------------------------------------------------------------------------------------
     def fallback_piece(self, frame):
         return self.art.frame_scaled(16, frame, 2 * S)
+
+    # -- Claire Hart UI (CLAIRE_HART_SKIN_PLAN.md; owner, 2026-11-21): an alert or a notice ("Exit Game?", Connection
+    # Error) as Classic's own Yes/No popup (desktop_ch_ui.ChUi.window): its curved backing scaled whole, the title in its
+    # gold, the message in off-white, its Play Now pills for the buttons. Lists and info pages keep CoD's card. With
+    # Everywhere the main menu's prompts (a message, Update Available) take it too (draw_prompt).
+
+    def skin(self):
+        from .desktop_ch_ui import ChUi
+        resources = getattr(self.art, 'resources', None)
+        return ChUi.of(resources) if resources is not None else ChUi.of(self.library)
+
+    def draw(self, layer, menu_id, *, variables=None, pressed=None, body_scroll=0):
+        ui = self.skin()
+        menu = self.data.menu(menu_id)
+        if ui is None or self.kind_of(menu) not in ('alert', 'notice'):
+            return super().draw(layer, menu_id, variables=variables, pressed=pressed, body_scroll=body_scroll)
+        return self.draw_popup(ui, layer, menu_id, variables, pressed)
+
+    def draw_popup(self, ui, layer, menu_id, variables, pressed):
+        menu, items = self.data.menu(menu_id), self.items(menu_id)
+        kind = self.kind_of(menu)
+        title = self.text_for(menu.title, variables)
+        message = self.text_for(menu.message, variables) if menu.message != NO_STRING else ''
+        buttons = list(items) if kind == 'alert' else items[:1]
+        labels = [self.item_label(a, variables) for a in buttons] if kind == 'alert' else [self.strings()[154]]
+        held = next((i for i, a in enumerate(buttons) if pressed == ('item', a.id)), None)
+        rects, top, height, lines = ui.window(layer, S, FRAME[0], title, message, labels, pressed=held)
+        self.hits, self.body_rect = [(rect, ('item', action.id)) for rect, action in zip(rects, buttons)], None
+        return dict(menu=menu, kind=kind, title=[title], message=lines, items=items, rows=[], top=top, total=height)
+
+    def draw_prompt(self, canvas, title, text, labels):
+        """The main menu's prompt (a message, Update Available): Classic's popup under Everywhere, else CoD's card."""
+        ui = self.skin()
+        if ui is None:
+            return super().draw_prompt(canvas, title, text, labels)
+        return ui.window(canvas, S, FRAME[0], title, text, labels, dense=True)[0]
 
     def draw_card(self, layer, top, total):
         """CoD's card at HD's size: blue-bordered over the top 112 points and the footer's 86, grey-edged between."""

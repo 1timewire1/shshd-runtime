@@ -88,6 +88,15 @@ SMARTPHONE_MUSIC_LABEL = 'Smartphone Music'     # translated SHS '11 episodes: t
 WORD_GRID_SKIN_LABEL = 'Use Word Grid Skin'     # ...their minigames in the HD word game's look (with its art imported)
 CH_PORTRAITS_LABEL = 'HD Portraits in CoD'      # CoD with its portrait addon: Claire Hart's sharper originals
 CH_BACKDROP_LABEL = 'Backdrop'                  # ...and Claire Hart's green backdrop, in place of SHS HD's collage
+DIM_BACKDROPS_LABEL = 'Dim Backdrops'           # Claire Hart's translations: backdrops darkened as the game drew them
+CH_43_LABEL = 'Claire Hart 4:3'                # ...their cases in Claire Hart's own 4:3 where the window has room (owner, 2026-11-22)
+# Claire Hart UI (owner, 2026-11-19 as Claire Hart Dialogue; renamed 2026-11-22 when it took CoD's other screens): CoD's
+# dialogue in Claire Hart's speech bubbles and Romic, its choices, windows and pause menu in Classic's dress. Everywhere ('all')
+# is every episode and the main menu's screens too (but the episode grid); Claire Hart Cases leaves the menus CoD's.
+CH_DIALOGUE_LABEL = 'Claire Hart UI'
+CH_DIALOGUE_NAMES = {'off': 'Off', 'cases': 'Claire Hart Cases', 'all': 'Everywhere'}
+CLAIRE_POWERUPS_LABEL = 'Power-Ups'           # Claire Hart's rounds' four power-ups (R2, owner, 2026-11-20)
+CLAIRE_POWERUPS_NAMES = {'once': 'Once Each Round', 'unlimited': 'Unlimited', 'off': 'Off'}
 ARENA_MINIGAMES_LABEL = 'Use Translated Mini-Games'      # translated episodes' real minigames, else timed choices
 ARENA_SKIN_LABEL = 'Use X360 Arena Skin'        # ...New Rules' arena in the X360 prototype's look (its addon imported)
 # A switch that only concerns one legacy game's translated episodes shows that game's tag before its label (owner,
@@ -95,7 +104,7 @@ ARENA_SKIN_LABEL = 'Use X360 Arena Skin'        # ...New Rules' arena in the X36
 # are there (application.hires_portraits_offered, Desktop.hires_switch). Use Translated Mini-Games concerns several.
 SWITCH_BADGES = {'hires_portraits': 'SHSNR', 'ms3_characters': 'SHSX360', 'java_look': 'SHS08', 'brew_08_backgrounds': 'SHS07', 'hollywood_art': 'SHS07', 'dsi_backgrounds': 'SHSDSI', 'smartphone_music': 'SHS11', 'word_grid_skin': 'SHS11', 'arena_skin': 'SHSNR',
                  'ch_portraits': 'CHC',
-                 'ch_backdrop': 'CHC'}
+                 'ch_backdrop': 'CHC', 'dim_backdrops': 'CHC', 'ch_43': 'CHC', 'ch_dialogue': 'CHC', 'claire_powerups': 'CHC'}
 # The skin concerns New Rules' episodes, so it wears their tag; the other game it comes from is named in that game's
 # colour (owner, 2026-11-02). key -> the tag whose name in the label is coloured.
 LABEL_TINTS = {'arena_skin': 'SHSX360', 'hollywood_art': 'SHW'}
@@ -130,7 +139,7 @@ EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames', 'skip_a
 # In the episode lists' order of their games (owner, 2026-11-19): '07, '08, New Rules, X360, '11, then CoD's; last the two
 # that need two add-ons, Use SHW Art in Preview ('07's story with `shshw`) and the X360 Arena Skin.
 ADDON_KEYS = ('arena_minigames', 'brew_08_backgrounds', 'java_look', 'hires_portraits', 'ms3_characters', 'smartphone_music',
-              'word_grid_skin', 'ch_portraits', 'ch_backdrop', 'hollywood_art', 'arena_skin')
+              'word_grid_skin', 'ch_portraits', 'ch_backdrop', 'dim_backdrops', 'ch_43', 'hollywood_art', 'arena_skin')
 # General's Preferred Language (owner, 2026-11-18; it was Episode Titles): the episode titles, and the stories of the
 # add-ons that have a translation (DSi, SHS '11, the Creator's), in it where each has it (languages.language_settings);
 # `settings['preferred_language']` is the current one's name. Data Management's rows are actions, tapped like Help &
@@ -172,11 +181,11 @@ TITLE_MUSIC_LABEL = 'Title Screen Music'
 # The games are listed in the episode lists' order ('07, Surviving Hollywood, '08, New Rules, X360, '11; owner, 2026-11-19);
 # BREW's one tune stands for '07 and '08 together, before Surviving Hollywood.
 TITLE_MUSIC_NAMES = {'default': 'Default', 'auto': 'Auto', 'brew': "'07 / '08", 'shw': 'Surviving Hollywood', 'nr': 'New Rules',
-                     'x360': 'X360', 'shs11': "'11"}
+                     'x360': 'X360', 'shs11': "'11", 'chc': 'Claire Hart'}
 # Add-Ons' Title Screen Look (main menu only; owner, 2026-11-16): the main menu's art, the same way; BREW's editions are two.
 TITLE_LOOK_LABEL = 'Title Screen Look'
 TITLE_LOOK_NAMES = {'default': 'Default', 'auto': 'Auto', 'brew07': "'07", 'shw': 'Surviving Hollywood', 'brew08': "'08",
-                    'nr': 'New Rules', 'x360': 'X360', 'shs11': "'11"}
+                    'nr': 'New Rules', 'x360': 'X360', 'shs11': "'11", 'chc': 'Claire Hart'}
 # On the main menu, Add-Ons keeps Use Translated Mini-Games, Title Screen Music and Title Screen Look, and the other add-on switches go one page
 # further in, Per-Game Settings (owner, 2026-11-09); the pause menu lists them all on Add-Ons, as before.
 PER_GAME_LABEL = 'Per-Game Settings'
@@ -189,17 +198,20 @@ TEXT_ANIMATION_NAMES = {'letters': 'Letter by Letter', 'wipe': 'Line Wipe', 'ins
 CHOICE_NAMES = {'aspect_ratio': ASPECT_NAMES, 'preferred_language': LANGUAGE_NAMES, 'start_in': START_IN_NAMES,
                 'text_animation': TEXT_ANIMATION_NAMES, 'controller_confirm': CONFIRM_NAMES,
                 'grid_controls': GRID_CONTROLS_NAMES, 'title_music': TITLE_MUSIC_NAMES, 'title_look': TITLE_LOOK_NAMES,
-                'dsi_backgrounds': DSI_BACKGROUNDS_NAMES}
+                'dsi_backgrounds': DSI_BACKGROUNDS_NAMES, 'ch_dialogue': CH_DIALOGUE_NAMES,
+                'claire_powerups': CLAIRE_POWERUPS_NAMES}
 CHOICE_LABELS = {'aspect_ratio': ASPECT_LABEL, 'preferred_language': PREFERRED_LANGUAGE_LABEL, 'start_in': START_IN_LABEL,
                  'text_animation': TEXT_ANIMATION_LABEL,
                  'controller_confirm': CONFIRM_BUTTON_LABEL, 'grid_controls': GRID_CONTROLS_LABEL,
-                 'title_music': TITLE_MUSIC_LABEL, 'title_look': TITLE_LOOK_LABEL, 'dsi_backgrounds': DSI_BACKGROUNDS_LABEL}
+                 'title_music': TITLE_MUSIC_LABEL, 'title_look': TITLE_LOOK_LABEL, 'dsi_backgrounds': DSI_BACKGROUNDS_LABEL,
+                 'ch_dialogue': CH_DIALOGUE_LABEL, 'claire_powerups': CLAIRE_POWERUPS_LABEL}
 CHOICE_PARENTS = {'aspect_ratio': 'options:general', 'preferred_language': 'options:general', 'start_in': 'options:general',
                   'text_animation': 'options:general',
                   'controller_confirm': 'options:controller', 'grid_controls': 'options:controller',
-                  'title_music': 'options:addons', 'title_look': 'options:addons', 'dsi_backgrounds': 'options:extras'}
+                  'title_music': 'options:addons', 'title_look': 'options:addons', 'dsi_backgrounds': 'options:extras',
+                  'ch_dialogue': 'options:per_game', 'claire_powerups': 'options:per_game'}
 # Add-on choices the main menu keeps on Per-Game Settings rather than Add-Ons: their page's way back goes there.
-PER_GAME_CHOICES = ()
+PER_GAME_CHOICES = ('ch_dialogue', 'claire_powerups')
 VALUE_PX, VALUE_GAP, VALUE_ALPHA = 19, 3, 150
 # Data Management (owner, 2026-10-29) lists Add Content, its pages, then Add-Ons and Reset Settings; each page's rows are
 # the actions the main menu offers (`settings` has the key). A row is (key, label); a page is (screen, title, rows).
@@ -237,7 +249,7 @@ SWITCH_LABELS = {'side_panels': SIDE_PANELS_LABEL, 'device_vibration': DEVICE_VI
                  'hd_backdrop': HD_BACKDROP_LABEL, 'hires_portraits': HIRES_PORTRAITS_LABEL,
                  'ms3_characters': MS3_CHARACTERS_LABEL, 'java_look': JAVA_LOOK_LABEL, 'brew_08_backgrounds': BREW_08_BACKGROUNDS_LABEL, 'hollywood_art': HOLLYWOOD_ART_LABEL, 'dsi_backgrounds': DSI_BACKGROUNDS_LABEL, 'smartphone_music': SMARTPHONE_MUSIC_LABEL, 'word_grid_skin': WORD_GRID_SKIN_LABEL,
                  'ch_portraits': CH_PORTRAITS_LABEL,
-                 'ch_backdrop': CH_BACKDROP_LABEL,
+                 'ch_backdrop': CH_BACKDROP_LABEL, 'dim_backdrops': DIM_BACKDROPS_LABEL, 'ch_43': CH_43_LABEL,
                  'arena_minigames': ARENA_MINIGAMES_LABEL, 'arena_skin': ARENA_SKIN_LABEL,
                  'check_updates': CHECK_UPDATES_LABEL}
 # HD dims and sepia-tints what was on screen; a fit to IMG_0110's untouched margins
@@ -711,7 +723,9 @@ class HdPauseMenu:
         control = self.control_font(15)
         y = height / 2 - self.cap_offset(15, control) - .5
         for label, x, color in (('ON', kx - 27, (255, 255, 255)), ('OFF', kx + 52, (128, 128, 128))):
-            self.text(track, label, x - box[0], y, 15, color, center=True, font=control)
+            # (HdPauseMenu's own text: the label is the control's, not the page's. The Claire Hart skin's `text` turns
+            # grey text off-white for its teal pages, and the OFF label vanished on the white track; g54, 2026-11-22.)
+            HdPauseMenu.text(self, track, label, x - box[0], y, 15, color, center=True, font=control)
         mask = pygame.Surface(track.get_size(), pygame.SRCALPHA)
         pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=track.get_height() // 2)
         track.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
@@ -1128,7 +1142,7 @@ class HdPauseMenu:
 
     @staticmethod
     def addon_choices(settings):
-        """The add-on options that are one of a few values, after the switches (none since DSi Backgrounds moved to Extras)."""
+        """The add-on options that are one of a few values, after the switches (Claire Hart Dialogue)."""
         return [('choice', CHOICE_LABELS[key], key) for key in PER_GAME_CHOICES if key in settings]
 
     def check(self, layer, right, middle):

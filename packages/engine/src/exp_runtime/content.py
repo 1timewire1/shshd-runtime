@@ -36,6 +36,11 @@ PROFILE = SHS_ANDROID
 IOS_PROFILE = SHS_IOS
 MAX_EPISODE_ZIP_MEMBERS = 10_000
 MAX_EPISODE_ZIP_BYTES = 2 * 1024 * 1024 * 1024
+# shshd-runtime: an add-on may be far larger than an episode (Claire Hart's rounds, 1.1 GB; the sequel's about 3 GB). One
+# past MAX_PAYLOAD is streamed to the library's staging folder and hashed on the way, never held in memory (a ZIP's or
+# RAR's member as a loose file's), and only an add-on may be that large (owner's g54, 2026-11-21: the tester ZIP was
+# refused, "ZIP member exceeds supported size"). Such members don't count toward MAX_EPISODE_ZIP_BYTES.
+MAX_ADDON_BYTES = 8 * 1024 * 1024 * 1024
 
 # Optional companion import: the SHS HD (iPad) app bundle, supplementing an Android APK library. Unlike the APK
 # (or a base-game IPA, which replaces it), this is never required -- it unlocks HD-native art: a handful of
@@ -347,6 +352,48 @@ class _StagedEpisodeInput:
         return data
 
 
+def _input_size(item) -> int:
+    """An import input's size in bytes: a loose file, a ZIP member or a RAR member staged on disk."""
+    if isinstance(item, _ZippedEpisodeInput):
+        return item.member.file_size
+    return (item.path if isinstance(item, _StagedEpisodeInput) else Path(item)).stat().st_size
+
+
+def _input_open(item):
+    """An import input as a binary stream (a ZIP member decompressed as it is read)."""
+    if isinstance(item, _ZippedEpisodeInput):
+        return item.package.open(item.member)
+    return (item.path if isinstance(item, _StagedEpisodeInput) else Path(item)).open('rb')
+
+
+@dataclass(frozen=True)
+class _LargeInput:
+    """An input past MAX_PAYLOAD (an add-on's, MAX_ADDON_BYTES at most): `_install_episodes` streams it to its staging
+    folder and hashes it on the way instead of reading it into memory."""
+    item: object
+    size: int
+
+    def stage(self, folder: Path):
+        """Copy it into `folder` as it is read: (the staged path, its SHA-256)."""
+        target = folder / f'incoming-{os.getpid()}-{id(self)}.exp'
+        hasher, copied = hashlib.sha256(), 0
+        try:
+            with _input_open(self.item) as source, target.open('wb') as output:
+                while chunk := source.read(1024 * 1024):
+                    copied += len(chunk)
+                    if copied > MAX_ADDON_BYTES:
+                        raise ContentError('An add-on exceeds the supported size')
+                    hasher.update(chunk)
+                    output.write(chunk)
+        except (BadZipFile, OSError, EOFError, ZlibError) as error:
+            target.unlink(missing_ok=True)
+            raise ContentError(f'Cannot read a large EXP: {error}') from error
+        except ContentError:
+            target.unlink(missing_ok=True)
+            raise
+        return target, hasher.hexdigest()
+
+
 def _episode_rar_inputs(path, catalog_name, stack):
     from .episode_catalog import MAX_CATALOG_BYTES
     from .rar import RarReader, RarError
@@ -359,14 +406,17 @@ def _episode_rar_inputs(path, catalog_name, stack):
                     raise ContentError('Episode RAR contains too many entries')
                 if member['size'] < 0:
                     raise ContentError('Episode RAR has an unknown member size')
-                # Solid archives may decode skipped entries to build their
-                # dictionary, so bound all declared data, including ignored files.
-                total += member['size']
-                if total > MAX_EPISODE_ZIP_BYTES:
-                    raise ContentError('Episode RAR exceeds the supported total size')
                 normalized = member['name'].replace('\\', '/')
                 parts, name = normalized.split('/'), normalized.rsplit('/', 1)[-1]
                 is_catalog = name.lower() == catalog_name
+                # Solid archives may decode skipped entries to build their
+                # dictionary, so bound all declared data, including ignored files
+                # (an add-on's large EXP is bounded by MAX_ADDON_BYTES instead).
+                large = name.lower().endswith('.exp') and MAX_PAYLOAD < member['size'] <= MAX_ADDON_BYTES
+                if not large:
+                    total += member['size']
+                if total > MAX_EPISODE_ZIP_BYTES:
+                    raise ContentError('Episode RAR exceeds the supported total size')
                 if (member['mode'] == stat.S_IFDIR or not name or name.startswith('._')
                         or any(part.casefold() == '__macosx' for part in parts)
                         or not (is_catalog or name.lower().endswith('.exp'))):
@@ -383,7 +433,7 @@ def _episode_rar_inputs(path, catalog_name, stack):
                 seen.add(normalized)
                 if member['encrypted']:
                     raise ContentError('Encrypted episode RARs are not supported; extract the EXP files first')
-                limit = MAX_CATALOG_BYTES if is_catalog else MAX_PAYLOAD
+                limit = MAX_CATALOG_BYTES if is_catalog else MAX_ADDON_BYTES
                 if member['size'] > limit:
                     raise ContentError(f'RAR member exceeds supported size: {name}')
                 destination = stage / str(index)  # Never the archive's pathname.
@@ -424,10 +474,11 @@ def _episode_zip_inputs(package, catalog_name):
         if normalized in seen:
             raise ContentError(f'Episode ZIP contains duplicate member names: {normalized}')
         seen.add(normalized)
-        limit = MAX_CATALOG_BYTES if is_catalog else MAX_PAYLOAD
+        limit = MAX_CATALOG_BYTES if is_catalog else MAX_ADDON_BYTES
         if member.file_size > limit:
             raise ContentError(f'ZIP member exceeds supported size: {member.filename}')
-        total += member.file_size
+        if member.file_size <= MAX_PAYLOAD:              # (a larger one is streamed: an add-on's)
+            total += member.file_size
         if total > MAX_EPISODE_ZIP_BYTES:
             raise ContentError('Episode ZIP exceeds the supported total size')
         source = _ZippedEpisodeInput(package, member, name)
@@ -931,8 +982,61 @@ class ContentLibrary:
         hd = self.shs_hd_resource(155)
         if hd is None:
             return None
-        from .cod.hd_art import derived_common
-        return derived_common(self.android_asset(126), hd)
+        return self._derived(*self._cod_hd_job('common', 126, hd))
+
+    def _cod_hd_job(self, kind, cod_id, hd):
+        """(kind, inputs, compute) of one derived CoD HD pack: CoD's own pack `cod_id` and SHS HD's `hd`, read now."""
+        from .cod.hd_art import derived_common, derived_pack
+        cod = self.android_asset(cod_id)
+        derive = derived_common if kind == 'common' else derived_pack
+        return kind, (cod, hd), lambda: derive(cod, hd)
+
+    def cod_hd_jobs(self):
+        """shshd-runtime: every derived CoD HD pack as (kind, inputs, compute), its inputs read now, so a thread can make
+        them while the launch screens show (application_cod.warm_hd_art) through `_derived`."""
+        if self.game_id != 'cod' or self.shs_hd_art is None:
+            return []
+        from .cod.hd_art import SKIN_PACKS
+        jobs = []
+        hd = self.shs_hd_resource(155)
+        if hd is not None:
+            jobs.append(self._cod_hd_job('common', 126, hd))
+        for resource_id, hd_id in SKIN_PACKS.items():
+            hd = self.shs_hd_resource(hd_id)
+            if hd is not None:
+                jobs.append(self._cod_hd_job(f'skin{resource_id}', resource_id, hd))
+        return jobs
+
+    DERIVED = 'derived'
+
+    def _derived(self, kind, inputs, compute):
+        """shshd-runtime: art derived from the library's own files (Cause of Death's HD skins from SHS HD's, cod/hd_art.py),
+        made once and kept in the library's `derived` folder by a hash of its inputs and the method's version. Made in pure
+        Python, a choice's skin held a CoD story's first choice 1.9 s at every start (the Claire Hart skip prompt, 2026-11-21).
+        A library opened without writing (the Creator's) makes it and keeps it in memory only."""
+        from .cod.hd_art import DERIVE_VERSION
+        digest_ = hashlib.sha256(f'{kind}:{DERIVE_VERSION}'.encode())
+        for part in inputs:
+            digest_.update(hashlib.sha256(part).digest())
+        key = digest_.hexdigest()[:40]
+        held = self.__dict__.setdefault('_derived_art', {})
+        if key in held:
+            return held[key]
+        path = self.directory / self.DERIVED / f'{kind}-{key}.bin'
+        try:
+            data = path.read_bytes()
+        except OSError:
+            data = compute()
+            if self.remember_checks:
+                try:
+                    path.parent.mkdir(exist_ok=True)
+                    staged = path.with_name(f'{path.name}.{threading.get_ident()}.part')   # (the warm-up thread's too)
+                    staged.write_bytes(data)
+                    staged.replace(path)
+                except OSError as error:
+                    logging.warning('Derived art not kept: %s', error)
+        held[key] = data
+        return data
 
     def add_shs_hd_art(self, source: Path) -> bool:
         """Link the SHS HD (iPad) IPA to a CoD library as its HD art source, transactionally (cod/hd_art.py)."""
@@ -1025,10 +1129,10 @@ class ContentLibrary:
             # Only CoD's own verified map, from the SHS HD art source (cod/hd_art.py); nothing by number alone.
             if self.shs_hd_art is None:
                 return None
-            from .cod.hd_art import IDENTICAL, SKIN_PACKS, derived_pack
+            from .cod.hd_art import IDENTICAL, SKIN_PACKS
             if resource_id in SKIN_PACKS:
                 hd = self.shs_hd_resource(SKIN_PACKS[resource_id])
-                return None if hd is None else derived_pack(self.android_asset(resource_id), hd)
+                return None if hd is None else self._derived(*self._cod_hd_job(f'skin{resource_id}', resource_id, hd))
             if resource_id in IDENTICAL:
                 return self.shs_hd_resource(IDENTICAL[resource_id])
             return None
@@ -1129,6 +1233,42 @@ class ContentLibrary:
             return read_file_resource(self._content_path(record, '.exp'), resource_id)
         except (ContentError, OSError):
             return None
+
+    def addon_json(self, addon_id: str, resource_id: int):
+        """shshd-runtime: an addon's JSON resource, parsed once for the library (Claire Hart's rounds spec: 2.4 MB, which the
+        engine and the round's renderer each parsed at a case's first round, ~200 ms a parse on the g54, 2026-11-21), or
+        None. The parsed value is shared: callers must not change it."""
+        record = next((a for a in self.addons if a['addon'] == addon_id), None)
+        if record is None:
+            return None
+        cache = self.__dict__.setdefault('_addon_json', {})
+        key = (record['id'], resource_id)
+        if key not in cache:
+            data = self.addon_resource(addon_id, resource_id)
+            try:
+                cache[key] = json.loads(data) if data else None
+            except (ValueError, UnicodeError) as error:
+                raise ContentError(f'{addon_id} resource {resource_id} is not valid JSON: {error}') from error
+        return cache[key]
+
+    def menu_skin(self):
+        """shshd-runtime (Add-Ons' Claire Hart UI set to Everywhere, `ch_dialogue` 'all'; owner, 2026-11-22): the skin's spec
+        (EpisodeResources.dialogue_skin's) for the screens with no episode, the main menu's; else None. The same dict while
+        the add-on stays, so what is kept for it (desktop_ch_ui.ChUi.of) is kept."""
+        entry = getattr(GAMES.get(self.game_id), 'DIALOGUE_SKIN', None)
+        if entry is None or getattr(self, 'ch_dialogue', 'cases') != 'all':
+            return None
+        try:
+            spec = self.addon_json(entry[0], entry[1])
+        except ContentError as error:
+            logging.warning('The dialogue skin in %s %s is unreadable: %s', entry[0], entry[1], error)
+            return None
+        if not isinstance(spec, dict) or spec.get('version') != 1:
+            return None
+        kept = self.__dict__.get('_menu_skin')
+        if kept is None or kept[0] is not spec:
+            kept = self._menu_skin = spec, dict(spec, addon=entry[0])
+        return kept[1]
 
     def addon(self, addon_id: str):
         """shshd-runtime: the imported addon `addon_id` as (its manifest record, its archive), or None. An addon that
@@ -1534,7 +1674,11 @@ class ContentLibrary:
                 for index, path in enumerate(candidates):
                     if progress:
                         progress(f'Episode {index + 1} of {len(candidates)}')
-                    yield path.read_bytes(), path.name, {}
+                    size = _input_size(path)
+                    if size > MAX_ADDON_BYTES:
+                        raise ContentError(f'{path.name} exceeds the supported size')
+                    # Past MAX_PAYLOAD only an add-on may go: streamed by _install_episodes, never held whole.
+                    yield (_LargeInput(path, size) if size > MAX_PAYLOAD else path.read_bytes()), path.name, {}
             return self._install_episodes(episodes(), catalog=catalog, store=store, replace_saved=replace_saved, keep=keep)
 
     def store_listing(self):
@@ -1635,6 +1779,32 @@ class ContentLibrary:
             asking = []                                     # older copies with saved games, when replace_saved is None
             listed = {record['id'] for record in self.episodes}     # in the library before this batch
             for data, name, source in episodes:
+                if isinstance(data, _LargeInput):
+                    staged, sha = data.stage(stage)
+                    try:
+                        addon = self._addon_entry(LazyExpArchive(staged), sha, name, addons)
+                    except ContentError:
+                        staged.unlink(missing_ok=True)
+                        raise
+                    if addon is None:
+                        staged.unlink(missing_ok=True)
+                        raise ContentError(f'{name} is larger than an episode may be ({MAX_PAYLOAD // 2 ** 20} MB); '
+                                           'only an add-on may be larger')
+                    held = next((a for a in self.addons if a['sha256'] == sha), None)
+                    if addon is not False:
+                        staged.replace(stage / (sha + '.exp'))
+                        addons[addon['addon']] = addon
+                        addon_additions.append(addon)
+                        for superseded in addon.get('supersedes', ()):
+                            addons.pop(superseded, None)
+                    elif (held is not None and sha not in repaired
+                          and not (self.directory / held['file']).is_file()):
+                        staged.replace(stage / (sha + '.exp'))      # (its missing file restored, as below)
+                        repairs.append(held)
+                        repaired.add(sha)
+                    else:
+                        staged.unlink(missing_ok=True)
+                    continue
                 sha = digest(data)
                 addon = self._addon_entry(data, sha, name, addons)
                 if addon is not None:
@@ -1753,9 +1923,10 @@ class ContentLibrary:
 
     def _addon_entry(self, data, sha, name, addons):
         """For `_install_episodes`: None when `data` is no addon; False for an addon the library already holds, or holds
-        at a higher revision; else the new addon's manifest record (a rebuild at the same revision replaces it)."""
+        at a higher revision; else the new addon's manifest record (a rebuild at the same revision replaces it). `data`
+        may be an archive already open (a LazyExpArchive of a large add-on staged on disk)."""
         try:
-            archive = ExpArchive(data)
+            archive = data if isinstance(data, LazyExpArchive) else ExpArchive(data)
             record = addon_record(archive)
         except ContentError as error:
             raise ContentError(f'{name}: {error}') from error
@@ -1795,6 +1966,7 @@ PRESENTATION_TABLES = dict(duet=('TRANSLATED_DUETS', tuple), narration_theme=('T
                            portrait_effects=('TRANSLATED_PORTRAIT_EFFECTS',
                                              lambda spec: (spec[0], tuple(range(spec[1], spec[1] + EFFECTS)))),
                            music_loops=('TRANSLATED_MUSIC_LOOPS', dict),
+                           narration_portrait=('TRANSLATED_NARRATION_PORTRAITS', bool),
                            journal=('TRANSLATED_JOURNALS', tuple))      # (profile only: quest_journal.py)
 
 
@@ -1809,15 +1981,22 @@ def presentation_feature(resources, name):
     value = getattr(profile, table, {}).get(record.get('pack_id'))
     if value is not None:
         return convert(value)
-    if not getattr(profile, 'PRESENTATION_RECORD', False):
+    if not accepts_declared(profile, name):
         return None
     return (getattr(resources, 'presentation', None) or {}).get(name)
+
+
+def accepts_declared(profile, name):
+    """Whether a game's episodes may declare presentation member `name` themselves: its PRESENTATION_RECORD, True for every
+    member or a tuple of those it takes (CoD's narrator portrait)."""
+    accepted = getattr(profile, 'PRESENTATION_RECORD', False)
+    return accepted is True or isinstance(accepted, tuple) and name in accepted
 
 
 def declared(resources, name):
     """shshd-runtime: an episode's own declaration of a presentation member (resource 3), where its game accepts one
     (PRESENTATION_RECORD); None otherwise."""
-    if not getattr(GAMES.get(game_id(resources)), 'PRESENTATION_RECORD', False):
+    if not accepts_declared(GAMES.get(game_id(resources)), name):
         return None
     return (getattr(resources, 'presentation', None) or {}).get(name)
 
@@ -1944,7 +2123,95 @@ class EpisodeResources:
             if found is not None and alias[1] in found[1].entries:
                 return found[1], alias[1]
             return None, resource_id
+        banked = self._look_bank(resource_id)
+        if banked is not None:
+            return banked
         return next((archive for archive in self._addons() if resource_id in archive.entries), None), resource_id
+
+    def _look_bank(self, resource_id):
+        """shshd-runtime (Claire Hart plan, look banks): CoD draws a look as 5 consecutive IDs, one an expression, but Claire
+        Hart's add-on holds each picture once, shared between looks. For a pack in the game profile's LOOK_BANKS, (add-on,
+        spec, base), the ID base + 5 x look + expression is the picture its spec's `looks` names there: (that add-on's archive,
+        the picture), or None (another ID, no such look or picture, or no add-on)."""
+        bank = pack_setting(self, 'LOOK_BANKS')
+        if bank is None or resource_id < bank[2]:
+            return None
+        addon_id, spec, base = bank
+        found = self.library.addon(addon_id) if hasattr(self.library, 'addon') else None
+        if found is None:
+            return None
+        looks = self._look_banks(found[1], spec)
+        look, expression = divmod(resource_id - base, 5)
+        picture = looks[look][expression] if look < len(looks) and len(looks[look]) == 5 else None
+        if type(picture) is not int or picture not in found[1].entries:
+            return None
+        return found[1], picture
+
+    def dialogue_skin(self):
+        """shshd-runtime (Add-Ons' Claire Hart Dialogue, the game profile's DIALOGUE_SKIN): the skin's spec (its art's numbers
+        in its add-on, `addon`, its text colour and fonts) when the player's choice (`library.ch_dialogue`: 'off', 'cases' for
+        the profile's packs, 'all') puts this episode in it and the library has the add-on with its spec; else None."""
+        entry = getattr(GAMES.get(game_id(self)), 'DIALOGUE_SKIN', None)
+        choice = getattr(self.library, 'ch_dialogue', 'cases')
+        if entry is None or choice == 'off' or choice != 'all' and feature_pack(self) not in entry[2]:
+            return None
+        kept = self.__dict__.get('_skin')
+        if kept is None:
+            data = self.library.addon_resource(entry[0], entry[1]) if hasattr(self.library, 'addon_resource') else None
+            spec = {}
+            if data is not None:
+                try:
+                    spec = json.loads(data)
+                except ValueError as error:
+                    logging.warning('The dialogue skin in %s %s is unreadable: %s', entry[0], entry[1], error)
+                if not isinstance(spec, dict) or spec.get('version') != 1:
+                    spec = {}
+            kept = self._skin = dict(spec, addon=entry[0]) if spec else {}
+        return kept or None
+
+    def _look_banks(self, archive, spec):
+        """The `looks` of an add-on's spec (JSON at `spec`: a list of each look's 5 picture IDs), read once; [] without one."""
+        kept = self.__dict__.get('_looks')
+        if kept is None or kept[0] is not archive:
+            looks = []
+            if spec in archive.entries:
+                try:
+                    looks = json.loads(archive.read(spec)).get('looks', [])
+                except (ValueError, AttributeError, ContentError) as error:
+                    logging.warning('The look banks in resource %s are unreadable: %s', spec, error)
+                if not isinstance(looks, list):
+                    looks = []
+            kept = self._looks = (archive, looks)
+        return kept[1]
+
+    def backdrop_slice(self, resource_id):
+        """shshd-runtime (Claire Hart plan Stage 2, decision M): the left edge, in the picture's pixels, of the 3:4 slice
+        of a 4:3 scene this episode shows as its backdrop, or None to draw the picture as any other. For a pack in the
+        game profile's BACKDROP_SLICES, (add-on, spec): the episode's own record (resource 7, backdrop_slices.py) first,
+        so a case can move a slice without a new add-on, then the add-on spec's `scenes` ({folder: [resource, x]})."""
+        bank = pack_setting(self, 'BACKDROP_SLICES')
+        if bank is None:
+            return None
+        kept = self.__dict__.get('_slices')
+        if kept is None:
+            from .backdrop_slices import RESOURCE as SLICES, decode as decode_slices
+            slices = {}
+            found = self.library.addon(bank[0]) if hasattr(self.library, 'addon') else None
+            if found is not None and bank[1] in found[1].entries:
+                try:
+                    scenes = json.loads(found[1].read(bank[1])).get('scenes', {})
+                    slices.update({entry[0]: entry[1] for entry in scenes.values()
+                                   if isinstance(entry, list) and len(entry) == 2
+                                   and all(type(value) is int for value in entry)})
+                except (ValueError, AttributeError, ContentError) as error:
+                    logging.warning('The backdrop slices in %s %s are unreadable: %s', bank[0], bank[1], error)
+            if SLICES in self.archive.entries:
+                try:
+                    slices.update(decode_slices(self.archive.read(SLICES)))
+                except ContentError as error:
+                    logging.warning('%s: %s', self.record.get('name', 'episode'), error)
+            kept = self._slices = slices
+        return kept.get(resource_id)
 
     # New Rules loads its minigame library (25200) beside whichever story runs: a linked segment (VM_SPEC.md §2.3).
     LINKED_SCRIPT = 25200

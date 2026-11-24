@@ -136,8 +136,10 @@ RUNTIME_STATUS = {
     214: emits('x360_slot'), 215: emits('x360_leash'), 216: emits('x360_puzzle'), 217: emits('x360_diss'),
     218: emits('cutscene'), 219: emits('shs11_memory'), 220: emits('shs11_reflex'), 221: emits('brew_catch'),
     222: emits('x360_battle'),
+    226: emits('claire_round'),
     223: emits('call_scene', 'run_due'),
     224: emits('grid'),
+    225: emits('story_object'),
 }
 PRESENTATION_STATUS = {
     'duet': emits('dialogue'), 'narration_theme': emits('dialogue'), 'portrait_effects': emits('dialogue'),
@@ -151,6 +153,8 @@ PRESENTATION_STATUS = {
     # The BREW '07 translations' split `$USR` (owner, 2026-11-18): a Creator story names its own keys (any `$KEY`), in
     # its own names table.
     'name_keys': equivalent('a name under a key of its own (any $KEY in a name node)'),
+    # Claire Hart Classic's narration (plan Stage 0, E): its translated pack sets it; a Creator story can't yet.
+    'narration_portrait': equivalent('a free setting for Cause of Death (Add-Ons panel)'),
 }
 
 def calls(service):

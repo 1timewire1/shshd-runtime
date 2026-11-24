@@ -895,7 +895,7 @@ CoD's colours (`cod/hd_art.positional_frames`).
     notice when the main menu next comes up, as `SHSEngine::setAppMode` does (flag +0x6490b).
   - **Controller** (while one is connected): Confirm Button and Word Grid Controls.
   - **Add-Ons** (when the library has an addon or translated game that needs a switch): CoD's are HD Portraits in CoD
-    and Backdrop. On the main menu they sit one page in, under Per-Game Settings.
+    and Backdrop, and Dim Backdrops and Claire Hart UI (Claire Hart's cases, or Everywhere: every episode and the main menu). On the main menu they sit one page in, under Per-Game Settings.
   - **On the main menu only:**
     - **Preferred Language** ends General (Episode Titles until 2026-11-18, when it took in the add-ons' DSi Language,
       '11 Language and Story Language: the titles, and those add-ons' stories where they have it). Its row shows the current language under its name, in smaller letters as

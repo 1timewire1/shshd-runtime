@@ -222,6 +222,22 @@ class LibraryBrowser(QDialog):
         ok = self.buttons.button(QDialogButtonBox.StandardButton.Ok)
         try:
             resource = int(text.split(' ', 1)[0])
+            from .assets import addon_looks
+            look = addon_looks(self.library, self.addon).get(resource)
+            if look is not None:
+                # A look (Claire Hart's): its Normal face; used by reference for a character's portrait, never copied.
+                pixmap = QPixmap()
+                if not pixmap.loadFromData(image_png(self.library.addon(self.addon)[1].read(look[1][0]))):
+                    raise ProjectError('Image could not be decoded')
+                self.preview.setPixmap(pixmap.scaled(380, 360, Qt.AspectRatioMode.KeepAspectRatio,
+                                                    Qt.TransformationMode.SmoothTransformation))
+                self.preview.setToolTip(f'{look[0]}: five faces, Normal to Surprised. Use it from the add-on as a '
+                                        "character's portrait (Characters…).")
+                self.resource = resource
+                ok.setEnabled(False)
+                self.use_addon.setEnabled(True)
+                return
+            self.preview.setToolTip('')
             data = self.library.addon(self.addon)[1].read(resource)
             copyable = True
             if is_image(data):
@@ -562,7 +578,7 @@ class Editor(QMainWindow):
             if node.kind in ('dialogue', 'choice', 'title', 'message', 'notice', 'scene_label', 'word_game', 'quest',
                              'journal_updated',
                              'set_text', 'text_default', 'character_name', 'picker', 'faceplace', 'faceplace_post',
-                             'faceplace_link', 'tree_node', 'tree_result', 'append_text'):
+                             'faceplace_link', 'tree_node', 'tree_result', 'append_text', 'story_object'):
                 text = QTextEdit()
                 text.setPlainText(node.text)
                 text.setAcceptRichText(False)
@@ -570,12 +586,13 @@ class Editor(QMainWindow):
                 text.setMinimumHeight(120)
                 text.textChanged.connect(lambda: self.set_node('text', text.toPlainText()))
                 form.addRow('Text', text)
-            if (node.kind in ('background', 'character_art', 'faceplace_link')
+            if (node.kind in ('background', 'character_art', 'faceplace_link', 'story_object')
                     or node.kind == 'dialogue' and not node.character):
                 key = 'portrait' if node.kind == 'dialogue' else 'asset'
                 images = [('None', None)] + [(f'{a.id} · {a.name}', a.id) for a in self.project.assets
                                              if a.data is None or is_image(a.data)]
-                form.addRow({'background': 'Background', 'faceplace_link': 'Photo'}.get(node.kind, 'Portrait'), self.combo(
+                form.addRow({'background': 'Background', 'faceplace_link': 'Photo',
+                             'story_object': 'Picture'}.get(node.kind, 'Portrait'), self.combo(
                     images, getattr(node, key), lambda value: self.set_node(key, value)))
             if node.kind in ('dialogue', 'choice') and self.project.game == 'cod':
                 # CoD's two (compiler.COD_THEMES): its grey box with a slanted name, or an upright one (owner, 2026-11-19).
@@ -938,11 +955,11 @@ class Editor(QMainWindow):
     def addon_settings(self):
         """The primary add-on (its settings come with it, and the episode needs it), BREW's edition, what each declared add-on
         brings, and the translated games' settings that need no add-on (owner, 2026-11-09)."""
-        from .model import ADDON_EDITIONS, FREE_SETTINGS, primary_addon
+        from .model import ADDON_EDITIONS, FREE_SETTING_GAMES, FREE_SETTINGS, primary_addon
         if self.project.native:
             self.error('Native projects keep their original presentation.'); return
-        if self.project.game != 'shs':
-            self.error('Add-ons and their settings are for Surviving High School episodes.'); return
+        if self.project.game not in ('shs', 'cod'):
+            self.error('Add-ons and their settings are for Surviving High School and Cause of Death episodes.'); return
         try:
             with self.open_library() as library:
                 available = [(addon['title'], addon['addon']) for addon in library.addons]
@@ -955,7 +972,9 @@ class Editor(QMainWindow):
         dialog = QDialog(self)
         dialog.setWindowTitle('Add-ons and settings')
         form = QFormLayout(dialog)
-        intro = QLabel('The primary add-on gives the episode its look: its frame, relationship icons, answer music and switches. '
+        look = ('its frame, relationship icons, answer music and switches' if self.project.game == 'shs'
+                else "Claire Hart Classic's (chc): its dialogue skin, narrator portraits, dimmed backdrops and switches")
+        intro = QLabel(f'The primary add-on gives the episode its look: {look}. '
                        'Its pictures win where add-ons share a number. Other add-ons are extras, for their pictures, sounds '
                        'and mini-games. Players need every add-on the episode uses.'
                        + ('' if self.project.library else ' Choose an imported library to pick from its add-ons.'))
@@ -986,7 +1005,7 @@ class Editor(QMainWindow):
                     lines.append(f'<b>{name}</b> (primary): ' + (escape('; '.join(shown)) or 'its pictures and sounds'))
                 else:
                     lines.append(f'<b>{name}</b> (extra): ' + (escape('; '.join(extra)) or 'its pictures and sounds'))
-            brings.setText('<br>'.join(lines) or 'No add-on: the episode looks as the smartphone game does.')
+            brings.setText('<br>'.join(lines) or 'No add-on: the episode looks as the ' + ('smartphone game' if self.project.game == 'shs' else 'iPhone game') + ' does.')
 
         def update():
             addon_id = primary_box.currentData()
@@ -1006,6 +1025,8 @@ class Editor(QMainWindow):
         form.addRow(QLabel('<b>Settings that need no add-on</b>'))
         boxes = {}
         for name, label in FREE_SETTINGS.items():
+            if FREE_SETTING_GAMES.get(name, self.project.game) != self.project.game:
+                continue                    # (another game's: it would change nothing here)
             boxes[name] = QCheckBox(label)
             boxes[name].setChecked(bool(self.project.options.get(name)))
             form.addRow(boxes[name])

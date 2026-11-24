@@ -67,6 +67,49 @@ DUET_TITLE_LINES = 2
 DIALOGUE_TOP_ROOM = 12
 
 
+# shshd-runtime: story-object pictures (service 225, Claire Hart plan P) in framed squares along the box's bottom, right-
+# aligned as Classic's are (photos chc_09, chc_12: a slot is a fifth of the box's width there), the box a row taller for them.
+STORY_OBJECT_SLOT = 36                  # a square's side, in units, when the row fits at it (else they share the room)
+STORY_OBJECT_GAP = 3                    # between squares
+STORY_OBJECT_MARGIN = 6                 # from the box's right and bottom edges, and above the row
+STORY_OBJECT_ROOM = 270                 # the widest a narrator's box grows to hold its row
+# shshd-runtime: Add-Ons' Claire Hart Dialogue (content.EpisodeResources.dialogue_skin; owner, 2026-11-19): Claire Hart's Romic
+# (vector_text.skin_font: the add-on's own faces) for the text, its bold for emphasis and the name, which goes in the tab.
+# Claire Hart's text is Romic Bold, as its names are (its Romic lacks '/', '&', '#' and most accented letters); CoD's emphasis
+# takes the skin's `emphasis` colour (one of Claire Hart's text colours), not a font.
+SKIN_BODY, SKIN_BOLD, SKIN_NAME = 'CHRomicBold16', 'CHRomicBold16', 'CHRomicBold18'
+# ...and narration slanted, as CoD's narration is italic (owner, 2026-11-19; Romic has no italic: vector_text.SKIN_SLANT).
+SKIN_NARRATION = 'CHRomicBoldItalic16'
+# The skin's ring is whole over the bubble (desktop_dialogue: no housing clip) and larger and darker than CoD's, so its
+# text wraps around the ring's own circle rather than CoD's two fixed insets: each line clears it by SKIN_RING_CLEAR
+# where the circle reaches into its row (owner, 2026-11-20: a third line ran under the ring).
+SKIN_RING_RADIUS = 64                   # the ring picture's 128 units, opaque to its edge, centred on the housing
+SKIN_RING_CLEAR = 4
+SKIN_RING_ROWS = 8
+# A narrator's ring is smaller, to tell narration from speech besides its missing name tab (owner, 2026-11-20); its
+# text wraps around it in turn, so narration keeps nearly CoD's own lines.
+SKIN_NARRATION_RING = 0.8
+
+
+def skin_ring_insets(portrait, mode, rect, style, cod, radius=SKIN_RING_RADIUS):
+    """Line insets (fonts.TextStyle.indents: positive from the left for a portrait on the left, mode 1; negative from the
+    right for one on the right) that keep each line of text laid at `rect` (layout 17's node 8, as CoD draws it: up and
+    left by COD_TYPING_PAD, down by COD_BASELINE_DROP) clear of a ring of SKIN_RING_RADIUS around the housing's centre."""
+    cx, cy = portrait.x + portrait.width / 2, portrait.y + portrait.height / 2
+    x0 = rect.x - (COD_TYPING_PAD if cod else 0)
+    y0 = rect.y - (COD_TYPING_PAD - COD_BASELINE_DROP if cod else 0)
+    pitch = int(style.height + style.gap) if cod else style.height + style.gap
+    insets = []
+    for row in range(SKIN_RING_ROWS):
+        top, bottom = y0 + row * pitch - 2, y0 + row * pitch + style.height + 4     # (its ink: caps to descenders)
+        dy = 0 if top <= cy <= bottom else min(abs(top - cy), abs(bottom - cy))
+        if dy >= radius:
+            insets.append(0)
+            continue
+        reach = math.sqrt(radius ** 2 - dy ** 2) + SKIN_RING_CLEAR
+        inset = cx + reach - x0 if mode == 1 else x0 + rect.width - (cx - reach)
+        insets.append(math.ceil(max(0, inset)) * (1 if mode == 1 else -1))
+    return tuple(insets)
 TITLE_JOINS = ('and', '&', ',')         # a two-speaker title's words that name no one ("Kay and Kel")
 
 
@@ -175,14 +218,45 @@ class DialoguePage:
     # shshd-runtime (General's Aspect Ratio): how far the whole bubble (box, text, title, portrait) was moved up for the
     # rows it holds past HD's own (DialogueLayout.page's `extra_rows`), so its bottom stays where HD's is.
     lift: float = 0
+    # shshd-runtime: the story-object pictures shown with the line, (picture, its square) each (story_object_slots).
+    story_objects: tuple = ()
+    # shshd-runtime (Claire Hart Dialogue): the skin's spec with `box` ('speaker' or 'narrator'), and the name's tab, or None.
+    skin: dict | None = None
+    tab: Rect | None = None
     # shshd-runtime: the width the body wraps in (SHSTextLayer's drawRegion): Text Animation's wipe crosses it per line.
     body_width: float = 0
+
+
+def story_object_slots(box, pictures, *, widen=False):
+    """(box, ((picture, square), ...)): the box a row taller at its bottom, and the pictures' squares along it from the
+    right. They share the box's width when the row is too long at STORY_OBJECT_SLOT; a narrator's box (`widen`) grows to
+    hold them first, up to STORY_OBJECT_ROOM."""
+    count = len(pictures)
+    if not count:
+        return box, ()
+    wanted = count * STORY_OBJECT_SLOT + (count - 1) * STORY_OBJECT_GAP + 2 * STORY_OBJECT_MARGIN
+    if widen and box.width < wanted:
+        box = replace(box, width=min(max(box.width, STORY_OBJECT_ROOM), wanted))
+    room = box.width - 2 * STORY_OBJECT_MARGIN
+    side = min(STORY_OBJECT_SLOT, (room - (count - 1) * STORY_OBJECT_GAP) / count)
+    box = replace(box, height=box.height + side + STORY_OBJECT_MARGIN)
+    top = box.y + box.height - STORY_OBJECT_MARGIN - side
+    right = box.x + box.width - STORY_OBJECT_MARGIN
+    slots = tuple((picture, Rect(right - (count - i) * side - (count - 1 - i) * STORY_OBJECT_GAP, top, side, side))
+                  for i, picture in enumerate(pictures))
+    return box, slots
 
 
 class DialogueLayout:
     def __init__(self, resources):
         self.resources = resources
         self.bank = LayoutBank.parse(read_ui(resources, 14))
+
+    def skin(self):
+        """Add-Ons' Claire Hart Dialogue's spec for this episode (content.EpisodeResources.dialogue_skin), or None. Asked
+        each page: the player may change it while the line is up."""
+        found = getattr(self.resources, 'dialogue_skin', None)
+        return found() if found is not None else None
 
     @lru_cache(maxsize=8)
     def font(self, name):
@@ -293,11 +367,21 @@ class DialogueLayout:
         else:
             duet = None
         mode, theme = details['presentation_mode'], details['theme']
-        font = self.font(NARRATOR_FONT if mode == 4 else BODY_FONT)
+        # shshd-runtime (narration_portrait): a narrator's line in a speaker's box beside the portrait, in narration's
+        # text and without a name plate (owner, 2026-11-19).
+        narration = bool(details.get('narration')) and mode in (1, 2)
+        skin = self.skin() if duet is None else None
+        skin_body = SKIN_NARRATION if mode == 4 or narration else SKIN_BODY
+        font = self.font(skin_body if skin else NARRATOR_FONT if mode == 4 or narration else BODY_FONT)
         cap_height = getattr(font, 'cap_height', None)
         name_font, name_style, body_font, body_style = dialogue_styles(
-            theme, narrator=mode == 4, emphasis_theme=details['emphasis_theme'],
+            theme, narrator=mode == 4 or narration, emphasis_theme=details['emphasis_theme'],
             game=game_id(self.resources), outline=cap_height is not None)
+        if skin:
+            # Claire Hart's one colour for the text and every name (CoD has none per character), emphasis in Romic Bold.
+            colour = tuple(skin['text'])
+            name_font, name_style = SKIN_NAME, TextStyle(18, 0, colour)
+            body_font, body_style = skin_body, TextStyle(14, 7, colour, (('`', tuple(skin.get('emphasis', colour))),))
         switch_fonts = note_frame = None
         text = details['text'][start:]
         sizing_text = details['text']  # Page turns keep the original box size.
@@ -307,7 +391,7 @@ class DialogueLayout:
         cod = game_id(self.resources) == 'cod'
         note_tint = None
         note_pack, note_metrics = 155, (NOTE_SIZE, NOTE_OFFSET, NOTE_ADVANCE)
-        colored = mode != 4 and theme in IPHONE_NOTE_FRAMES
+        colored = mode != 4 and not narration and theme in IPHONE_NOTE_FRAMES
         if cod:
             # CoD's own notes (IPHONE_NOTE_FRAMES), in every font configuration (installed faces or vector text): only
             # the colored sets have them, so narration and default-theme lines keep a plain '{', as on the iPhone.
@@ -349,7 +433,7 @@ class DialogueLayout:
             measured = layout_text(font, sizing_text, 220, body_style)
             # Narration switches to +0xfa74 on '`': the same face with a 0.6-point edge (cod/profile.py).
             emphasis = GAMES['cod'].NARRATION_EMPHASIS_FONT
-            switch_fonts = {'`': (emphasis, self.font(emphasis))}
+            switch_fonts = None if skin else {'`': (emphasis, self.font(emphasis))}
             width = max(120, (int(measured.width) + 2) // 2 * 2)
             height = (int(measured.height) + 5) // 2 * 2
             box = Rect(25, top - 5, width + 10, height + 10)
@@ -384,11 +468,18 @@ class DialogueLayout:
                 box = Rect(-6 + right, 96, math.ceil(measured.width) + 6, round(8.6 + 20.9 * lines))
                 origin = (right, HD_NARRATOR_TOP)
         else:
-            hd_label = self.hd_label(details, between_rings=duet is not None)
-            label = hd_label or preview_speaker(
-                details, self.bank, self.font, names,
-                previous_glyph=text_history.initial('dialogue_name') if text_history else -1)
-            name, name_origin, name_scale, extra = label.layout, label.origin, label.scale, label.extra
+            if narration:
+                name, name_origin, name_scale, extra = layout_text(self.font(name_font), '', 1, name_style), (0, 0), .9, 0
+            elif skin:
+                # The name goes in the skin's tab (skin_tab, below), on one line, at its own size.
+                name = layout_text(self.font(name_font), details['speaker'], 10000, name_style)
+                name_origin, name_scale, extra = (0, 0), 1, 8
+            else:
+                hd_label = self.hd_label(details, between_rings=duet is not None)
+                label = hd_label or preview_speaker(
+                    details, self.bank, self.font, names,
+                    previous_glyph=text_history.initial('dialogue_name') if text_history else -1)
+                name, name_origin, name_scale, extra = label.layout, label.origin, label.scale, label.extra
             rect = self.bank.rectangle(17, 8)
             cap_height = getattr(font, 'cap_height', None)
             if cap_height is None and cod:
@@ -396,7 +487,14 @@ class DialogueLayout:
                 # iPhone branch below, not SHS HD's photo-fitted one.
                 from .vector_text import cap_height as vector_cap_height
                 cap_height = vector_cap_height(font)
-            if cap_height is not None and cod:
+            if skin and cap_height is not None:
+                body_style = replace(body_style, height=cap_height, gap=10)       # (emphasis by colour: no switch font)
+            elif narration and cap_height is not None:
+                # Narration's own emphasis face (cod/profile.py, shs/profile.py NARRATION_EMPHASIS_FONT).
+                emphasis = GAMES[game_id(self.resources)].NARRATION_EMPHASIS_FONT
+                switch_fonts = {'`': (emphasis, self.font(emphasis))}
+                body_style = replace(body_style, height=cap_height, gap=10)
+            elif cap_height is not None and cod:
                 # CSFont uses the face's cap height, not the nominal Cocos label height. CoD keeps this fork's
                 # photo-verified pitch (IMG_0309 / IMG_0310) with BODY_MARKERS' colours, and draws emphasis in its
                 # own switch font (cod/profile.py EMPHASIS_FONTS: TrebuchetMS-Italic 16 with a 0.5-point edge).
@@ -420,6 +518,10 @@ class DialogueLayout:
                 vector = getattr(font, 'source', None) is not None
                 insets = (80, 70, 0, 0) if cap_height is not None or vector else (85, 75, 0, 0)
                 body_style = replace(body_style, indents=insets if mode == 1 else tuple(-n for n in insets))
+                if skin:
+                    radius = SKIN_RING_RADIUS * (SKIN_NARRATION_RING if narration else 1)
+                    body_style = replace(body_style, indents=skin_ring_insets(portrait, mode, rect, body_style, cod,
+                                                                              radius))
             elif duet is not None:
                 # Both sides' insets: one indent narrows the line by both (fonts.layout_text takes one side), and the
                 # lines move back by the right one once laid out (_shift_lines).
@@ -431,7 +533,8 @@ class DialogueLayout:
                 body_style = replace(body_style, indents=tuple(2 * n for n in insets))
             measured = layout_text(font, sizing_text, rect.width, body_style, switch_fonts=switch_fonts)
             capacity = int((rect.height + body_style.gap) / (body_style.height + body_style.gap))
-            count = min(capacity + max(0, extra_rows), max(3, len(measured.lines)))
+            # (A narration box holds just its lines: small, beside the portrait.)
+            count = min(capacity + max(0, extra_rows), max(1 if narration else 3, len(measured.lines)))
             # Rows past HD's own: the bubble grows that much upward (the whole of it is moved up below).
             lift = max(0, count - capacity) * (body_style.height + body_style.gap)
             height = int(count * (body_style.height + body_style.gap) - body_style.gap + 7) if count else 8
@@ -509,7 +612,7 @@ class DialogueLayout:
                            switch_fonts=switch_fonts)
         if duet is not None:
             body = _shift_lines(body, [-n / 2 for n in body_style.indents])
-        if mode != 4:
+        if mode != 4 and not narration and not skin:     # (narration has no name to place; the skin's goes in its tab)
             # Allow for any glyph becoming the first line on a later page.
             # The whole dialogue supplies one stable name position; neither
             # the native body box nor its byte offsets change for this fit.
@@ -546,10 +649,21 @@ class DialogueLayout:
                 name_origin = (middle - (ink[0] + ink[1]) / 2 * name_scale, name_origin[1])
                 if colors is not None:
                     name = _speaker_colors(name, partner_name or '', *colors)
+        tab = None
+        if skin and mode != 4 and not narration and details['speaker']:
+            tab, name_origin = self.skin_tab(skin, box, portrait, mode, name)
+        pictures = tuple(details.get('story_objects') or ())
+        story_objects = ()
+        if pictures:
+            # A narrator's box (top-anchored) grows down for the row; a speaker's grows up, so its bottom stays put.
+            grown, story_objects = story_object_slots(box, pictures, widen=mode == 4)
+            if mode != 4:
+                lift += grown.height - box.height      # (the whole bubble moves up by it below)
+            box = grown
         up = dialogue_offset[1]
         if up:
             # Centred in a taller frame, as far as the bubble's top (its box, its title, its portrait) has room.
-            tops = [box.y] + [r.y for r in (portrait, name_bounds) if r is not None]
+            tops = [box.y] + [r.y for r in (portrait, name_bounds, tab) if r is not None]
             lift += max(0., min(up, min(tops) - lift - DIALOGUE_TOP_ROOM))
         if lift:
             box = replace(box, y=box.y - lift)
@@ -557,7 +671,34 @@ class DialogueLayout:
             name_origin = (name_origin[0], name_origin[1] - lift)
             portrait = None if portrait is None else replace(portrait, y=portrait.y - lift)
             name_bounds = None if name_bounds is None else replace(name_bounds, y=name_bounds.y - lift)
+            story_objects = tuple((picture, replace(r, y=r.y - lift)) for picture, r in story_objects)
+            tab = None if tab is None else replace(tab, y=tab.y - lift)
         return DialoguePage(box, drawn_origin, body_font, body, portrait, name_font,
                             name, name_origin, name_scale, start, start + end, name_bounds, note_frame, note_tint,
                             note_pack=note_pack, theme=details['theme'] if duet is not None or narration_theme else None, lift=lift,
+                            story_objects=story_objects,
+                            skin=dict(skin, box='narrator' if mode == 4 or narration else 'speaker') if skin else None, tab=tab,
                             body_width=body_width)
+
+    @staticmethod
+    def skin_tab(skin, box, portrait, mode, name):
+        """(the tab's rectangle, the name's origin) for Claire Hart Dialogue: the tab as wide as the name and its insets, its
+        base on the bubble's outer top, beside the ring (to its right for a left speaker, its left for a right one; at the
+        bubble's left without a portrait), the name centred in the tab's band."""
+        k, tab = skin['density'], skin['tab']
+        width = max((tab['caps'][0] + tab['caps'][1]) / k, name.width + 2 * tab['inset'] / k)
+        height = tab['size'][1] / k
+        outset = skin['speaker']['outset']
+        left, right = box.x - outset[0], box.x + box.width + outset[2]
+        if portrait is not None and mode == 1:
+            x = portrait.x + portrait.width - 6
+        elif portrait is not None and mode == 2:
+            x = portrait.x + 6 - width
+        else:
+            x = left + 12
+        x = max(left + 4, min(x, right - 4 - width))
+        top = box.y - outset[1] - tab['base'] / k
+        rect = Rect(x, top, width, height)
+        x0, y0, x1, y1 = name.ink_bounds
+        middle = top + (tab['name'][0] + tab['name'][1]) / 2 / k
+        return rect, (x + (width - (x1 - x0)) / 2 - x0, middle - (y1 - y0) / 2 - y0)

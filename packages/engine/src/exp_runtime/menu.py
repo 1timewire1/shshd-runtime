@@ -64,7 +64,7 @@ def group_episodes(records, catalog, *, mega_label, novel_label, saved_label, sa
 
 # shshd-runtime: Add-Ons' Title Screen Look (owner, 2026-11-16): the main menu's art from a translated game's addon (the
 # game profile's TITLE_LOOKS); BREW's two editions are two looks.
-TITLE_LOOK_GAMES = ('nr', 'brew07', 'brew08', 'shw', 'shs11', 'x360')
+TITLE_LOOK_GAMES = ('nr', 'brew07', 'brew08', 'shw', 'shs11', 'x360', 'chc')     # (chc: CoD's Claire Hart look)
 
 MAX_NAMES = 4096               # player.json `names`: far more keys than the whole library writes
 
@@ -75,11 +75,11 @@ MAX_NAMES = 4096               # player.json `names`: far more keys than the who
 SHARED_PREFERENCES = dict(
     music=bool, sound=bool, vibration=bool, device_vibration=bool, logging_disabled=bool, choice_hints=bool,
     skip_minigames=bool, skip_ad_intros=bool, skip_upsell_intros=bool, autoplay=bool, disable_choice_timer=bool,
-    side_panels=bool, hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, brew_08_backgrounds=bool, hollywood_art=bool, dsi_backgrounds=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, undo=bool, ch_portraits=bool, ch_backdrop=bool, arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
+    side_panels=bool, hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, brew_08_backgrounds=bool, hollywood_art=bool, dsi_backgrounds=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, undo=bool, ch_portraits=bool, ch_backdrop=bool, dim_backdrops=bool, ch_43=bool, ch_dialogue=('off', 'cases', 'all'), claire_powerups=('once', 'unlimited', 'off'), arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
     controller_confirm=('south', 'east'), grid_controls=('tap', 'hold'), dsi_pixels=('sharp', 'smooth'),
     text_animation=TEXT_ANIMATIONS,
     preferred_language=PREFERRED_LANGUAGES,
-    order=('episode', 'title'), title_music=('default', 'auto', 'brew', 'nr', 'x360', 'shs11', 'shw'),
+    order=('episode', 'title'), title_music=('default', 'auto', 'brew', 'nr', 'x360', 'shs11', 'shw', 'chc'),
     last_title_game=('default', 'brew', 'nr', 'x360', 'shs11', 'shw'),
     title_look=('default', 'auto') + TITLE_LOOK_GAMES, last_title_look=('default',) + TITLE_LOOK_GAMES)
 
@@ -197,6 +197,14 @@ class MenuState:
                     self.ch_portraits = data['ch_portraits']
                 if type(data.get('ch_backdrop')) is bool:
                     self.ch_backdrop = data['ch_backdrop']
+                if type(data.get('dim_backdrops')) is bool:
+                    self.dim_backdrops = data['dim_backdrops']
+                if type(data.get('ch_43')) is bool:
+                    self.ch_43 = data['ch_43']
+                if data.get('ch_dialogue') in ('off', 'cases', 'all'):
+                    self.ch_dialogue = data['ch_dialogue']
+                if data.get('claire_powerups') in ('once', 'unlimited', 'off'):
+                    self.claire_powerups = data['claire_powerups']
                 if type(data.get('arena_minigames')) is bool:
                     self.arena_minigames = data['arena_minigames']
                 if type(data.get('arena_skin')) is bool:
@@ -298,6 +306,11 @@ class MenuState:
         # CoD with the chslim addon: Claire Hart's sharper portraits (ContentLibrary), and its backdrop beside the frame
         self.ch_portraits = True
         self.ch_backdrop = True
+        self.dim_backdrops = True      # Claire Hart's translations: their backdrops darkened as the game drew them
+        self.ch_43 = True              # Claire Hart's cases in their own 4:3 where the window has room (CLAIRE_HART_43_PLAN.md)
+        # Claire Hart Dialogue: CoD's dialogue in Claire Hart's bubbles, for its cases ('cases'), every episode ('all') or none
+        self.ch_dialogue = 'cases'
+        self.claire_powerups = 'once'           # Claire Hart's rounds' power-ups (R2): once each a round, unlimited, off
         # translated New Rules episodes: their minigames in New Rules' own arena (desktop_nr_arena.py); off, the timed
         # choices the translations carry for players without it (owner, 2026-10-31: the arena by default)
         self.arena_minigames = True
@@ -443,7 +456,7 @@ class MenuState:
                     skip_upsell_intros=self.skip_upsell_intros,
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     side_panels=self.side_panels, hd_backdrop=self.hd_backdrop, hires_portraits=self.hires_portraits,
-                    ms3_characters=self.ms3_characters, java_look=self.java_look, brew_08_backgrounds=self.brew_08_backgrounds, hollywood_art=self.hollywood_art, dsi_backgrounds=self.dsi_backgrounds, dsi_pixels=self.dsi_pixels, smartphone_music=self.smartphone_music, word_grid_skin=self.word_grid_skin, grids_as_memory=self.grids_as_memory, skip_ahead=self.skip_ahead, undo=self.undo, ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop,
+                    ms3_characters=self.ms3_characters, java_look=self.java_look, brew_08_backgrounds=self.brew_08_backgrounds, hollywood_art=self.hollywood_art, dsi_backgrounds=self.dsi_backgrounds, dsi_pixels=self.dsi_pixels, smartphone_music=self.smartphone_music, word_grid_skin=self.word_grid_skin, grids_as_memory=self.grids_as_memory, skip_ahead=self.skip_ahead, undo=self.undo, ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop, dim_backdrops=self.dim_backdrops, ch_43=self.ch_43, ch_dialogue=self.ch_dialogue, claire_powerups=self.claire_powerups,
                     arena_minigames=self.arena_minigames, arena_skin=self.arena_skin,
                     skip_sound_prompt=self.skip_sound_prompt, controller_confirm=self.controller_confirm,
                     grid_controls=self.grid_controls, text_animation=self.text_animation,

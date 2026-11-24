@@ -267,7 +267,7 @@ class LibraryMenuTests(unittest.TestCase):
         state = MenuState(self.library)
         path = state.save_path(state.selected, automatic=True)
         path.parent.mkdir()
-        for version in (43, 44, 46):            # (the Claire Hart branch's, and any later version's)
+        for version in (47, 60):                # (any later version's)
             path.write_text(json.dumps({'format': 'shs-runtime-save', 'version': version}))
             with self.assertRaises(NewerSaveError):
                 state.session(state.selected)

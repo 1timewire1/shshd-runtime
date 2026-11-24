@@ -25,6 +25,21 @@ class SyncFlowTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
 
+    def test_a_new_sync_clears_the_stages_a_killed_one_left(self):
+        """A receiver killed mid-transfer left its stage in the library (348 MB, 2026-11-24): the next sync clears it."""
+        from exp_runtime.sync_flow import clear_stale_stages
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            for name in ('.sync-abc', '.sync-send-def'):
+                (home / name / 'cod').mkdir(parents=True)
+                (home / name / 'cod' / 'part.exp').write_bytes(b'half')
+            (home / 'content').mkdir()
+            (home / '.restore-xyz').mkdir()
+            (home / 'library.json').write_text('{}')
+            clear_stale_stages(home)
+            self.assertEqual(sorted(p.name for p in home.iterdir()), ['.restore-xyz', 'content', 'library.json'])
+            clear_stale_stages(home / 'missing')                         # (no folder yet: nothing to do)
+
     def test_received_names_win_and_the_receivers_others_stay_and_device_options_stay(self):
         app = app_with(self.root)
         flow = SyncFlow(app)
@@ -71,9 +86,9 @@ class SyncFlowTests(unittest.TestCase):
         app = app_with(self.root, autoplay=True, music=True, vibration=True, device_vibration=False,
                        controller_confirm='south', grid_controls='hold', **{key: False for key in (
                            'sound', 'logging_disabled', 'side_panels', 'choice_hints', 'skip_minigames', 'skip_ad_intros',
-                           'skip_upsell_intros', 'skip_ahead', 'undo', 'disable_choice_timer', 'hd_backdrop', 'hires_portraits', 'ms3_characters', 'java_look', 'brew_08_backgrounds', 'hollywood_art', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'ch_portraits', 'ch_backdrop',
+                           'skip_upsell_intros', 'skip_ahead', 'undo', 'disable_choice_timer', 'hd_backdrop', 'hires_portraits', 'ms3_characters', 'java_look', 'brew_08_backgrounds', 'hollywood_art', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'ch_portraits', 'ch_backdrop', 'dim_backdrops',
                            'arena_minigames', 'arena_skin', 'skip_sound_prompt', 'dsi_backgrounds')}, dsi_pixels='sharp', preferred_language='fr', music_volume=50, sound_volume=50, order='episode', title_language='en',
-                           title_music='default', last_title_game='default', title_look='default', last_title_look='default')
+                           title_music='default', last_title_game='default', title_look='default', last_title_look='default', ch_dialogue='cases', claire_powerups='once')
         provider = SendProvider(app, ['options', 'episodes'], ['shs'])
         self.assertEqual(provider.offer(['shs']), {'shs': ['a']})
         self.assertEqual(provider.player, {})                     # Names off, Saved Games off

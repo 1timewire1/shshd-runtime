@@ -47,8 +47,8 @@ class SaveError(ValueError):
 
 
 class NewerSaveError(SaveError):
-    """shshd-runtime: a save in a format this build does not read but a newer one does (a later version, or 43 / 44: the
-    Claire Hart development branch's). It is not corrupt: the player keeps it where it is (v1.1.1 check, 2026-11-22)."""
+    """shshd-runtime: a save in a format this build does not read but a newer one does (a later version). It is not
+    corrupt: the player keeps it where it is (v1.1.1 check, 2026-11-22)."""
 
 
 def transition_class(resources):
@@ -150,6 +150,41 @@ def _sound_batch(operation):
 NESTED_SCRIPT_SERVICE, NESTED_SCRIPT_DEPTH = 223, 16
 
 
+def claire_round_source(resources):
+    """shshd-runtime: Claire Hart's rounds from the chcrounds add-on, for the engine (EngineState.claire_round_source): a
+    round's key (claire_round_services.round_key) -> (scene, its objects' names, the story objects, the plate's name), or None
+    for a round it hasn't; None without the add-on."""
+    library = getattr(resources, 'library', None)
+    read = getattr(library, 'addon_resource', None)
+    if read is None:
+        return None
+    cache = {}
+
+    def source(key):
+        if 'spec' not in cache:
+            shared = getattr(library, 'addon_json', None)          # (parsed once for the library: the renderer's too)
+            if shared is not None:
+                cache['spec'] = shared('chcrounds', 26000)
+            else:
+                import json
+                data = read('chcrounds', 26000)
+                cache['spec'] = json.loads(data) if data else None
+        spec = cache['spec']
+        if spec is None:
+            return None
+        from .claire_round_services import round_of
+        epid, number = round_of(key)
+        rounds = spec.get('rounds', {}).get(epid)
+        if not rounds or not 1 <= number <= len(rounds):
+            return None
+        scene, story, *title = rounds[number - 1]
+        entry = spec['scenes'].get(scene)
+        if entry is None:
+            return None
+        return scene, [o[0] for o in entry['objects']], list(story), title[0] if title else scene
+    return source
+
+
 class Session:
     """Execute original KiWi code until real player input is required.
 
@@ -216,6 +251,7 @@ class Session:
         self.engine.game_key = game_id(resources)
         self.engine.name_keys = self.name_keys()
         self.engine.object_portraits = self.object_portraits()
+        self.engine.narration_portrait = bool(presentation_feature(resources, 'narration_portrait'))
         self.engine.app_version = getattr(resources.library, 'app_info', {}).get('CFBundleVersion')
         transition = transition_class(resources)
         if transition is not None:
@@ -258,6 +294,9 @@ class Session:
             from .dsi import LANGUAGES, Source
             source = Source(source, tuple(record['languages']) if record is not None else LANGUAGES)
         self.engine.translation_source = source
+        self.engine.claire_round_source = claire_round_source(self.resources)
+        self.engine.claire_rounds_ready = any(a.get('addon') == 'chcrounds' for a in getattr(library, 'addons', None) or ())
+        self.engine.claire_powerups = getattr(getattr(self.resources, 'library', None), 'claire_powerups', 'once')
 
     @staticmethod
     def original_tree(resources) -> bool:
@@ -412,6 +451,7 @@ class Session:
                 install_state(engine, node.snapshot)       # `installStateData`: the 67 tracked variables, then what is kept below
         engine.character_names = dict(live.character_names)
         engine.name_keys, engine.object_portraits = live.name_keys, live.object_portraits
+        engine.narration_portrait = live.narration_portrait
         engine.strings[engine.name_key('$USR')] = live.strings.get(live.name_key('$USR'), '')
         for property_id in self.WARP_KEPT_PROPERTIES:
             key = live.number_key(0, property_id)
@@ -471,7 +511,7 @@ class Session:
         if action.name == 'word_grid':
             return game.visual_ms == 0 and game.phase == -2 and game.phase_ms == 1000 and game.round == 1
         if action.name in ('x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss', 'x360_battle', 'shs11_memory', 'shs11_reflex',
-                           'brew_catch'):
+                           'brew_catch', 'claire_round'):
             return not game.started
         return game.visual_ms == 0 and game.phase == 20 and game.phase_elapsed_ms == 0 and game.round == 0
 
@@ -506,6 +546,8 @@ class Session:
             return self._complete_minigame(result=int(success))
         elif kind == 'brew_catch':
             return self._complete_minigame(result=game.target if success else 0)
+        elif kind == 'claire_round':
+            return self._complete_minigame(result=0)    # (its story reads no result: it has one outcome)
         elif kind == 'x360_puzzle':
             return self._complete_minigame(result=0)    # (its story reads no result)
         elif kind == 'x360_diss':
@@ -521,6 +563,45 @@ class Session:
             loser = min(32760, max(0, loser))
             winner = min(32767, max(winner, loser + 7))
             game.home, game.away = (winner, loser) if success else (loser, winner)
+        return self._complete_minigame()
+
+    # -- shshd-runtime: Claire Hart's rounds (claire_rounds.ClaireRound; the player finds what a tap hits) ------------------
+    def _claire(self):
+        if not self.pending or self.pending.name != 'claire_round' or self.transitioning:
+            raise ValueError('There is no Claire Hart round')
+        self.pending.details['minigame_started'] = True
+        game = self.engine.claire_round
+        game.started = True
+        return game
+
+    def claire_tap(self, objects):
+        """A tap on the scene over `objects` (their places in the scene, topmost first): the object found, or None."""
+        if not isinstance(objects, (list, tuple)) or any(type(o) is not int for o in objects):
+            raise ValueError("A round's tap is a list of the objects under it")
+        return self._claire().tap(list(objects))
+
+    def claire_use(self, what: str):
+        """The hint or a power-up ('hint', 'focus', 'locator', 'clairvoyance', 'time_warp'): whether it was used."""
+        game = self._claire()
+        random = self.engine.random
+        moves = {'hint': lambda: game.hint(random) is not None, 'focus': lambda: game.focus(random) is not None,
+                 'locator': game.locate, 'clairvoyance': game.clairvoyance, 'time_warp': game.warp_time}
+        if what not in moves:
+            raise ValueError(f'No such hint or power-up: {what}')
+        return moves[what]()
+
+    def claire_pick(self, slot: int):
+        """A name picked for the Psychic Locator."""
+        if type(slot) is not int:
+            raise ValueError('A slot is a number')
+        return self._claire().pick_located(slot)
+
+    def claire_continue(self):
+        """The Level Summary's Continue: the story goes on."""
+        game = self._claire()
+        if not game.over:
+            raise ValueError('The round is still being played')
+        game.finish()
         return self._complete_minigame()
 
     @_sound_batch
@@ -811,6 +892,7 @@ class Session:
                 self.engine.cutscenes_enabled = self.cutscenes
                 self.engine.name_keys = self.name_keys()
                 self.engine.object_portraits = self.object_portraits()
+                self.engine.narration_portrait = bool(presentation_feature(self.resources, 'narration_portrait'))
                 action = self.engine.dispatch(self.vm, resource_exists=self.resources.exists)
                 if action.name == 'cutscene':
                     try:
@@ -986,6 +1068,10 @@ class Session:
                 raise ValueError('The catch game takes a press')
             self.engine.brew_catch.press()
             return action
+        elif action.name == 'claire_round':
+            if value is not None:
+                raise ValueError("A round's answer is a press (its moves are Session.claire_*)")
+            return self.claire_continue() if self.engine.claire_round.over else action
         elif action.name == 'x360_leash':
             if value is not None:
                 raise ValueError('The leash game takes a press')
@@ -1402,6 +1488,9 @@ class Session:
         if self.pending and self.pending.name == 'brew_catch':
             finished = self.engine.brew_catch.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS), self.engine.random)
             return self._complete_minigame() if finished else self.pending
+        if self.pending and self.pending.name == 'claire_round':
+            self.engine.claire_round.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS))
+            return self.pending
         if self.pending and self.pending.name == 'x360_leash':
             finished = self.engine.x360_leash.tick(min(elapsed_ms, ARENA_FRAME_CAP_MS))
             return self._complete_minigame() if finished else self.pending
@@ -1475,7 +1564,7 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=45,
+        return dict(format='shs-runtime-save', version=46,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
@@ -1529,17 +1618,29 @@ class Session:
     @classmethod
     def from_snapshot(cls, resources: EpisodeResources, state: dict):
         try:
-            if (state['format'] == 'shs-runtime-save' and type(state['version']) is int
-                    and (state['version'] > 45 or state['version'] in (43, 44))):
-                # (43 and 44 are the Claire Hart development branch's, which this build does not read.)
+            # Version 46 joins the two lines that branched from 42: the Claire Hart branch's 43 (story-object pictures)
+            # and 44 (hidden-object rounds), and v1.1.1's 45 (Text Animation). Each step below fills in what its own
+            # line left out, so a 43 / 44 save gains the Text Animation and a 45 save the Claire Hart parts.
+            if (state['format'] == 'shs-runtime-save' and type(state['version']) is int and state['version'] > 46):
                 raise NewerSaveError('This save was made by a newer version of SHSHD Runtime')
-            if state['format'] != 'shs-runtime-save' or state['version'] not in (*range(1, 43), 45):
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 47):
                 raise SaveError('Unsupported save format or version')
+            version = state['version']
             # Version 45 gives a dialogue page its Text Animation (General's, dialogue_animation.TEXT_ANIMATIONS): an older
             # save's page types letter by letter, as it did.
-            if state['version'] < 45 and isinstance((state.get('engine') or {}).get('dialogue_animation'), dict):
+            if version < 45 and isinstance((state.get('engine') or {}).get('dialogue_animation'), dict):
                 state = deepcopy(state)
                 state['engine']['dialogue_animation'].update(text_mode='letters', wipe_lines=[], wipe_ms=0)
+            # Version 44 adds Claire Hart's hidden-object round (claire_rounds.py); an older save never had one open.
+            if (version < 44 or version == 45) and isinstance(state.get('engine'), dict):
+                state = deepcopy(state)
+                state['engine'].setdefault('claire_round', None)
+            # Version 43 adds story-object pictures (service 225, Claire Hart plan P); an older save showed none.
+            if (version < 43 or version == 45) and isinstance(state.get('engine'), dict):
+                state = deepcopy(state)
+                state['engine'].setdefault('story_objects_due', [])
+                state['engine'].setdefault('story_objects', [])
+                state['engine'].setdefault('story_objects_speaker', None)
             # Version 42 gives the X360 leash game its swings and its cast's animation (B1, x360_games.LeashGame). An open
             # game takes its level as its highest and lowest, no script run yet, and the cast idling, not drawn: a close
             # already under way keeps its 0.3 s.
@@ -1952,6 +2053,11 @@ class Session:
                     engine.brew_catch.validate()
                 except ValueError as error:
                     raise SaveError(str(error)) from error
+            if engine.claire_round is not None:
+                try:
+                    engine.claire_round.validate()
+                except ValueError as error:
+                    raise SaveError(str(error)) from error
             if engine.x360_leash is not None:
                 try:
                     engine.x360_leash.validate()
@@ -2043,7 +2149,7 @@ class Session:
                            'finished': (None,), 'vm_pause': (None,),
                            'arena_frame': (208,), 'arena_menu': (210,), 'arena_info': (211,),
                            'arena_entrance': (200,), 'arena_exit': (202, 206, 207), 'arena_skip': (213,),
-                           'brew_catch': (221,), 'x360_slot': (214,), 'x360_leash': (215,), 'x360_puzzle': (216,), 'x360_diss': (217,), 'x360_battle': (222,), 'cutscene': (218,), 'shs11_memory': (219, 96), 'shs11_reflex': (220,)}
+                           'brew_catch': (221,), 'x360_slot': (214,), 'x360_leash': (215,), 'x360_puzzle': (216,), 'x360_diss': (217,), 'x360_battle': (222,), 'cutscene': (218,), 'shs11_memory': (219, 96), 'shs11_reflex': (220,), 'claire_round': (226,)}
                 if game_id(resources) == 'cod':
                     for unsupported in ('word_grid', 'football', 'loading', 'survey_confirmation'):
                         allowed.pop(unsupported)
@@ -2126,6 +2232,13 @@ class Session:
                         change = engine.prepare_relationship(details['visible_character_id'], settled=True)
                         details['relationship'] = asdict(change) if change else None
                     change = _typed_value(details['relationship'], RelationshipChange | None)
+                    # shshd-runtime (narration_portrait, Claire Hart Stage 0 E): the narrator beside its portrait speaks in
+                    # a speaker's layout but as narration, with no relationship state (engine.present_dialogue); found by
+                    # check 3 (2026-11-21), when such a line's save could not be loaded.
+                    narration = _typed_value(details.get('narration', False), bool)
+                    if narration and (change is not None or details['visible_character_id'] != details['character_id']
+                                      or details['presentation_mode'] not in (1, 2)):
+                        raise SaveError('Narration with a portrait does not match its narrator')
                     if change is not None and details.get('status_icons'):
                         change.validate()          # service 37's settled icons: not from the property cache
                     elif change is not None:
@@ -2136,7 +2249,7 @@ class Session:
                                 or engine.numbers.get(engine.number_key(change.character_id, 3000)) != change.asset_id
                                 or engine.numbers.get(engine.number_key(change.character_id, 3001)) != change.count):
                             raise SaveError('Relationship indicators do not match their NPC cache')
-                    elif details['visible_character_id'] > 0 and details['presentation_mode'] in (1, 2):
+                    elif details['visible_character_id'] > 0 and details['presentation_mode'] in (1, 2) and not narration:
                         raise SaveError('NPC dialogue is missing its relationship state')
                     if request.yield_id in (15, 76):
                         # HD's own case 0xf reads its first two words (engine.py); Android's and the

@@ -22,7 +22,10 @@ from .x360_services import X360_BATTLE
 # read after service 96 as football's score is after 94 (95). Surviving Hollywood's rehearsals score a missed word by it.
 GRID_PART_SCORE = 224
 from .x360_puzzle import JewelPuzzle, X360_PUZZLE
+from .story_object_services import STORY_OBJECT, STORY_OBJECT_ROW
 from .brew_catch import BREW_CATCH, CatchGame, ITEM_WORDS, MAX_ITEMS
+from .claire_round_services import CLAIRE_ROUND
+from .claire_rounds import ClaireRound
 from .shs11_games import MemoryGame, REFLEX_ROUND_WORDS, ReflexGame, ROUND_WORDS, SHS11_MEMORY, SHS11_REFLEX
 from .cutscene import CUTSCENE, Cutscene
 from .game_state import GameState
@@ -151,6 +154,11 @@ class EngineState:
     hd_version = None
     # Not saved: the DSiWare add-on's translation for the language picked (EpisodeResources.dsi_translation; Session sets it).
     translation_source = None
+    # Not saved: Claire Hart's rounds (Session sets them): a round's (scene, names, story objects, title) by its key from the
+    # chcrounds add-on, or None without it; and the Power-Ups setting for a round opened.
+    claire_round_source = None
+    claire_powerups = 'once'
+    claire_rounds_ready = False             # (chcrounds is in the library)
     badge_sounds = None            # Not saved: a translated pack's own (for, against) (TRANSLATED_BADGE_SOUNDS; Session sets it)
     # Not saved: whether service 22 makes "a(n) word" "a word" or "an word", and "1 Win(s)" "1 Win" (choose_plurals) (a pack in
     # TRANSLATED_ARTICLE_PACKS; Session sets it).
@@ -226,12 +234,18 @@ class EngineState:
     shs11_reflex: ReflexGame | None = None      # shshd-runtime: and its Reflex
     shs11_reflex_tutorial_seen: bool = False
     brew_catch: CatchGame | None = None         # shshd-runtime: the BREW games' catch game (brew_catch.py)
+    claire_round: ClaireRound | None = None     # shshd-runtime: Claire Hart Classic's hidden-object round (claire_rounds.py)
     random: NativeRandom = field(default_factory=NativeRandom)
     word_grid: GameState | None = None
     grid_tutorials_seen: bool = False
     football: GameState | None = None
     football_scores: list[int | None] = field(default_factory=lambda: [None, None])
     grid_part_score: int = 0                    # shshd-runtime: the last word grid's part score (service 224)
+    # shshd-runtime: story-object pictures (service 225, Claire Hart plan P): those due with the next line, the row shown with
+    # the current speaker's lines, and that speaker ([character, name, presentation]), whose change empties the row.
+    story_objects_due: list[int] = field(default_factory=list)
+    story_objects: list[int] = field(default_factory=list)
+    story_objects_speaker: list | None = None
     next_dialogue_notice: str = ''
     notice: str = ''
     notice_ms: int = 0
@@ -290,6 +304,7 @@ class EngineState:
         self.cutscene = None
         self.x360_diss = self.x360_battle = None
         self.shs11_memory = self.shs11_reflex = self.brew_catch = None
+        self.claire_round = None
         self.character_picker = self.loading = self.message_panel = self.title_screen = None
         self.choice_builder = None
         self.choice_ms = 250
@@ -310,6 +325,11 @@ class EngineState:
         no string (including the usual name 'Event') identifies narration.
         """
         if character == self.ui_defaults.get(75, -1):
+            # shshd-runtime (presentation narration_portrait, Claire Hart's narration): the narrator's portrait beside the
+            # narration box, when the episode wants it and the narrator has art for this expression.
+            variants = self.character_art_variants.get(character, ())
+            if self.narration_portrait and character >= 0 and variants and variants[expression % len(variants)] >= 0:
+                return 1, character, 0     # a speaker's layout, as narration (present_dialogue marks it)
             return 4, -1, -1
         variants = self.character_art_variants.get(character, ())
         if character < 0 or not variants or variants[expression % len(variants)] < 0:
@@ -325,11 +345,17 @@ class EngineState:
         old = self.dialogue_animation.portrait if self.dialogue_animation else None
         initial_expression = self.dialogue_history.expressions.get(character, 0) if (
             old is not None and old.character_id == character) else 0
+        narration = False
         if speaker is None:
             presentation, visible, theme = self.dialogue_presentation(character, expression)
             if presentation in (1, 2) and self.dialogue_presentation(character, initial_expression)[0] == 3:
                 presentation, visible, theme = 3, -1, -1
-            if presentation in (1, 2):
+            # shshd-runtime (narration_portrait): the narrator with a portrait speaks in a speaker's layout, the box
+            # attached to the portrait, but as narration: its text, no name plate, no relationship (owner, 2026-11-19).
+            narration = presentation in (1, 2) and character == self.ui_defaults.get(75, -1)
+            if narration:
+                self.panel.speaker = ''
+            elif presentation in (1, 2):
                 self.panel.speaker = self.substitute(self.character_names.get(character, ''))
         elif speaker in self.object_portraits:
             # shshd-runtime: a named thing the pack shows with a picture elsewhere (BREW's Phone and TV, owner 2026-11-18):
@@ -367,9 +393,14 @@ class EngineState:
             except ValueError:
                 relationship = None
         else:
-            relationship = self.prepare_relationship(visible if presentation in (1, 2) else -1,
+            relationship = self.prepare_relationship(visible if presentation in (1, 2) and not narration else -1,
                                                      settled=settled_relationship)
         extra = dict(status_icons=True) if status_icons is not None else {}
+        if narration:
+            extra['narration'] = True
+        row = self.story_object_row([character, self.panel.speaker, presentation])
+        if row:
+            extra['story_objects'] = row
         return dict(**extra, text=text, raw_text=raw_text, character_id=character,
                     visible_character_id=visible, speaker=speaker, expression=expression,
                     initial_expression=initial_expression,
@@ -384,6 +415,18 @@ class EngineState:
         ids of the first join there and merges into it."""
         uid = self.numbers.get(self.number_key(0, 2000), 0) * 1000 + self.numbers.get(self.number_key(0, 0x3e9), 0)
         return self.dt_view.add_node(node_type, label, exw, uid, pc, state=read_state(self))
+
+    def story_object_row(self, speaker):
+        """shshd-runtime (service 225, Claire Hart plan P): the story-object pictures shown with this line. As Classic's
+        storyobjectmanager: pictures wait hidden and show when the next box comes in, and that row goes at the change of
+        speaker after (or when a script empties it). Pictures added while the same speaker goes on join the row."""
+        if self.story_objects and speaker != self.story_objects_speaker:
+            self.story_objects = []
+        if self.story_objects_due:
+            self.story_objects = (self.story_objects + self.story_objects_due)[:STORY_OBJECT_ROW]
+            self.story_objects_due = []
+        self.story_objects_speaker = speaker
+        return list(self.story_objects)
 
     def align_location(self):
         """SHSUIDialog::animateLocationLayer: speaker type 1 aligns the location left, type 2 right; the
@@ -477,6 +520,7 @@ class EngineState:
     # shshd-runtime: {name: picture bank} for a pack's named things that have a picture where a story gives them one (the
     # profile's TRANSLATED_OBJECT_PORTRAITS; Session sets it); a named line under that name shows it.
     object_portraits = {}
+    narration_portrait = False      # shshd-runtime: narrator lines show the narrator's portrait (presentation narration_portrait)
 
     def name_key(self, key: str) -> str:
         """The names table's key for a name the story calls `key` (name_keys), and that key's first value: the name the
@@ -1229,9 +1273,26 @@ class EngineState:
             self.shs11_reflex = ReflexGame.opened(rounds, args[0], args[1],
                                                   tutorial=self.shs11_tutorial_due('shs11_reflex_tutorial_seen', ReflexGame.KIND))
             return EngineAction('shs11_reflex', request, False, _shs11_details(args[4]))
+        if y == CLAIRE_ROUND:                                   # (likewise): the round's key (claire_round_services.round_key)
+            need(1)
+            found = self.claire_round_source(args[0]) if self.claire_round_source is not None else None
+            if found is None:
+                return EngineAction('unhandled_yield', request, False,
+                                    dict(reason=f'Claire Hart round {args[0]}: the chcrounds add-on has no such round'))
+            scene, names, story, title = found
+            self.claire_round = ClaireRound.opened(scene, names, story, self.random, self.claire_powerups, title)
+            return EngineAction('claire_round', request, False)
         if y == GRID_PART_SCORE:
             need(0)
             return complete('get_grid_part_score', self.grid_part_score)
+        if y == STORY_OBJECT:
+            need(1)
+            picture = signed16(args[0])
+            if picture < 0:                     # STORY_OBJECT_CLEAR: the row goes now, and nothing waits for the next line
+                self.story_objects, self.story_objects_due = [], []
+            elif len(self.story_objects_due) < STORY_OBJECT_ROW:
+                self.story_objects_due.append(picture)
+            return complete('story_object')
         if y == BREW_CATCH:                                     # (likewise): the kind, target, spawn ms, speed, spread, chance, angle,
             if len(args) != 12:                                 # player's picture, list of items, table of sizes, sizes in it, and
                 need(11)                                        # (12th, optional) the story's cut-offs, for the skip prompt only

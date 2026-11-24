@@ -110,9 +110,9 @@ class AppAspectTests(unittest.TestCase):
                     'device_vibration_enabled', 'choice_hints', 'skip_minigames', 'skip_ad_intros', 'autoplay',
                     'disable_choice_timer', 'hd_backdrop', 'hires_portraits', 'ms3_characters', 'java_look',
                     'brew_08_backgrounds', 'hollywood_art', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'skip_ahead', 'undo',
-                    'ch_portraits', 'ch_backdrop', 'arena_minigames', 'arena_skin', 'dsi_backgrounds'):
+                    'ch_portraits', 'ch_backdrop', 'dim_backdrops', 'arena_minigames', 'arena_skin', 'dsi_backgrounds'):
             setattr(game, key, False)
-        game.dsi_pixels, game.dsi_language = 'sharp', 'off'
+        game.dsi_pixels, game.dsi_language, game.ch_dialogue = 'sharp', 'off', 'cases'
         game.music_volume = game.sound_volume = .5
         app.save_game_settings()
         self.assertIsNone(app.settings.aspect_ratio)            # unchanged: the phone's default isn't written down
@@ -349,6 +349,18 @@ class BackdropFitTests(unittest.TestCase):
             self.assertTrue(all(rows[y] == rows[y + 32] for y in range(lo, hi - 32)), (lo, hi))
         # The bottom of the picture is its own, as at 3:4.
         self.assertEqual(rows[-200:], self.fit._rows(image)[-200:])
+
+    def test_a_strip_at_the_pictures_top_grows_from_its_first_row(self):
+        """The g54 at 20:9 (2026-11-21): Claire Hart's backdrop has its strip at the very top, so nothing is above it;
+        made taller, that empty part grew by empty rows and the picture came out short (a ValueError, the app closed)."""
+        image = self.pygame.Surface((384, 512), self.pygame.SRCALPHA)
+        image.fill((10, 60, 20, 255))
+        image.fill((200, 220, 120, 255), (0, 0, 384, 1))               # (its first row, to see where the gap's rows come from)
+        for y in range(300, 512, 7):                                    # (no pattern a repeat could be measured on)
+            image.fill((y % 251, 90, 40, 255), (0, y, 384, 3))
+        long = self.fit.lengthen(image, (0, 260), (171, 431), 683)
+        self.assertEqual(long.get_size(), (384, 683))
+        self.assertEqual(long.get_at((5, 100))[:3], (200, 220, 120))
 
 
 class WindowShapeTests(unittest.TestCase):

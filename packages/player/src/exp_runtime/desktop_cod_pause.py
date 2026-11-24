@@ -31,7 +31,7 @@ from . import graphics as pygame
 
 from .content import ContentError
 from .desktop_cod_menu import draw_cod_card
-from .desktop_pause_hd import (BORDER, FOOT, HEADER, PANEL_W, PANEL_X, PAGES, S, SWITCH_LABELS, UPSTREAM_VERSION, VERSION,
+from .desktop_pause_hd import (BORDER, FOOT, HEADER, PANEL_W, PANEL_X, PAGES, ROW, S, SWITCH_LABELS, UPSTREAM_VERSION, VERSION,
                                HdPauseMenu)
 from .menu import MenuStrings
 
@@ -72,9 +72,132 @@ class CodPauseMenu(HdPauseMenu):
         from .vector_text import system_font_path
         return system_font_path('arial-rounded', getattr(self.resources, 'library', None))
 
-    @lru_cache(maxsize=16)
     def font(self, points):
+        if self.ui is not None:
+            return self.ui.font(points * self.scale * self.SKIN_TEXT)
+        return self.arial(points)
+
+    @lru_cache(maxsize=16)
+    def arial(self, points):
         return pygame.font.Font(self.font_path(), round(points * self.scale))
+
+    # -- the Claire Hart skin (desktop_ch_ui.ChUi; CLAIRE_HART_SKIN_PLAN.md, owner 2026-11-21) ---------------------------
+    # With chc revision 2's pieces for this episode the same pages are drawn in Classic's dress: its panel with the title
+    # on the tab, rows as dark bars with the focused one lit gold, Romic Bold in off-white (an option's value line under
+    # it too), the back button and the value buttons as the Play Now pill, the tick gold. The places, sizes, taps and
+    # UIKit's switches and slider stay (Classic has none of its own). `ui` is set for each layout (the switch may change
+    # between two). In HD frame points: the pieces' art scale (Classic's footer band is FOOT tall at it), Romic's size
+    # against Arial Rounded's (it runs wider), the title's points on the tab, the gap round a row.
+    ui = None
+    SKIN_ART, SKIN_TEXT, SKIN_TITLE, SKIN_ROW_GAP = .9, .9, 40, 4
+    SKIN_COLOURS = ('TITLE_COLOR', 'LABEL_COLOR', 'TEXT_COLOR', 'SEPARATOR_COLOR', 'PAGE_BACKGROUND')
+    SKIN_PAGE, SKIN_RULE = (9, 40, 36), (6, 28, 25)          # a text page's sunken body, the rules
+
+    def skin(self):
+        """The skin's pieces for this episode, or None (the app's own menus, the switch off, chc revision 1)."""
+        from .desktop_ch_ui import ChUi
+        ui = ChUi.of(self.resources)
+        if ui is not self.ui:
+            self.ui = ui
+            for name in self.SKIN_COLOURS:
+                self.__dict__.pop(name, None)
+            if ui is not None:
+                self.TITLE_COLOR, self.LABEL_COLOR, self.TEXT_COLOR = ui.GOLD, ui.TEXT, ui.TEXT
+                self.SEPARATOR_COLOR, self.PAGE_BACKGROUND = self.SKIN_RULE, self.SKIN_PAGE
+        return ui
+
+    def see_through(self, color):
+        """A fill on the card; in the skin, solid, and a light page's (the file browser's path, a text page's body) the
+        sunken teal."""
+        if self.ui is not None:
+            return (self.SKIN_PAGE if sum(color[:3]) > 600 else tuple(color[:3])) + (255,)
+        return HdPauseMenu.see_through(color)
+
+    def rect(self, layer, color, box, radius=0, width=0):
+        """HdPauseMenu.rect; in the skin, the app screens' grey rules (SEPARATOR) the skin's dark one."""
+        from .desktop_pause_hd import SEPARATOR
+        if self.ui is not None and tuple(color[:3]) == SEPARATOR:
+            color = self.SKIN_RULE
+        return super().rect(layer, color, box, radius, width)
+
+    def text(self, layer, text, x, y, points, color=None, *, center=False, font=None):
+        """HdPauseMenu.text; in the skin, dark or blue text (the app screens' BLUE and GRAY) off-white on the teal."""
+        from .desktop_pause_hd import BLUE
+        color = BLUE if color is None else color
+        if self.ui is not None and sum(color[:3]) < 450:
+            color = self.ui.TEXT
+        return super().text(layer, text, x, y, points, color, center=center, font=font)
+
+    def title_lines(self, text):
+        return [text] if self.ui is not None else super().title_lines(text)
+
+    def rows_body(self, layer, top, height, color=None, *, lit=False):
+        if self.ui is None:
+            return super().rows_body(layer, top, height, color, lit=lit)
+        S, gap = self.scale, self.SKIN_ROW_GAP
+        band = pygame.Rect(round((PANEL_X + BORDER + gap) * S), round((top + gap / 2) * S),
+                           round((PANEL_W - 2 * BORDER - 2 * gap) * S), round((height - gap) * S))
+        layer.blit(self.ui.row(band.size, self.SKIN_ART * S, lit=lit), band.topleft)
+
+    def row(self, layer, top, label, *, height=ROW, color=None, background=None, lit=False, badge=None, tint=None,
+            value=None):
+        """HdPauseMenu.row in the skin: the label (and its value line, smaller and fainter) spaced by Romic's pitch
+        (its own line size is too tight: a value line ran into its label), gold on the lit row, a badge in gold."""
+        if self.ui is None:
+            return super().row(layer, top, label, height=height, color=color, background=background, lit=lit,
+                               badge=badge, tint=tint, value=value)
+        from .desktop_pause_hd import BADGE_GAP, ROW_PX, VALUE_ALPHA, VALUE_PX
+        ui, S = self.ui, self.scale
+        color = color or (ui.LIT if lit else ui.TEXT)
+        self.rows_body(layer, top, height, background, lit=lit)
+        x = PANEL_X + 31
+        if badge is not None:
+            x += self.badge(layer, x, top + ROW / 2, badge[0], ui.GOLD) + BADGE_GAP
+        px, small = ROW_PX * S * self.SKIN_TEXT, VALUE_PX * S * self.SKIN_TEXT
+        font = ui.font(px)
+        lines = ui.wrap(label, px, 500 * S)
+        pitch, below = ui.pitch(px), ui.pitch(small) if value is not None else 0
+        y = (top + ROW / 2) * S - (pitch * len(lines) + below) / 2
+        for line in lines:
+            at = (round(x * S), round(y + (pitch - font.get_height()) / 2))
+            ui.text(layer, line, px, color, topleft=at)
+            if tint is not None and tint[0] in line:
+                ui.text(layer, tint[0], px, tint[1], topleft=(at[0] + font.size(line.partition(tint[0])[0])[0], at[1]),
+                        shadow=False)
+            y += pitch
+        if value is not None:
+            ui.text(layer, value, small, color, topleft=(round(x * S), round(y + (below - ui.font(small).get_height()) / 2)),
+                    alpha=VALUE_ALPHA)
+
+    def back_button(self, layer, bottom, *, lit=False):
+        if self.ui is None:
+            return super().back_button(layer, bottom, lit=lit)
+        from .desktop_pause_hd import BACK
+        S = self.scale
+        lit = lit or self.pressed == ('pause_back',)
+        box = pygame.Rect(PANEL_X + BACK[0], bottom - BACK[1] - 58, 156, 58)
+        pill = self.ui.pill((box.width * S, box.height * S), box.height * S / 57, 'pressed' if lit else 'idle')
+        layer.blit(pill, (box.x * S, box.y * S))
+        self.ui.arrow(layer, ((box.centerx - 4) * S, (box.centery - 1) * S), S)
+        return box
+
+    def cycle_button(self, layer, box, label, *, pressed=False):
+        if self.ui is None:
+            return super().cycle_button(layer, box, label, pressed=pressed)
+        from .desktop_pause_hd import CYCLE_POINTS
+        S = self.scale
+        x, y, width, height = box
+        pill = self.ui.pill((width * S, height * S), height * S / 57, 'pressed' if pressed else 'idle')
+        layer.blit(pill, (round(x * S), round(y * S)))
+        self.ui.text(layer, label, CYCLE_POINTS * S * self.SKIN_TEXT, self.ui.TEXT,
+                     (round((x + width / 2) * S), round((y + height / 2) * S)))
+
+    def check(self, layer, right, middle):
+        if self.ui is None:
+            return super().check(layer, right, middle)
+        S = self.scale
+        points = [(right - 26, middle), (right - 16, middle + 10), (right, middle - 12)]
+        pygame.draw.lines(layer, self.ui.GOLD, False, [(round(x * S), round(y * S)) for x, y in points], round(5 * S))
 
     @lru_cache(maxsize=1)
     def strings(self):
@@ -126,6 +249,14 @@ class CodPauseMenu(HdPauseMenu):
     def panel(self, layer, top, bottom, title, *, header=HEADER):
         """CoD's card at HD's size, as vectors (`desktop_cod_menu.draw_cod_card`): blue-bordered around the header
         and the footer, grey-edged beside the body, with the footer's rule."""
+        if self.ui is not None:
+            S = self.scale
+            title_px = self.SKIN_TITLE * S
+            while title_px > 24 * S and self.ui.font(title_px).size(title)[0] > (PANEL_W - 120) * S:
+                title_px -= S
+            self.ui.draw_panel(layer, pygame.Rect(PANEL_X * S, round(top * S), PANEL_W * S, round((bottom - top) * S)),
+                               self.SKIN_ART * S, title, title_px)
+            return top + header
         body_top, body_bottom = top + header, bottom - FOOT
         draw_cod_card(layer, (PANEL_X, top, PANEL_W, bottom - top), (body_top, body_bottom), scale=self.scale)
         self.rect(layer, self.see_through(self.PAGE_BACKGROUND),
@@ -141,4 +272,5 @@ class CodPauseMenu(HdPauseMenu):
         # Its word quizzes (service 71) take Ask to Skip Mini-Games.
         settings = {key: value for key, value in settings.items()
                     if key not in ('side_panels', 'skip_ad_intros')}
+        self.skin()
         return super().layout(settings, host_rows, message=message)

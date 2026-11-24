@@ -355,6 +355,10 @@ class HdEpisodeList(HdEpisodePicker):
                   color=(255, 255, 255), outline=False)
         self.hits.append((rect, ('toggle', row.key)))
 
+    def line_height(self, points):
+        """A line of text's height at `points`, in points (its font's own)."""
+        return self.font(points).get_height() / S
+
     def draw_row(self, layer, record, rect, alternate):
         selected = self.keyboard and record['id'] == self.selected
         color = self.SELECTED_COLOR if selected else self.ROW_COLORS[0 if alternate else 1]
@@ -390,9 +394,9 @@ class HdEpisodeList(HdEpisodePicker):
         text_width = right - rect.x - 18
         title = self.wrap(self.model.label(record), TITLE_SIZE, text_width, 1)[0]
         subtitle = self.model.subtitle(record)
-        title_height = self.font(TITLE_SIZE).get_height() / S
+        title_height = self.line_height(TITLE_SIZE)
         if subtitle:
-            subtitle_height = self.font(SUBTITLE_SIZE).get_height() / S
+            subtitle_height = self.line_height(SUBTITLE_SIZE)
             title_y = rect.y + (rect.height - (title_height + SUBTITLE_GAP + subtitle_height)) / 2
             self.text(layer, title, TITLE_SIZE, rect.x + 18, title_y, color=self.TEXT_ROW_COLOR, outline=False)
             subtitle = self.wrap(subtitle, SUBTITLE_SIZE, text_width, 1)[0]

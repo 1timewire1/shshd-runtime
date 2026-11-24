@@ -1,6 +1,6 @@
 """General's Text Animation (owner, 2026-11-22): a dialogue page letter by letter (Android's, the default), in the iOS
 builds' line wipe (`-[SHSTextLayer addTypingAnimations:lineTime:]`: 0.6 s a region's width, a tap hurrying it to 0.2 s),
-or at once; Autoplay waits as long as the letters would have taken; saves keep the page's mode (version 45)."""
+or at once; Autoplay waits as long as the letters would have taken; saves keep the page's mode (version 45, 46 with the Claire Hart branch)."""
 import importlib.util
 import os
 from pathlib import Path
@@ -108,19 +108,34 @@ class TextModeSessionTests(unittest.TestCase):
         session.tick(motion.text_delay_ms + 1)
         self.assertTrue(motion.complete)
         state = session.snapshot()
-        self.assertEqual(state['version'], 45)
+        self.assertEqual(state['version'], 46)
         restored = Session.from_snapshot(session.resources, state)
         self.assertEqual(restored.engine.dialogue_animation.text_mode, 'instant')
 
-    def test_older_saves_type_letter_by_letter_and_the_branchs_versions_are_refused(self):
-        session = self.session('letters')
+    def test_both_lines_older_saves_load_with_what_their_line_left_out(self):
+        # Version 46 joins the Claire Hart branch's 43 / 44 and v1.1.1's 45 (both from 42).
+        session = self.session('instant')
         state = session.snapshot()
-        older = dict(state, version=42)
-        older['engine'] = dict(state['engine'])
-        older['engine']['dialogue_animation'] = {key: value for key, value in state['engine']['dialogue_animation'].items()
-                                                 if key not in ('text_mode', 'wipe_lines', 'wipe_ms')}
-        self.assertEqual(Session.from_snapshot(session.resources, older).engine.dialogue_animation.text_mode, 'letters')
-        for version in (43, 44, 46):
+
+        def older(version, *, animation=True, claire=True):
+            saved = dict(state, version=version)
+            saved['engine'] = dict(state['engine'])
+            if not animation:
+                saved['engine']['dialogue_animation'] = {
+                    key: value for key, value in state['engine']['dialogue_animation'].items()
+                    if key not in ('text_mode', 'wipe_lines', 'wipe_ms')}
+            if not claire:
+                for key in ('claire_round', 'story_objects_due', 'story_objects', 'story_objects_speaker'):
+                    saved['engine'].pop(key, None)
+            return Session.from_snapshot(session.resources, saved)
+        for version in (42, 43, 44):        # (no Text Animation yet: letter by letter, as they typed)
+            restored = older(version, animation=False, claire=version > 42)
+            self.assertEqual(restored.engine.dialogue_animation.text_mode, 'letters')
+        restored = older(45, claire=False)  # (v1.1.1's: its mode kept, no round or story objects open)
+        self.assertEqual(restored.engine.dialogue_animation.text_mode, 'instant')
+        self.assertIsNone(restored.engine.claire_round)
+        self.assertEqual(restored.engine.story_objects, [])
+        for version in (47, 60):
             with self.assertRaises(SaveError):
                 Session.from_snapshot(session.resources, dict(state, version=version))
 

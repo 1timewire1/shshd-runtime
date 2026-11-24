@@ -7,7 +7,7 @@ from .graphics import faded
 from . import graphics as pygame
 
 from .content import ContentError
-from .dialogue import BODY_FONT, DUET_RING_SCALE, NOTE_CODE
+from .dialogue import BODY_FONT, DUET_RING_SCALE, NOTE_CODE, SKIN_NARRATION_RING
 from .dialogue_animation import BOX_TRAVEL_MS
 
 REUSE_AT_REST = False                       # a phone keeps a settled line's layer (platforms/android.py): `_at_rest`
@@ -18,6 +18,12 @@ from .menu import MenuStrings
 from .portrait_effects import BALL_FRAMES, BALL_UNITS, STARBURST_FRAME, ball_alpha, starburst
 from . import emoticon_effects
 from .ui_assets import ImagePack, Raster, Rect, UIAssetError, read_ui
+
+# shshd-runtime: a story-object picture's square (service 225; Classic's slots, photos chc_09 and chc_12: a pale cream square
+# with a thin warm-gray edge and rounded corners), and how far inside its edge the picture sits, in units.
+STORY_OBJECT_FILL = (246, 244, 232)
+STORY_OBJECT_EDGE = (170, 165, 145)
+STORY_OBJECT_INSET = 3
 
 
 def _decoded_size(data: bytes) -> tuple[int, int]:
@@ -68,6 +74,9 @@ class DialogueRenderer:
     def __init__(self, resources, text_renderer, image_loader, scale=1):
         self.resources = resources
         self._badges = {}
+        self._story_objects = {}      # (picture, pixels) -> the picture fitted in its square
+        self.skin = None              # Claire Hart Dialogue's spec for the page being drawn (DialoguePage.skin), else None
+        self._skin_art = {}           # (picture, size) -> the skin's art at that size
         self.text = text_renderer
         self.image = image_loader
         # Pixels per logical (320x480) unit. Every position and size in this
@@ -443,6 +452,7 @@ class DialogueRenderer:
             return 255
 
     _box_pieces = None, ()
+    skin = None                     # (Claire Hart Dialogue's spec while a skinned page is drawn: _draw)
 
     def box(self, target, rect, theme, *, alpha=255, scale=1):
         """FUN_00081920 places the eight border pieces outside the center.
@@ -451,6 +461,9 @@ class DialogueRenderer:
         logical unit. Pieces are sized from the logical (Android) frame
         size times `scale`, resampled once from the densest source.
         """
+        if self.skin is not None:
+            self.skin_box(target, rect, alpha=alpha, scale=scale)
+            return
         pack = {1: 204, 2: 220, 3: 252}.get(theme, 236)
         x, y, width, height = (round(v * scale) for v in (rect.x, rect.y, rect.width, rect.height))
         # The same box as the last one (its pieces are copied, faded and stretched to fit): just place them again.
@@ -508,6 +521,8 @@ class DialogueRenderer:
     DISC_GRAY = (142, 155, 156)
 
     def ring_frame(self, k):
+        if self.skin is not None:
+            return self.skin_art(self.skin['ring'], (round(128 * k), round(128 * k)))
         return self._hd_frame(self._HD_RING, k) if self.hd_chrome() else self.frame_scaled(126, 37, k)
 
     @lru_cache(maxsize=16)
@@ -553,8 +568,12 @@ class DialogueRenderer:
         rings.blit(disc, (0, 0))
         return rings, art, topleft
 
-    @lru_cache(maxsize=32)
     def portrait_parts(self, portrait):
+        """_portrait_parts, in Claire Hart Dialogue's ring while a skinned page is drawn."""
+        return self._portrait_parts(portrait, None if self.skin is None else self.skin.get('addon'))
+
+    @lru_cache(maxsize=32)
+    def _portrait_parts(self, portrait, skinned=None):
         """(ring, disc, art, topleft): three same-sized layers sharing one
         bounds rectangle (the pieces are children of the native scaled node);
         separate surfaces because HD draws the rings beneath the body text,
@@ -563,7 +582,9 @@ class DialogueRenderer:
 
         Built in canvas pixels (logical units times self.scale)."""
         k = self.scale
-        rings = [self.ring_frame(k), self.disc_frame(portrait.theme, k)]
+        disc = (self.skin_art(self.skin['disc'], (round(self.DISC_UNITS * k),) * 2) if self.skin is not None
+                else self.disc_frame(portrait.theme, k))
+        rings = [self.ring_frame(k), disc]
         flipped = portrait.mode == 2 and portrait.theme != 3
         pieces = [(ring, ring.get_rect(center=(0, 0))) for ring in rings]
         image = None
@@ -1164,8 +1185,54 @@ class DialogueRenderer:
 
     autoplay = False        # Desktop's Autoplay: no Continue pill or tab, the page advances by itself
 
+    def story_object_image(self, picture, size):
+        """A story-object picture fitted inside a `size`-pixel square, its shape kept (Classic's storyobject.scaleLoop scales
+        it to the slot's constraint either way); None without the picture."""
+        key = picture, size
+        cache = self._story_objects
+        if key not in cache:
+            image = self.image(picture)
+            if image is not None:
+                width, height = image.get_size()
+                factor = size / max(width, height, 1)
+                image = pygame.transform.smoothscale(image, (max(1, round(width * factor)), max(1, round(height * factor))))
+            if len(cache) > 32:
+                cache.clear()
+            cache[key] = image
+        return cache[key]
+
+    def draw_story_objects(self, page, alpha):
+        """shshd-runtime (service 225, Claire Hart plan P): the line's story-object pictures, each in a framed square along
+        the box's bottom (DialoguePage.story_objects), coming in with the title as Classic's come in with the box."""
+        squares = getattr(page, 'story_objects', ())
+        if not squares or alpha <= 0:
+            return
+        k = self.scale
+        left = min(r.x for _, r in squares)
+        top = min(r.y for _, r in squares)
+        right = max(r.x + r.width for _, r in squares)
+        layer = pygame.Surface((round((right - left) * k) + 2, round(squares[0][1].height * k) + 2), pygame.SRCALPHA).convert_alpha()
+        layer.fill((0, 0, 0, 0))
+        for picture, square in squares:
+            frame = pygame.Rect(round((square.x - left) * k), round((square.y - top) * k),
+                                round(square.width * k), round(square.height * k))
+            radius = max(2, round(4 * k))
+            if self.skin is not None:               # Claire Hart Dialogue: Claire Hart's own square (storyobj_backing)
+                layer.blit(self.skin_art(self.skin['slot'], frame.size), frame.topleft)
+            else:
+                pygame.draw.rect(layer, STORY_OBJECT_FILL, frame, border_radius=radius)
+                pygame.draw.rect(layer, STORY_OBJECT_EDGE, frame, max(1, round(k)), border_radius=radius)
+            inset = round(STORY_OBJECT_INSET * k)
+            image = self.story_object_image(picture, max(1, frame.width - 2 * inset))
+            if image is not None:
+                layer.blit(image, image.get_rect(center=frame.center))
+        self.canvas.blit(faded(layer, alpha), (round(left * k), round(top * k)))
+
     def draw_continue(self, session, page, theme):
         if self.autoplay:
+            return
+        if self.skin is not None:
+            self.draw_skin_pill(session, page)
             return
         if not self.has_hd_bundle():
             self.draw_continue_tab(page.box, theme, session.engine.dialogue_animation)
@@ -1230,6 +1297,124 @@ class DialogueRenderer:
         self.wide.blit(piece, (round(x * k) + self.margin, round(centre_y - piece.get_height() / 2)))
 
     CONTINUE_EXPAND_MS = 250
+    SKIN_PILL = (72, 20)            # Claire Hart Dialogue's Continue pill (its Play Now button, 209 x 57), in units
+    SKIN_PILL_FONT = 'CHRomicBold11'
+    SKIN_PILL_TEXT = (255, 251, 236)
+
+    def draw_skin_pill(self, session, page):
+        """Claire Hart Dialogue's Continue: the Play Now button with "Continue" in Romic Bold, where HD's pill sits and
+        expanding as it does (owner, 2026-11-19)."""
+        motion = session.engine.dialogue_animation
+        progress = self.continue_progress(session) if motion.complete else 0
+        if progress <= 0:
+            return
+        k = self.scale
+        width, height = self.SKIN_PILL
+        key = 'pill', round(width * k), round(height * k)
+        piece = self._skin_art.get(key)
+        if piece is None:
+            piece = self.skin_art(self.skin['pill'][0], key[1:]).copy()
+            font = self.SKIN_PILL_FONT
+            label = self.text.layout(font, 'Continue', 1000, TextStyle(11, 0, self.SKIN_PILL_TEXT))
+            left, top, right, bottom = label.ink_bounds
+            self.text.draw_layout(piece, font, label, ((width - (right - left)) / 2 - left) * k,
+                                  ((height - (bottom - top)) / 2 - top) * k, scale=k)
+            self._skin_art[key] = piece
+        if progress < 1:
+            piece = pygame.transform.smoothscale(piece, (piece.get_width(), max(1, round(piece.get_height() * progress))))
+        box = page.box
+        outset = self.skin[self.skin['box']]['outset']
+        x = max(box.x, box.x + box.width + outset[2] - 8 - width)
+        centre_y = (box.y + box.height + outset[3] - 2) * k
+        self.wide.blit(piece, (round(x * k) + self.margin, round(centre_y - piece.get_height() / 2)))
+
+    # -- Claire Hart Dialogue's art (owner, 2026-11-19; content.EpisodeResources.dialogue_skin, ch_dialogue_skin.py)
+
+    def skin_art(self, picture, size=None):
+        """A picture of the skin's add-on, at `size` pixels if given (kept)."""
+        key = picture, None if size is None else tuple(size)
+        found = self._skin_art.get(key)
+        if found is None:
+            if size is None:
+                data = self.resources.library.addon_resource(self.skin['addon'], picture)
+                found = pygame.image.load(BytesIO(data)).convert_alpha()
+            else:
+                found = pygame.transform.smoothscale(self.skin_art(picture), tuple(max(1, n) for n in size))
+            if len(self._skin_art) > 48:
+                self._skin_art.clear()
+            self._skin_art[key] = found
+        return found
+
+    def skin_box(self, target, rect, *, alpha=255, scale=1):
+        """The skin's speaker or narrator box (DialoguePage.skin['box']) around `rect`, reaching its `outset` units past
+        it: its corners kept at the skin's density, its edges and middle stretched."""
+        which = self.skin[self.skin['box']]
+        left, top, right, bottom = which['outset']
+        x, y = round((rect.x - left) * scale), round((rect.y - top) * scale)
+        width = max(1, round((rect.width + left + right) * scale))
+        height = max(1, round((rect.height + top + bottom) * scale))
+        key = 'box', which['picture'], width, height, alpha, scale
+        found = self._skin_art.get(key)
+        if found is None:
+            source = self.skin_art(which['picture'])
+            k = scale / self.skin['density']
+            cut = which['slice']
+            sw, sh = source.get_size()
+            ends = [round(n * k) for n in cut]                  # the corners' size here
+            found = pygame.Surface((width, height), pygame.SRCALPHA).convert_alpha()
+            found.fill((0, 0, 0, 0))
+            if ends[0] + ends[2] >= width or ends[1] + ends[3] >= height:
+                found = pygame.transform.smoothscale(source, (width, height))         # smaller than its corners
+            else:
+                columns = ((0, cut[0], 0, ends[0]), (cut[0], sw - cut[2], ends[0], width - ends[2]),
+                           (sw - cut[2], sw, width - ends[2], width))
+                rows = ((0, cut[1], 0, ends[1]), (cut[1], sh - cut[3], ends[1], height - ends[3]),
+                        (sh - cut[3], sh, height - ends[3], height))
+                for sx0, sx1, dx0, dx1 in columns:
+                    for sy0, sy1, dy0, dy1 in rows:
+                        piece = source.subsurface((sx0, sy0, sx1 - sx0, sy1 - sy0))
+                        found.blit(pygame.transform.smoothscale(piece, (max(1, dx1 - dx0), max(1, dy1 - dy0))), (dx0, dy0))
+            if alpha < 255:
+                found = faded(found, alpha)
+            self._skin_art[key] = found
+        target.blit(found, (x, y))
+
+    SKIN_TAB_FADE_MS = 120
+
+    @classmethod
+    def skin_tab_alpha(cls, motion):
+        """Claire Hart Dialogue's name tab comes in with the box: from the moment its strip reaches its place (its top
+        edge, where the tab sits, is final from then while it grows down), faster than the name fades in, so the name
+        never shows before its tab (owner, 2026-11-20: it did, over the backdrop, until the box had grown)."""
+        if motion.visuals_finished or not motion.changed:
+            return 255
+        return int(255 * min(1.0, max(0.0, (motion.elapsed_ms - motion.name_delay_ms) / cls.SKIN_TAB_FADE_MS)))
+
+    def draw_skin_tab(self, page, alpha):
+        """The name's tab (DialoguePage.tab): its caps kept, its middle stretched to the name, over the box's top edge."""
+        tab = page.tab
+        if tab is None or alpha <= 0:
+            return
+        k = self.scale
+        spec = self.skin['tab']
+        width, height = max(1, round(tab.width * k)), max(1, round(tab.height * k))
+        key = 'tab', width, height
+        found = self._skin_art.get(key)
+        if found is None:
+            source = self.skin_art(spec['picture'])
+            factor = height / source.get_height()
+            caps = [round(n * factor) for n in spec['caps']]
+            found = pygame.Surface((width, height), pygame.SRCALPHA).convert_alpha()
+            found.fill((0, 0, 0, 0))
+            sw = source.get_width()
+            for sx0, sx1, dx0, dx1 in ((0, spec['caps'][0], 0, caps[0]),
+                                       (spec['caps'][0], sw - spec['caps'][1], caps[0], width - caps[1]),
+                                       (sw - spec['caps'][1], sw, width - caps[1], width)):
+                if dx1 > dx0:
+                    piece = source.subsurface((sx0, 0, sx1 - sx0, source.get_height()))
+                    found.blit(pygame.transform.smoothscale(piece, (dx1 - dx0, height)), (dx0, 0))
+            self._skin_art[key] = found
+        self.canvas.blit(faded(found, alpha), (round(tab.x * k), round(tab.y * k)))
 
     def previous_box(self, motion, page):
         """The last line's final box, which a retained speaker's box resizes from (DialogueAnimation.box_rect). Kept
@@ -1327,6 +1512,14 @@ class DialogueRenderer:
         return key, id(motion), theme, None if duet is None else duet.character_id, id(self.wide), self.autoplay
 
     def draw(self, target, session):
+        """_draw, with Claire Hart Dialogue's skin (DialoguePage.skin) on for this page only: the choice, input and menu
+        screens share box()."""
+        try:
+            return self._draw(target, session)
+        finally:
+            self.skin = None
+
+    def _draw(self, target, session):
         details = session.pending.details
         key = (id(session), session.scene, session.vm.steps_executed, details['page_start'],
                getattr(session, 'dialogue_extra_rows', 0), getattr(session, 'dialogue_offset', None))
@@ -1351,11 +1544,14 @@ class DialogueRenderer:
             self.lift = page.lift
         if page is None:
             raise ContentError('Dialogue requires the imported APK layout and fonts')
+        self.skin = getattr(page, 'skin', None)
         # shshd-runtime: a translated pack's two-speaker line (Session.dialogue_duet): the box the page chose (gray, or
         # the speakers' shared colour), the partner's portrait on the other side.
         duet = session.dialogue_duet() if hasattr(session, 'dialogue_duet') else None
         theme = page.theme if page.theme is not None else details['theme']
         self.portrait_factor = DUET_RING_SCALE if duet is not None else 1
+        if self.skin is not None and self.skin.get('box') == 'narrator' and duet is None:
+            self.portrait_factor = SKIN_NARRATION_RING      # (Claire Hart Dialogue: a narrator's smaller ring)
         motion = session.engine.dialogue_animation
         if self._line is None or self._line[0] is not motion:
             self._leaving = self._line
@@ -1427,12 +1623,20 @@ class DialogueRenderer:
             if not waiting:
                 self.box(self.wide, Rect(box.x + m, box.y, box.width, box.height),
                          theme, alpha=self.box_alpha(), scale=k)
+            # (The tab comes once the box's top and width are in place: within half a point, as the box is drawn on whole
+            # pixels and a taller frame's lift leaves its final place fractional.)
+            if (self.skin is not None and abs(box.y - page.box.y) < .5
+                    and abs(box.width - page.box.width) < .5):
+                self.draw_skin_tab(page, self.skin_tab_alpha(motion))
         # HD draws the portrait's rings under the body text: the third line's
         # top edge crosses the ring's bottom arc (white on the white box, so
         # invisible there), and drawing the ring over it clipped the glyphs.
         # The ring is clipped once the box has finished its entrance (`dialog-bubble-grow` completing calls
         # clipPortraitHousingAgainstBubble; for a shake, when its rotation ends): `housing_clipped`.
-        bubble = self.housing_polygon(page.box) if motion.housing_clipped else None
+        # Claire Hart Dialogue keeps its ring whole over the box: its dark ring and light disc are one layer, so the clip
+        # cut both off square at the box's corner, the face left hanging over the box, and it snapped in as the box
+        # finished opening (owner, 2026-11-20). The white rings on CoD's and SHS's white boxes never showed either.
+        bubble = self.housing_polygon(page.box) if motion.housing_clipped and self.skin is None else None
         self.draw_portrait(motion.previous, motion.previous_scale, 'rings', bubble, factor=leaving_factor)
         self.draw_portrait(leaving, motion.previous_scale, 'rings', bubble, factor=leaving_factor)
         self.draw_portrait(motion.portrait, motion.portrait_scale, 'rings', bubble)
@@ -1453,6 +1657,7 @@ class DialogueRenderer:
         else:
             self.draw_wipe(page, edges, notes, density)
         self.canvas.blit(faded(self.name_layer, motion.name_alpha), self._name_area.topleft, self._name_area)
+        self.draw_story_objects(page, motion.name_alpha)
         # Real-device confirmed (reference/football_star_beth_greeting_hd.webp):
         # the relationship icon sits above the box, the body text and the
         # speaker name -- everything except the portrait itself, which

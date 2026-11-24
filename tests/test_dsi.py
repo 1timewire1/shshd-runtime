@@ -253,7 +253,7 @@ class SwitchTests(unittest.TestCase):
         self.assertEqual(switch_badge('dsi_backgrounds')[0], 'DSi')
         self.assertEqual(SWITCH_BADGES['dsi_backgrounds'], 'SHSDSI')
         self.assertEqual(HdPauseMenu.addon_choices(dict(dsi_backgrounds='Off')), [])
-        self.assertEqual(PER_GAME_CHOICES, ())
+        self.assertEqual(PER_GAME_CHOICES, ('ch_dialogue', 'claire_powerups'))       # (Claire Hart Dialogue's, CoD)
         menu = HdPauseMenu.__new__(HdPauseMenu)
         menu.SWITCH_LABELS = HdPauseMenu.SWITCH_LABELS
         rows = HdPauseMenu.option_rows(menu, 'extras', dict(undo=True, dsi_backgrounds='Smooth'), [''] * 273)

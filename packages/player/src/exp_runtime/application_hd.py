@@ -357,6 +357,16 @@ class HdShell:
             settings['smartphone_music'] = state.smartphone_music
         if self.app.portrait_addon_offered():
             settings.update(ch_portraits=state.ch_portraits, ch_backdrop=state.ch_backdrop)
+        if self.app.dim_backdrops_offered():
+            settings['dim_backdrops'] = state.dim_backdrops
+        if self.app.ch_43_offered():
+            settings['ch_43'] = state.ch_43
+        if self.app.ch_dialogue_offered():
+            from .desktop_pause_hd import CH_DIALOGUE_NAMES
+            settings['ch_dialogue'] = CH_DIALOGUE_NAMES[state.ch_dialogue]
+        if self.app.claire_powerups_offered():
+            from .desktop_pause_hd import CLAIRE_POWERUPS_NAMES
+            settings['claire_powerups'] = CLAIRE_POWERUPS_NAMES[state.claire_powerups]
         if self.app.minigames_offered():
             settings['arena_minigames'] = state.arena_minigames
         settings['skip_ahead'] = state.skip_ahead
@@ -472,6 +482,14 @@ class HdShell:
             state.title_music = value
             self.app._attempt(state.persist)
             self.app.play_menu_music()                  # the new tune at once, from its start
+        elif key == 'ch_dialogue':
+            state.ch_dialogue = value
+            self.app._attempt(state.persist)
+            self.app.apply_ch_dialogue()
+        elif key == 'claire_powerups':
+            state.claire_powerups = value
+            self.app._attempt(state.persist)
+            self.app.apply_claire_powerups()
         elif key == 'title_look':
             state.title_look = value                    # (the menu's art follows it at once: HdUi.look_source)
             self.app._attempt(state.persist)

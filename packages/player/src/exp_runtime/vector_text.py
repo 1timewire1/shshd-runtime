@@ -171,6 +171,9 @@ class VectorFont(BitmapFont):
     # That stroke's own colour when it is not the fill's (`CSFont::setStroke`'s second argument: the quiz score's
     # white TrebuchetMS-Bold has a 0.6-point 0xffb4b4b4 edge). Drawn over the fill (fill-then-stroke).
     embolden_color: tuple | None = None
+    # shshd-runtime: a slant (horizontal shift per unit of height) for a face with no italic of its own: Claire Hart
+    # Dialogue's narration in Romic Bold (owner, 2026-11-19). Each row of the glyph moves by its height above the baseline.
+    slant: float = 0
 
     def render_glyph(self, code: int, color, scale: float):
         """(surface, dx, dy): the glyph at `scale` device pixels per logical
@@ -215,6 +218,9 @@ class VectorFont(BitmapFont):
             else:
                 layer.blit(glyph, (pad, pad))
             glyph = layer
+        if self.slant:
+            glyph, shift = _slanted(glyph, self.slant, ascent + pad)
+            return glyph, left - pad + shift, -ascent - pad
         return glyph, left - pad, -ascent - pad
 
     def _stroked_glyph(self, code, fill, px):
@@ -307,9 +313,10 @@ def _grow(layer, image, pad, radius):
 
 
 def vector_font(base: BitmapFont, source: FaceSource, logical_size: float, *, fill=None, stroke=0,
-                embolden=0, embolden_color=None, use_common_base=False) -> VectorFont:
+                embolden=0, embolden_color=None, use_common_base=False, covered=None) -> VectorFont:
     """A `BitmapFont` twin of `base` whose glyphs have real advances and ink
-    boxes, at `logical_size` layout units."""
+    boxes, at `logical_size` layout units. `covered`: the code points the face maps (ttf_covered), when known; others
+    draw nothing rather than the face's empty box (Claire Hart's Romic has no '/')."""
     reference = source.reference()
     scale = logical_size / REFERENCE_PX
     baseline = base.base if use_common_base and base.base else _baseline(base)
@@ -319,7 +326,7 @@ def vector_font(base: BitmapFont, source: FaceSource, logical_size: float, *, fi
     extra = {code: None for code in LATIN1_EXTRA if code not in base.glyphs}
     for code, glyph in (*base.glyphs.items(), *extra.items()):
         try:
-            metrics = reference.metrics(chr(code))[0] if code >= 32 else None
+            metrics = reference.metrics(chr(code))[0] if code >= 32 and (covered is None or code in covered) else None
         except (pygame.error, IndexError):
             metrics = None
         if metrics is None:
@@ -486,12 +493,100 @@ def cod_emphasis_font(library, name: str, base: BitmapFont):
 HD_ONLY_FONTS = {'PajamaHip24': 'PajamaHip26'}
 
 
+SKIN_FONT = 'CHRomic'           # Claire Hart Dialogue's faces: CHRomic16, CHRomicBold18... (dialogue.SKIN_BODY and its kin)
+SKIN_SLANT = 0.2                # ...CHRomicBoldItalic16, Romic Bold slanted for narration (Romic has no italic)
+
+
+def _slanted(glyph, slant, baseline):
+    """(the glyph sheared, the pen shift): each row moved right by `slant` times its height above row `baseline` (left
+    below it), copied row by row so every backend draws it the same."""
+    width, height = glyph.get_size()
+    low, high = slant * (baseline - height), slant * baseline         # the bottom row's shift, the top row's
+    out = pygame.Surface((width + math.ceil(high - low) + 1, height), pygame.SRCALPHA)
+    out.fill((0, 0, 0, 0))
+    for y in range(height):
+        out.blit(glyph, (round(slant * (baseline - y) - low), y), (0, y, width, 1))
+    return out, round(low)
+
+
+def ttf_covered(data: bytes):
+    """The code points a TrueType font's cmap maps (its format 4 and 12 subtables), or None when it can't be read."""
+    import struct
+    try:
+        tables = {}
+        for i in range(struct.unpack('>H', data[4:6])[0]):
+            tag, _, offset, _ = struct.unpack('>4sIII', data[12 + 16 * i:28 + 16 * i])
+            tables[tag] = offset
+        base, found = tables[b'cmap'], set()
+        for i in range(struct.unpack('>H', data[base + 2:base + 4])[0]):
+            sub = base + struct.unpack('>I', data[base + 8 + 8 * i:base + 12 + 8 * i])[0]
+            kind = struct.unpack('>H', data[sub:sub + 2])[0]
+            if kind == 4:
+                segs = struct.unpack('>H', data[sub + 6:sub + 8])[0] // 2
+                ends = struct.unpack(f'>{segs}H', data[sub + 14:sub + 14 + 2 * segs])
+                starts = struct.unpack(f'>{segs}H', data[sub + 16 + 2 * segs:sub + 16 + 4 * segs])
+                deltas = struct.unpack(f'>{segs}h', data[sub + 16 + 4 * segs:sub + 16 + 6 * segs])
+                at = sub + 16 + 6 * segs
+                offsets = struct.unpack(f'>{segs}H', data[at:at + 2 * segs])
+                for k in range(segs):
+                    for code in range(starts[k], min(ends[k], 0xFFFE) + 1):
+                        if offsets[k]:
+                            place = at + 2 * k + offsets[k] + 2 * (code - starts[k])
+                            glyph = struct.unpack('>H', data[place:place + 2])[0]
+                        else:
+                            glyph = (code + deltas[k]) & 0xFFFF
+                        if glyph:
+                            found.add(code)
+            elif kind == 12:
+                for g in range(struct.unpack('>I', data[sub + 12:sub + 16])[0]):
+                    start, end, _ = struct.unpack('>III', data[sub + 16 + 12 * g:sub + 28 + 12 * g])
+                    found.update(range(start, end + 1))
+        return found or None
+    except (KeyError, struct.error, IndexError):
+        return None
+
+
+def skin_font(library, name: str) -> BitmapFont:
+    """Claire Hart Dialogue's Romic (owner, 2026-11-19): 'CHRomic<size>' or 'CHRomicBold<size>' as vector text from the skin's
+    add-on (its spec's `fonts`: Claire Hart's own Romic.ttf and Romic-Bold.ttf), on the metrics of CoD's body font. Without the
+    add-on's face, that body font as it is."""
+    cache = library.__dict__.setdefault('_text_fonts', {}) if hasattr(library, '__dict__') else {}
+    if name not in cache:
+        bold = name.startswith(SKIN_FONT + 'Bold')
+        style = SKIN_FONT + ('Bold' if bold else '')
+        italic = name[len(style):].startswith('Italic')
+        size = float(name[len(style) + (6 if italic else 0):])
+        base = load_font(library, 'ArialRoundedMTBold16')
+        data = None
+        from .games import GAMES
+        entry = getattr(GAMES.get(getattr(library, 'game_id', None)), 'DIALOGUE_SKIN', None)
+        if entry is not None and hasattr(library, 'addon_resource'):
+            import json
+            spec = library.addon_resource(entry[0], entry[1])
+            try:
+                fonts = json.loads(spec).get('fonts', {}) if spec else {}
+            except ValueError:
+                fonts = {}
+            resource = fonts.get('bold' if bold else 'body')
+            data = library.addon_resource(entry[0], resource) if resource is not None else None
+        try:
+            cache[name] = (vector_font(base, FaceSource(data=data, label='Romic'), size, covered=ttf_covered(data))
+                           if data else base)
+            if italic and data:
+                cache[name] = replace(cache[name], slant=SKIN_SLANT)
+        except (pygame.error, OSError):
+            cache[name] = base
+    return cache[name]
+
+
 def load_font(library, name: str) -> BitmapFont:
     """Parse the Android bitmap font `name` and upgrade it to HD's vector
     equivalent when one is available (see the module docstring). A base-game
     IPA library has no Android .fnt sets (and can't carry the HD iPad bundle,
     which only supplements an APK), so it keeps the shared font loader's own
     installed-face rendering (fonts.load_font / ios_fonts.py)."""
+    if name.startswith(SKIN_FONT):
+        return skin_font(library, name)
     if getattr(library, 'kind', 'apk') == 'ipa':
         from .fonts import load_font as base_load_font
         # Only the switch fonts: the narration body itself is plain `TrebuchetMS_Italic16` (dialogue.NARRATOR_FONT).

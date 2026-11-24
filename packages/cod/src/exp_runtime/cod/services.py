@@ -23,6 +23,16 @@ def dispatch(engine, vm, *, resource_exists=None):
         # 000335d6 reads stack[SP - argc], including retained backing for a
         # zero-word call. Extra frame words are ignored, then popped normally.
         selector = args[0] if args else vm.read_word(vm.stack_base + vm.sp)
+        from ..story_object_services import STORY_OBJECT_QUERY
+        from ..claire_round_services import CLAIRE_ROUNDS_QUERY
+        if selector == CLAIRE_ROUNDS_QUERY:
+            # shshd-runtime: Claire Hart's rounds (service 226) can be played: chcrounds is in the library and Use Translated
+            # Mini-Games is on; else the story's stand-in line (Claire Hart plan Stage 3).
+            return complete('query_build', int(bool(engine.nr_arena_enabled and engine.claire_rounds_ready)), selector=selector)
+        if selector == STORY_OBJECT_QUERY:
+            # shshd-runtime: story-object pictures (service 225) are drawn here, in the dialogue box (Claire Hart plan P);
+            # native CoD answers 0, and the story shows a message naming the item instead.
+            return complete('query_build', 1, selector=selector)
         if selector == 6:
             # 000341fe writes CFBundleVersion to the first dynamic string.
             # Bare EXP tracing has no native bundle; do not invent a version.

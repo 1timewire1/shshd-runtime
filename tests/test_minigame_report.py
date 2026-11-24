@@ -5,19 +5,13 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
+from exp_runtime import claire_rounds as cr
 from exp_runtime.minigame_report import claire_round, describe
-
-try:                                    # (Claire Hart's rounds: the claire-hart branch's; master has none to report)
-    from exp_runtime import claire_rounds as cr
-    from test_claire_rounds import a_round, find_next
-    HAS_ROUNDS = True
-except ImportError:
-    HAS_ROUNDS = False
+from test_claire_rounds import a_round, find_next
 
 HAS_PYGAME = importlib.util.find_spec('pygame') is not None
 
 
-@unittest.skipUnless(HAS_ROUNDS, "Claire Hart's rounds are not in this build")
 class ClaireRoundReportTests(unittest.TestCase):
     def test_it_lists_the_names_with_their_objects_and_follows_the_round(self):
         game = a_round(seed=3)
@@ -124,7 +118,6 @@ class ChannelPlayTests(unittest.TestCase):
         channel, _, _ = self.channel('claire_round', ready=False)
         self.assertIn('not ready', self.play(channel, 'find Apple')['error'])
 
-    @unittest.skipUnless(HAS_ROUNDS, "Claire Hart's rounds are not in this build")
     def test_a_round_finds_only_a_listed_name(self):
         channel, _, _ = self.channel('claire_round')
         game = a_round(seed=5)
