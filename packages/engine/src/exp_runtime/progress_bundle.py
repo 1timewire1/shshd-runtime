@@ -92,7 +92,9 @@ def write_bundle(directory, game, player, titles, target, *, note='', keep=None,
     with tempfile.NamedTemporaryFile(dir=target.parent, prefix='.progress-', suffix='.zip', delete=False) as stream:
         temporary = Path(stream.name)
     try:
-        with ZipFile(temporary, 'w', ZIP_DEFLATED) as bundle:
+        # A file dated before 1980 is written as of 1980 (ZIP can't say earlier): a g54's restored saves were dated 1970, and
+        # Back Up Progress and every sync from it failed (2026-11-24).
+        with ZipFile(temporary, 'w', ZIP_DEFLATED, strict_timestamps=False) as bundle:
             bundle.writestr(MANIFEST, json.dumps(manifest, indent=2, ensure_ascii=False))
             bundle.writestr(PLAYER, json.dumps({key: player[key] for key in PLAYER_KEYS if key in player},
                                                ensure_ascii=False))
@@ -260,7 +262,7 @@ def write_set(target, bundles, *, note=''):
     with tempfile.NamedTemporaryFile(dir=target.parent, prefix='.progress-', suffix='.zip', delete=False) as stream:
         temporary = Path(stream.name)
     try:
-        with ZipFile(temporary, 'w') as bundle:             # the games' bundles are compressed already
+        with ZipFile(temporary, 'w', strict_timestamps=False) as bundle:     # the games' bundles are compressed already
             bundle.writestr(MANIFEST, json.dumps(manifest, indent=2))
             for game in games:
                 bundle.write(bundles[game], f'{game}.zip')

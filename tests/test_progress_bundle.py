@@ -38,6 +38,24 @@ class BundleTests(unittest.TestCase):
         second = write_bundle(source, 'shs', {}, {}, self.root / 'second.zip', note='before restore')
         self.assertLess(first['created'], second['created'])
 
+    def test_a_save_dated_before_1980_is_bundled_as_of_1980(self):
+        # (g54, 2026-11-24: restored saves dated 1970 made every Back Up Progress and sync from it fail, "ZIP does not support
+        # timestamps before 1980".)
+        import os
+        from exp_runtime.progress_bundle import write_set
+        source = library_folder(self.root / 'one', {'a.shs-auto.json': 'A', 'a.shs-shot.jpg': 'pic'})
+        for path in (source / 'saves').iterdir():
+            os.utime(path, (0, 0))
+        target = self.root / 'old.zip'
+        write_bundle(source, 'shs', {}, {}, target)
+        with ZipFile(target) as bundle:
+            self.assertEqual(bundle.getinfo('saves/a.shs-auto.json').date_time[0], 1980)
+            self.assertEqual(bundle.read('saves/a.shs-auto.json'), b'A')
+        os.utime(target, (0, 0))                             # ...and a set holding a bundle so dated
+        write_set(self.root / 'set.zip', {'shs': target})
+        with ZipFile(self.root / 'set.zip') as bundle:
+            self.assertIn('shs.zip', bundle.namelist())
+
     def test_a_bundle_carries_the_progress_files_and_names_and_restores_them_whole(self):
         source = library_folder(self.root / 'one', {'a.shs-auto.json': 'A', 'a.shs-shot.jpg': 'pic', 'b.shs-save.json': 'B'})
         player = dict(names={'$USR': 'Zoe'}, name_sets={'nr': {'$Emily': 'Em'}}, warp_unlocked=True, music=False)

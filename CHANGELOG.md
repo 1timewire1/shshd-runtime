@@ -136,6 +136,9 @@
 
 ### Fixed
 
+- **Back Up Progress and Sync Devices failed on a save dated before 1980** ("ZIP does not support timestamps before 1980"):
+  the progress zips now store such a file as of 1980 (`strict_timestamps=False`). Found on the g54, whose restored saves
+  were dated 1970 (2026-11-24); every sync from it failed before sending anything.
 - **A letter notice ran off a tall screen's edge** (reported with an e-ink phone's photo of SHS's "New Move Learned!";
   the owner saw the X360 Day of Diss's "Objective Complete" do it, 2026-11-22): HD's notice is centred over the
   portrait, and over a left-hand one a long notice reaches into the frame's margin, which a 3:4 frame shows and a
