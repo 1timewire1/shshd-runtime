@@ -56,6 +56,39 @@ class RoleTests(unittest.TestCase):
                                      aliases={26543: ('shs11', 26543)}))
         self.assertEqual(addon_record(ExpArchive(compile_project(project)))[1], (('shsbrew', 10), ('shs11', 2)))   # primary first
 
+    def test_a_cod_episode_takes_claire_hart_as_its_primary(self):
+        """Claire Hart plan Stage 6 (owner, 2026-11-24): `chc` as a CoD episode's primary brings pack 31500's settings; the
+        episode declares it, its narrator portrait and its round (Use Translated Mini-Games then applies), not SHS's names table."""
+        from exp_runtime.content import feature_pack, pack_setting
+        cod = library('chc', 'chcrounds')
+        cod.game_id = 'cod'
+        project = story(Node('a', 'background', asset=26100, next='q'),
+                        Node('q', 'minigames_available', params={'for': 'claire_round', 'result': 'real'}, next='b'),
+                        Node('b', 'claire_round', params=dict(round=11), next='z'),
+                        game='cod', assets=[Asset(26100, 'Claire Hart scene', None, 'chc')],
+                        options={'narration_portrait': True})
+        set_primary_addon(project, cod, 'chc')
+        self.assertEqual(record(project), dict(narration_portrait=True, minigames=True, addons=('chc', '')))
+        episode = SimpleNamespace(library=cod, presentation=dict(addons=('chc', '')), record=dict(pack_id=32000))
+        self.assertEqual(feature_pack(episode), 31500)
+        self.assertEqual(pack_setting(episode, 'TRANSLATED_BACKDROP_DIM'), 110)
+        self.assertEqual(pack_setting(episode, 'BACKDROP_SLICES'), ('chc', 26998))     # (so Claire Hart 4:3 shows it whole)
+        plain = SimpleNamespace(library=cod, presentation={}, record=dict(pack_id=32000))
+        self.assertEqual(feature_pack(plain), 32000)
+        self.assertIsNone(pack_setting(plain, 'TRANSLATED_BACKDROP_DIM'))
+
+    def test_claire_harts_pictures_are_named_from_its_spec(self):
+        """Browse library images and MCP name chc's pictures (Stage 6): a portrait by its look and face, the rest by name."""
+        from exp_runtime.creator.assets import claire_hart_labels
+        spec = dict(looks=[[28012, 28010, 28011, 28013, 28014]], look_names=['Aaron Mitchels'],
+                    pictures={'references/characters/AaronMitchels/Avatar_AaronMitchels_Angry': [0, 1, 28010],
+                              'references/characters/AaronMitchels/Avatar_AaronMitchels': [0, 0, 28012]},
+                    scenes={'ClairesOffice': [26160, 224], 'Shadows/VanDerWaltDen': [26800, 0]},
+                    music={'Beach_EP21': 26900}, story_objects={'references/storyobjs/braceletso': 27050})
+        self.assertEqual(claire_hart_labels(spec), {28010: 'Aaron Mitchels, Angry', 28012: 'Aaron Mitchels, Normal',
+                                                    26160: 'scene Claires Office', 26800: 'scene Shadows/Van Der Walt Den',
+                                                    26900: 'track Beach EP21', 27050: 'story object bracelet'})
+
     def test_a_plain_episode_is_marked_as_the_creators_and_a_translation_is_not(self):
         self.assertEqual(record(story(Node('a', text='Hi', next='z'))), dict(creator=True))
         self.assertEqual(record(story(Node('a', text='Hi', next='z'), pack_id=31400)), {})   # the X360 translator builds here

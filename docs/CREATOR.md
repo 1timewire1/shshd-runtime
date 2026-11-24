@@ -180,8 +180,8 @@ In MCP: `asset_list` takes `addon`, and `asset_use_addon` takes one, with `copy`
 
 ### The primary add-on and extras
 
-**Add-ons and settings…** (SHS projects; owner, 2026-11-09) picks the episode's **primary** add-on: the translated game it's
-built on. The episode then takes that game's settings that need its pictures and sounds, as its translated stories have them:
+**Add-ons and settings…** (SHS and CoD projects; owner, 2026-11-09, CoD's from 2026-11-24) picks the episode's **primary**
+add-on: the translated game it's built on. The episode then takes that game's settings that need its pictures and sounds, as its translated stories have them:
 
 | Primary | It brings |
 | --- | --- |
@@ -190,6 +190,7 @@ built on. The episode then takes that game's settings that need its pictures and
 | `shsnr` | New Rules' frame; the Hi-Res Portraits switch; its right/wrong music |
 | `shsx360` | The X360 frame; the MS3 Characters switch |
 | `shshw` | Surviving Hollywood's panel behind the scene; the catch game in Hollywood's own look (nothing from BREW's: a catch node then needs only `shshw`, with picture numbers from its catch art); its title tune and title screen where Title Screen Music and Look are on Auto |
+| `chc` (CoD) | Claire Hart Classic's look, as its cases have it: Claire Hart UI's bubbles and screens with **Claire Hart Cases**; narration with the narrator's portrait; backdrops darkened as Claire Hart drew them (**Dim Backdrops**); Claire Hart's green beside the scene; its scenes as a 3:4 slice that fills the frame, and whole with **Claire Hart 4:3**; its title tune and title screen where Title Screen Music and Look are on Auto |
 
 The primary is listed first, so its pictures win where add-ons share a number. Every other add-on the project uses is an
 **extra**: its pictures and sounds keep their numbers, aliased to it in the export, and its mini-games play from it. Adding a
@@ -207,6 +208,24 @@ attached to its portrait, as Claire Hart's cases do; with Claire Hart UI on, in 
 Every episode made in the Creator keeps the Creator's own names table, apart from the smartphone stories' and every translation's
 (a name typed in one is the one the others use). It shows in the episode lists as itself, not as the primary's game. Projects using
 the translators' packs (31000-31799) get none of this: their game's own tables apply.
+
+#### Example: a Claire Hart scene in a CoD project
+
+A short case of your own in Claire Hart's dress, as made and played while this was written (2026-11-24):
+
+1. New project, game **Cause of Death**, with a library holding `chc` (and `chcrounds` for the round).
+2. **Add-ons and settings…**: primary **Claire Hart Classic**; tick **Narration shows the narrator's portrait** if a
+   **Player / narrator** node names the narrator.
+3. A **Background** node: **Browse library images**, pick a Claire Hart scene (`chc` 26000–26786, listed by name, such as
+   "scene Claires Office", 26160) and **Use from add-on**. The export keeps its number and holds no picture.
+4. A few narration and dialogue lines. Portraits come from `chc` the same way, each listed as its character and face
+   ("Aaron Mitchels, Angry"); its story-object pictures ("story object bracelet") go in **Story object picture** nodes.
+5. **Real minigames?** asking about Claire Hart's rounds: 1 to a **Hidden-object round (Claire Hart)** node (round 11, Case 1's first, in
+   Claire's Office), 0 to a line such as "Claire searches her office."
+6. Export. The `.exp` is a few kilobytes and requires `chc` (and `chcrounds`, an extra). On a player with both, the lines take
+   Claire Hart's bubbles (with Claire Hart UI on Claire Hart Cases), the office is dimmed and fills a 3:4 frame (whole in a 4:3
+   window with Claire Hart 4:3 on), and the round plays with its skip prompt, Power-Ups and Level Summary; its pause menu
+   offers the Claire Hart switches.
 
 The `.expproj` keeps the primary as `primary` and `edition` on its `addons` entry, and the settings as `options`; projects saved
 before them have neither. In MCP: `project_set_primary_addon` (library, addon or null, edition), and `project_update` takes
@@ -229,7 +248,16 @@ is the score, 0 to the target. Branches on it tell the skip prompt where the sto
 
 **New Rules' minigames.** The **New Rules minigame** node (SHS projects; it needs the `shsnr` add-on) plays a game of New Rules' minigame library in its arena, as King of Diss and Dancing Queen call them: Rhyme, Rhythm, Dance steps, Beat boxing or DJ Fever, with a target score (7, 6, 5, 7 and 3 in the stories) and an intro. It needs no **Real minigames?** node: a player without the arena (or with Use Translated Mini-Games off) plays the translators' fallback instead, a speed diss of timed choices from your rhyme families for Rhyme, an SHS word game with your good and bad words for the others. The score goes in its result variable either way, passed at the target or more (a word game gives the target when passed, one less otherwise). Ask to Skip Mini-Games offers its outcomes before an arena game. After time's up, the arena's score waits for OK, as New Rules' does. A scene running beside the library must stay under 26,942 instructions and 29,396 data words.
 
-**Real minigames?** stores 1 where the player plays the game it asks about and 0 elsewhere, which should take your other path. Its **Asks about** list has four: the X360 games (slot machine, leash, jewel puzzle, Diss Practice), the Diss Battle, SHS '11's games and the catch game. Each has its own question, since a player may have one and not another (an SHSHD Runtime from before the Diss Battle has the other X360 games). A project with a game not behind a question about it is refused.
+**Claire Hart's rounds.** The **Hidden-object round (Claire Hart)** node (CoD projects; `claire-hart` branch) plays one of Claire Hart Classic's
+hidden-object rounds from the `chcrounds` add-on, as its cases do ([ADDONS.md](ADDONS.md#chcrounds-claire-hart-classic-rounds-claire-hart-branch)):
+12 objects to find in the round's scene, its story objects among them, the free hint and the power-ups (the player's Power-Ups
+setting), then its Level Summary. Its **round** names it by its original episode and place: the episode's number x 10 + the round,
+so E001's first is 11 and E018's third is 183. The result is the round's total score; the story has one outcome, so a branch on
+it is a bonus, never the plot. Put it behind **Real minigames?** asking about Claire Hart's rounds: a player without
+`chcrounds`, or with Use Translated Mini-Games off, answers 0 and should take a line saying what Claire searched instead (the
+cases' own stand-in: "Claire searches the Office."). Adding the node declares `chcrounds` when the library has it.
+
+**Real minigames?** stores 1 where the player plays the game it asks about and 0 elsewhere, which should take your other path. Its **Asks about** list has five: the X360 games (slot machine, leash, jewel puzzle, Diss Practice), the Diss Battle, SHS '11's games, the catch game and (CoD projects) Claire Hart's rounds. Each has its own question, since a player may have one and not another (an SHSHD Runtime from before the Diss Battle has the other X360 games). A project with a game not behind a question about it is refused.
 
 A storyboard plays stills with a window moving across them, overlays growing or sliding in, and sounds at their moments, then holds for a press. Day of Diss's opening is one ([X360.md](X360.md#day-of-disss-opening)).
 
@@ -327,7 +355,9 @@ These came with the Surviving Hollywood translation and work on any SHS project 
 
 **Browse library images…** names Surviving Hollywood's pictures from its add-on (`shshw`): each portrait by the demo's number,
 the same facing left, its eight silhouettes and its backgrounds by sky, listed first; MCP's `asset_list` names them too and
-finds them by name. Take one by reference (**Use from add-on**) for a character's portrait.
+finds them by name. Take one by reference (**Use from add-on**) for a character's portrait. Claire Hart Classic's (`chc`, CoD;
+`claire-hart` branch) are named the same way from its spec: each portrait as its character and face ("Will Yu, Surprised"),
+each scene, track and story object by name (`assets.claire_hart_labels`).
 
 ### Optional art
 

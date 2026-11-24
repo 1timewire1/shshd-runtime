@@ -505,10 +505,16 @@ def presentation_record(project):
              if p['then_loop'] != -1}
     if loops:
         record['music_loops'] = loops
-    if project.game == 'cod' and not project.native and project.options.get('narration_portrait'):
-        record['narration_portrait'] = True      # (CoD's one declared member: cod/profile.py PRESENTATION_RECORD)
-    if project.native or project.game != 'shs' or project.pack_id in TRANSLATION_PACKS:
+    if project.native or project.pack_id in TRANSLATION_PACKS:
         return record                   # an original episode, or a translation: its game's own tables
+    if project.game == 'cod':
+        # CoD's declared members (cod/profile.py PRESENTATION_RECORD): the narrator's portrait, and as an SHS episode's the
+        # mini-games ask, the primary add-on and the extras' aliases (Claire Hart plan Stage 6, owner 2026-11-24).
+        if project.options.get('narration_portrait'):
+            record['narration_portrait'] = True
+        return _addon_members(project, record)
+    if project.game != 'shs':
+        return record
     record['creator'] = True            # the Creator's own names table (owner, 2026-11-09)
     art = {addon: dict(sorted(table.items())) for addon, table in sorted(project.optional_art.items()) if table}
     if art:
@@ -518,6 +524,12 @@ def presentation_record(project):
         record['journal'] = dict(count=JOURNAL_COUNT_KEY, title=title_form, lines=lines_form,
                                  stats=[[stat['label'], stat['key'], stat['prefix']] for stat in project.journal])
     record.update({name: True for name, on in sorted(project.options.items()) if on})
+    return _addon_members(project, record)
+
+
+def _addon_members(project, record):
+    """`record` with the members an episode made in the Creator declares for its mini-games and add-ons: `minigames` where
+    it plays one (Use Translated Mini-Games then applies), its primary add-on, and its extras' aliases."""
     if any(node.kind in ('minigames_available', 'brew_catch', 'shs11_memory', 'shs11_reflex', 'x360_slot', 'x360_leash',
                          'x360_puzzle', 'x360_diss', 'x360_battle', 'claire_round') for node in project.nodes):
         record['minigames'] = True

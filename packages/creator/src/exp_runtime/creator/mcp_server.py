@@ -125,7 +125,7 @@ def create_server(root):
 
     @edit_tool(name='project_set_primary_addon')
     def set_primary_addon(path: str, revision: str, library: str, addon: str | None, edition: str = '') -> dict:
-        """Make a library add-on the episode's primary (SHS, SHSHD Runtime only): its frame, relationship icons, answer music and switches come with it, its pictures win where add-ons share a number, and players need it. edition: '08 or '07 for shsbrew, '' otherwise. null leaves no primary; other declared add-ons are extras."""
+        """Make a library add-on the episode's primary (SHS or CoD, SHSHD Runtime only): its game's settings that need its pictures and sounds come with it (SHS: a frame, relationship icons, answer music and switches; CoD's chc: Claire Hart's dialogue skin, narrator portraits, dimmed backdrops, its scenes' slices), its pictures win where add-ons share a number, and players need it. edition: '08 or '07 for shsbrew, '' otherwise. null leaves no primary; other declared add-ons are extras."""
         return workspace.primary_addon(path, revision, library, addon, edition)
 
     @edit_tool(name='asset_import_library_image')

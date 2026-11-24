@@ -32,6 +32,12 @@ ADDON_FEATURES = {
     'shsdsi': ((), ('Optional art only (never required): your pictures shown as its DSi locations while DSi Backgrounds is on',)),
     'shshw': (("Surviving Hollywood's panel behind the scene", "The catch game in Hollywood's own look (nothing from BREW's)",
                "Its title tune and title screen, where Title Screen Music and Look are on Auto"), ()),
+    # Cause of Death's (Claire Hart plan Stage 6, owner 2026-11-24): Claire Hart Classic's pack 31500 settings (cod/profile.py).
+    'chc': (("Claire Hart UI's speech bubbles and screens with Claire Hart Cases", "Narration with the narrator's portrait",
+             'Backdrops darkened as Claire Hart drew them (Dim Backdrops)', "Claire Hart's green beside the scene",
+             "Its scenes as a 3:4 slice that fills the frame, whole with Claire Hart 4:3",
+             "Its title tune and title screen, where Title Screen Music and Look are on Auto"), ()),
+    'chcrounds': ((), ("Claire Hart's hidden-object rounds",)),
 }
 # Node kinds only this runtime answers, and how to name them to a person.
 MECHANIC_NODES = {'minigames_available': 'the translated mini-games', 'x360_slot': 'the X360 slot machine',

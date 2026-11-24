@@ -942,8 +942,8 @@ class Editor(QMainWindow):
         from .model import ADDON_EDITIONS, FREE_SETTING_GAMES, FREE_SETTINGS, primary_addon
         if self.project.native:
             self.error('Native projects keep their original presentation.'); return
-        if self.project.game != 'shs':
-            self.error('Add-ons and their settings are for Surviving High School episodes.'); return
+        if self.project.game not in ('shs', 'cod'):
+            self.error('Add-ons and their settings are for Surviving High School and Cause of Death episodes.'); return
         try:
             with self.open_library() as library:
                 available = [(addon['title'], addon['addon']) for addon in library.addons]
@@ -956,7 +956,9 @@ class Editor(QMainWindow):
         dialog = QDialog(self)
         dialog.setWindowTitle('Add-ons and settings')
         form = QFormLayout(dialog)
-        intro = QLabel('The primary add-on gives the episode its look: its frame, relationship icons, answer music and switches. '
+        look = ('its frame, relationship icons, answer music and switches' if self.project.game == 'shs'
+                else "Claire Hart Classic's (chc): its dialogue skin, narrator portraits, dimmed backdrops and switches")
+        intro = QLabel(f'The primary add-on gives the episode its look: {look}. '
                        'Its pictures win where add-ons share a number. Other add-ons are extras, for their pictures, sounds '
                        'and mini-games. Players need every add-on the episode uses.'
                        + ('' if self.project.library else ' Choose an imported library to pick from its add-ons.'))
@@ -987,7 +989,7 @@ class Editor(QMainWindow):
                     lines.append(f'<b>{name}</b> (primary): ' + (escape('; '.join(shown)) or 'its pictures and sounds'))
                 else:
                     lines.append(f'<b>{name}</b> (extra): ' + (escape('; '.join(extra)) or 'its pictures and sounds'))
-            brings.setText('<br>'.join(lines) or 'No add-on: the episode looks as the smartphone game does.')
+            brings.setText('<br>'.join(lines) or 'No add-on: the episode looks as the ' + ('smartphone game' if self.project.game == 'shs' else 'iPhone game') + ' does.')
 
         def update():
             addon_id = primary_box.currentData()

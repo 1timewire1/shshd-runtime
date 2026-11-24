@@ -451,13 +451,15 @@ python tools/translate/chslim.py --mirror CLAIRE_HART_DIR --pairs PAIRS.txt --ca
     --cod-library COD_LIBRARY --extras EXTRAS_DIR --out OUT_DIR [--chc]
 ```
 
-### `chc`: Claire Hart Classic (in progress on the `claire-hart` branch)
+### `chc`: Claire Hart Classic (`claire-hart` branch)
 
 The add-on of the translated Claire Hart Classic cases (Other Games/docs/CLAIRE_HART_PLAN.md), pack 31500. Revision 1 began
 (2026-11-19) as chslim revision 1 exactly, under the same IDs and the same map at 28000, so CoD's portrait swap works the same
 from either. Since Stage 1 (2026-11-19) `tools/translate/claire_hart.py addon` writes it (454 MB): chslim revision 1's
 resources (`chslim.contents(chc=True)`) and everything else of Classic's, used by a case or not, under its own record (`chc`,
-superseding chslim at revision 2). It keeps revision 1 until it goes to testers.
+superseding chslim at revision 2). **Revision 2** (2026-11-21) adds Claire Hart UI's pieces for CoD's other screens
+(29109–29118, below); the Classic tester zip carries it (2026-11-24). A library with revision 1 keeps CoD's look on those
+screens, its dialogue skinned as before.
 
 ```sh
 python tools/translate/claire_hart.py addon --mirror CLAIRE_HART_DIR --pairs PAIRS.txt --catalog COD_CATALOG_PORTRAITS \
@@ -480,6 +482,7 @@ python tools/translate/claire_hart.py places --mirror CLAIRE_HART_DIR --out clai
 | 28010–28844 | All 835 portraits, each at 28010 + its place in the sorted list (chslim's rule): CoD's matches framed as chslim's, the rest whole at the same scale |
 | 29100 | Claire Hart UI's spec, JSON (`tools/translate/ch_dialogue_skin.py`): its density, text and emphasis colours, fonts, and where each picture is cut |
 | 29101–29108 | Its art: the speaker body (the tail side mirrored away), the name tab, the narrator box, the new portrait ring and disc, the Play Now button (Continue, at rest and pressed) and the story-object square |
+| 29109–29118 | Revision 2 (`ch_dialogue_skin.UI_SOURCES`): Classic's panel with its title tab, its Yes/No popup, the option row and its lit gold edge, the score capsule, the combo bar's backing and fill (stored at half size), the close button (at rest and pressed) and the Play Now button's hover look; the spec's `ui` places them |
 
 Importing it removes chslim, and an episode or switch asking for chslim gets `chc` (it stands in for chslim's revision 2).
 
@@ -507,22 +510,33 @@ Its backdrops stay at full brightness, as the rounds need them. The player darke
 Classic did (its backdrop node's colour; the cod profile's `TRANSLATED_BACKDROP_DIM`), while the shared **Dim Backdrops** switch is
 on (CH tag, on by default, offered once the library has a case).
 
+**Claire Hart 4:3** (Per-Game Settings, CH tag, on by default; owner, 2026-11-22): where the window is at least 4:3 (a phone or
+iPad in landscape, a maximized or full-screen window), a case shows in a 4:3 frame: each scene whole, as Classic framed it,
+rather than its 3:4 slice (the spec's `scenes`, which keep both), the dialogue 1.35x larger, and the round at Classic's own
+800 x 600 layout. Narrower windows show it as before, and it switches as the window turns or resizes
+(`Desktop.wide_frame`, `frame_shape.has_wide_room`). A save's picture is still 3:4.
+
+**In the Creator** (Claire Hart plan Stage 6, owner 2026-11-24), a Cause of Death episode can take `chc` as its **primary
+add-on** (Add-ons and settings…): it then has pack 31500's settings (the CoD profile's `ADDON_FEATURE_PACKS`: the skin with
+Claire Hart Cases, the narrator's portrait, Dim Backdrops, the green backdrop, its scenes' slices and Claire Hart 4:3, its title
+look and tune on Auto), and draws chc's scenes and portraits by reference. Its Claire Hart round node plays from `chcrounds`.
+See [CREATOR.md](CREATOR.md#the-primary-add-on-and-extras).
+
 The tool reads the real hashes from the CoD library, since a catalogue's copies are re-encoded, and stops with an error if a mapped
 picture isn't found.
 
 **Unverified:**
 
-- Nothing draws the bubbles or fonts yet, so they haven't been seen in use. Romic is inferred from Claire Hart's asset list and a
-  screenshot.
-- The backdrop on CoD's menus was tested through its function, not captured on a menu screen.
+- Romic is inferred from Claire Hart's asset list and a screenshot. The skin is seen in use on the PC and the g54, not yet on an
+  iPad (ROADMAP 5.13).
 
-### `chcrounds`: Claire Hart Classic: Rounds (in progress on the `claire-hart` branch)
+### `chcrounds`: Claire Hart Classic: Rounds (`claire-hart` branch)
 
 Optional, for the translated cases (pack 31500): Classic's hidden-object rounds played for real
 (Other Games/docs/CLAIRE_HART_ROUNDS_PLAN.md). Without it, or with Use Translated Mini-Games off, a round is the case's
 narrated stand-in line. `tools/translate/claire_rounds_addon.py` writes it (via `claire_hart.py rounds`), streaming the archive
 to disk as it goes (`write_exp`); `tools/translate/claire_rounds_check.py` redraws every scene from it and compares each with
-Classic's own `template.png`. Revision 1 until it goes to testers.
+Classic's own `template.png`. Revision 1, in the rounds tester zip.
 
 ```sh
 python tools/translate/claire_hart.py rounds --mirror CLAIRE_HART_DIR --out OUT_DIR [--scenes A,B] [--workers 3]   # FFmpeg on PATH
@@ -563,6 +577,7 @@ tag is New Rules', since it changes New Rules' episodes, and its label names X36
 | Use Word Grid Skin | SHS11 | SHS '11 episodes, with HD's word game art |
 | HD Portraits in CoD, Backdrop | CH | CoD with `chslim` imported |
 | Dim Backdrops | CH | Claire Hart's translated cases (pack 31500); on by default |
+| Claire Hart 4:3 | CH | Claire Hart's translated cases; on by default |
 | Use SHW Art in Preview | '07 | The Surviving Hollywood Preview, with `shshw` imported |
 | Use X360 Arena Skin | NR | New Rules episodes with `shsx360` imported; in play, also Use Translated Mini-Games on |
 

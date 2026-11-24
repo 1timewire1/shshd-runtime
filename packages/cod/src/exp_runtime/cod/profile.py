@@ -50,9 +50,16 @@ PORTRAIT_ADDON = ('chslim', 28000)
 # shshd-runtime: translated packs whose narration shows the narrator's portrait (presentation narration_portrait): Claire
 # Hart Classic draws Claire (or an `_Event` alias's face) beside its narration (CLAIRE_HART_PLAN.md, decision E).
 TRANSLATED_NARRATION_PORTRAITS = {31500: True}
-# shshd-runtime: the presentation members (resource 3, presentation.MEMBERS) a CoD episode may declare for itself: only the
-# narrator's portrait, a Creator setting (owner, 2026-11-19). SHS's profile accepts every member (True).
-PRESENTATION_RECORD = ('narration_portrait',)
+# shshd-runtime: the presentation members (resource 3, presentation.MEMBERS) a CoD episode may declare for itself: the
+# narrator's portrait, a Creator setting (owner, 2026-11-19); and its primary add-on, its extras' aliases and its asking for the
+# translated mini-games, as an SHS episode made in the Creator declares them (Claire Hart plan Stage 6, owner 2026-11-24).
+# SHS's profile accepts every member (True).
+PRESENTATION_RECORD = ('narration_portrait', 'addons', 'aliases', 'minigames')
+# shshd-runtime: the primary add-on an episode made in the Creator may name, and the translated pack whose settings it then
+# takes (content.feature_pack; shs/profile.py's, CREATOR_ADDONS_PLAN.md): Claire Hart Classic's `chc` brings pack 31500's,
+# its dialogue skin with Claire Hart Cases, narrator portraits, Dim Backdrops, the green beside the scene, its looks, its
+# scenes' slices (whole with Claire Hart 4:3) and its title look and tune on Auto.
+ADDON_FEATURE_PACKS = {('chc', ''): 31500}
 # shshd-runtime: translated packs whose backdrops the player darkens as it draws them, to n/255, while the shared Dim
 # Backdrops switch is on: Claire Hart Classic's 110 (its backdrop node's colour; the sequel's 102 comes with pack 31900).
 # The add-on keeps them at full brightness (CLAIRE_HART_PLAN.md, decision F).

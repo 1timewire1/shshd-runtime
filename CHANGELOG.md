@@ -16,6 +16,15 @@
 
 ### Added
 
+- **Claire Hart Classic in the Creator** (Claire Hart plan Stage 6, owner 2026-11-24; `claire-hart` branch). A Cause of Death
+  project can take `chc` as its primary add-on (Add-ons and settings…, now open to CoD projects, which also reaches CoD's
+  **Narration shows the narrator's portrait**). It then has a case's look: the skin with Claire Hart Cases, narrator
+  portraits, Dim Backdrops, the green backdrop, the scenes' slices and Claire Hart 4:3, the title look and tune on Auto (the
+  CoD profile's `ADDON_FEATURE_PACKS`). CoD episodes now declare their primary, extras' aliases and mini-games (so a
+  Creator-made round's pause menu offers Power-Ups and Use Translated Mini-Games). Browse library images and MCP name `chc`'s
+  pictures from its spec ("Aaron Mitchels, Angry", "scene Claires Office"). New `docs/CLAIRE_HART.md`; CREATOR.md gains the
+  round node and a worked example, and ADDONS.md the add-on's revision 2 and the 4:3 switch.
+
 - **Claire Hart cases in their own 4:3** (owner, 2026-11-22; `reference/Other Games/docs/CLAIRE_HART_43_PLAN.md`,
   ROADMAP 4.1c; `claire-hart` branch). A new switch, **Claire Hart 4:3** (Per-Game Settings, CH tag, on by default),
   shows a Claire Hart case in a 4:3 frame whenever the window is at least 4:3: a phone or iPad turned to landscape, a

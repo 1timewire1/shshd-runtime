@@ -58,6 +58,8 @@ def addon_asset_labels(library, addon_id):
         spec = json.loads(found[1].read(ADDON_ART_SPEC))
     except (ValueError, OSError, KeyError):
         return {}
+    if isinstance(spec, dict) and isinstance(spec.get('looks'), list) and isinstance(spec.get('scenes'), dict):
+        return claire_hart_labels(spec)
     if not isinstance(spec, dict) or not isinstance(spec.get('portraits'), dict):
         return {}
     labels = {}
@@ -71,6 +73,38 @@ def addon_asset_labels(library, addon_id):
         for sky, resource in enumerate(resources if isinstance(resources, list) else [resources]):
             labels[resource] = f'background {number}' + (f', {SKIES[sky]}' if isinstance(resources, list) and sky < len(SKIES) else '')
     return {resource: label for resource, label in labels.items() if type(resource) is int}
+
+
+EXPRESSIONS = ('Normal', 'Angry', 'Happy', 'Sad', 'Surprised')     # a Claire Hart look's five faces, in chc's slot order
+
+
+def _words(name):
+    """A Claire Hart folder or file name spaced at its capitals and digits: 'ClairesOffice' -> 'Claires Office'."""
+    import re
+    return re.sub(r'(?<=[a-z])(?=[A-Z0-9])|(?<=[0-9])(?=[A-Z])', ' ', name)
+
+
+def claire_hart_labels(spec):
+    """{resource: what it is} from Claire Hart Classic's spec (`chc` 26998; Claire Hart plan Stage 6, owner 2026-11-24): each
+    portrait as its look and face ('Aaron Mitchels, Angry'), each scene by its folder, each track and story object by name."""
+    labels = {}
+    names = spec.get('look_names') if isinstance(spec.get('look_names'), list) else []
+    for entry in (spec.get('pictures') or {}).values():
+        if isinstance(entry, list) and len(entry) == 3 and all(type(v) is int for v in entry):
+            look, slot, resource = entry
+            who = names[look] if 0 <= look < len(names) and isinstance(names[look], str) else f'look {look}'
+            labels[resource] = f'{who}, {EXPRESSIONS[slot]}' if 0 <= slot < len(EXPRESSIONS) else who
+    for folder, entry in (spec.get('scenes') or {}).items():
+        if isinstance(entry, list) and entry and type(entry[0]) is int:
+            labels[entry[0]] = f'scene {_words(folder)}'
+    for track, resource in (spec.get('music') or {}).items():
+        if type(resource) is int:
+            labels[resource] = f'track {track.replace("_", " ")}'
+    for path, resource in (spec.get('story_objects') or {}).items():
+        if type(resource) is int:
+            stem = path.rsplit('/', 1)[-1]
+            labels[resource] = f'story object {stem[:-2] if stem.endswith("so") and len(stem) > 2 else stem}'
+    return labels
 
 
 def import_library_image(project, library, resource, episode=None):
