@@ -527,8 +527,8 @@ picture isn't found.
 
 **Unverified:**
 
-- Romic is inferred from Claire Hart's asset list and a screenshot. The skin is seen in use on the PC and the g54, not yet on an
-  iPad (ROADMAP 5.13).
+- The skin is seen in use on the PC and the g54, not yet on an iPad (ROADMAP 5.13). Romic is confirmed as Classic's own: see
+  [CLAIRE_HART.md](CLAIRE_HART.md#not-verified-yet)'s checks.
 
 ### `chcrounds`: Claire Hart Classic: Rounds (`claire-hart` branch)
 

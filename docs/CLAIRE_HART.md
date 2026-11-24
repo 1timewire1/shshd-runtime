@@ -89,8 +89,14 @@ The plans and the engine study (`CLAIRE_HART_PLAN.md`, `CLAIRE_HART_ENGINE.md`, 
 Sync Devices carries both add-ons (g54 to PC, 2026-11-24: about 3 minutes over Wi-Fi). A transfer cut short starts over
 next time; the receiving library is unchanged until all of it has arrived.
 
+**Checked 2026-11-24:**
+- **Long lines:** every case was walked to its end, headless, at 3:4 and with a tall phone's extra rows, each line paged as
+  the player pages it. The 255 distinct lines over 300 characters each run unbroken over 2–8 boxes; Case 76's 642
+  characters take 8 at 3:4. No box is empty, and no text runs past its box.
+- **Romic is Classic's font:** the game ships `Romic.ttf` and `Romic-Bold.ttf`. Its story and round screens' labels use
+  `Romic.ttf`, and its dialogue box prefab draws with bitmap fonts made from Romic (`romicorange`, `romicwhite`, tinted by
+  the box). The skin's dialogue is Romic Bold, since regular Romic lacks "&", "/" and most accented letters.
+
 ## Not verified yet
 
 - **The iPad:** cases, rounds, the skin and Claire Hart 4:3 are checked on the PC and the g54, not yet on iOS (ROADMAP 5.13).
-- **Lines over 300 characters** (318 in Classic): how CoD's box pages them hasn't been looked at line by line.
-- **Romic** is inferred from Classic's asset list and a screenshot.
