@@ -2047,6 +2047,7 @@ class Desktop:
     # Claire Hart's 4:3 frame (wide_frame): the column's dialogue drawn this much larger, to use the room (owner's pick
     # of 1.2 / 1.35 / 1.5, 2026-11-22: claire_hart/43_dialogue_sizes.png).
     WIDE_DIALOGUE = 1.35
+    WIDE_STATUS_MARGIN = .1         # ...where the margins beside it take this share of the width, nothing hangs below a status bar
 
     def column_zoom(self, units):
         """How much larger than HD's the column is drawn in a frame `units` (width, tall) in size: WIDE_DIALOGUE in
@@ -2072,6 +2073,11 @@ class Desktop:
         window_w, window_h = self.usable_size()     # (the frame keeps above a phone's navigation bar)
         scale = min(window_w / width, window_h / tall) if window_w > 0 and window_h > 0 else 1.
         self._top_pad = max(0., self.top_inset * window_h - (window_h - tall * scale) / 2) / scale
+        if self.column_zoom((width, tall)) != 1 and window_w - width * scale >= window_w * self.WIDE_STATUS_MARGIN:
+            # Claire Hart's 4:3 frame on a phone in landscape: the status bar's time and icons sit at the screen's ends,
+            # over the margins beside the frame, so the round's top bar keeps Classic's place (g54, 2026-11-24: it sat
+            # under a strip). An iPad's 4:3 screen leaves none, and keeps the pad.
+            self._top_pad = 0.
         for game in (getattr(self, 'football_hd', None), getattr(self, 'word_hd', None), getattr(self, 'shs11_hd', None),
                      getattr(self, 'claire_round_renderer', None)):     # (a Claire Hart round's top bar too: R7)
             if game is not None:
