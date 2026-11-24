@@ -18,6 +18,19 @@ COLUMN_WIDTH = 320                      # the story's column: the frame's width 
 TALLEST = 9 / 21                        # Fit Screen's narrowest: past it there is no picture left to pan
 
 
+# Claire Hart's cases in their own 4:3 (owner, 2026-11-22; reference/Other Games/docs/CLAIRE_HART_43_PLAN.md): with the
+# "Claire Hart 4:3" switch on, a window at least 4:3 (a phone or iPad in landscape, a maximized window) shows the case in a
+# 4:3 frame as tall as HD's, its scene whole; narrower windows keep the chosen shape. Never widened to make room.
+WIDE = 4 / 3
+WIDE_UNITS = (FRAME_WIDTH * 4 / 3 * 4 / 3, FRAME_WIDTH * 4 / 3)      # 682.7 x 512: HD's frame height, 4:3
+
+
+def has_wide_room(window_size):
+    """Whether a window of `window_size` pixels takes a 4:3 frame at its full height (a pixel of rounding spared)."""
+    width, height = window_size
+    return width > 0 and height > 0 and width >= height * WIDE - 1
+
+
 def default(fixed_window):
     """The shape when none is chosen: Fit Screen on a phone (its window is its screen), 3:4 on a computer."""
     return 'fit' if fixed_window else '3:4'

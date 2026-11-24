@@ -4,12 +4,26 @@
 
 ### Changed
 
+- **Claire Hart's rounds: Classic's HUD text** (owner, 2026-11-22: "match Claire Hart's layout exactly"). The scene's
+  name, the combo, the score and HINT are Romic regular at Classic's sizes (the bold face drew them short), and the
+  count is bold at its size. The name, score, menu icon and the six names sit where Classic's do, measured against
+  its play-test photos at 800 x 600. The same at every frame shape. Our changes stay: the menu button opens the pause
+  menu and Classic's top-right gear stays out.
 - **v1.1.1 merged into the Claire Hart branch** (2026-11-22). Saves are **version 46**, joining the two lines that
   branched from 42: this branch's 43 (story-object pictures) and 44 (hidden-object rounds), and v1.1.1's 45 (Text
   Animation). Every one of them loads, each gaining what its own line left out; v1.1.1 refuses 46 as newer and keeps
   the save.
 
 ### Added
+
+- **Claire Hart cases in their own 4:3** (owner, 2026-11-22; `reference/Other Games/docs/CLAIRE_HART_43_PLAN.md`,
+  ROADMAP 4.1c; `claire-hart` branch). A new switch, **Claire Hart 4:3** (Per-Game Settings, CH tag, on by default),
+  shows a Claire Hart case in a 4:3 frame whenever the window is at least 4:3: a phone or iPad turned to landscape, a
+  maximized or full-screen window. Narrower windows show it as before, and the window is never widened to make room.
+  It switches at once as the window turns or resizes. In the 4:3 frame each scene shows whole, as Classic framed it,
+  rather than its 3:4 slice (`WHOLE_BACKDROPS`, `Desktop.wide_frame`), and the dialogue is drawn 1.35x larger
+  (`WIDE_DIALOGUE`, the owner's pick from 1.2 / 1.35 / 1.5), with the gear and bar at their size. With either dialogue
+  look. Wider than 4:3, Claire Hart's green shows beside it.
 
 - **Borderless full screen on a computer: Alt+Enter or F11** (owner, 2026-11-22). The window fills the display it is
   on (not necessarily the main one) at that display's own resolution, without changing it, and the same keys bring it

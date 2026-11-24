@@ -591,7 +591,8 @@ class CodPauseTests(unittest.TestCase):
         # Preview and the X360 Arena Skin, each with the other game's name in its colour (owner, 2026-11-19).
         from exp_runtime.desktop_pause_hd import LABEL_TINTS, SWITCH_LABELS, TITLE_LOOK_NAMES, TITLE_MUSIC_NAMES
         self.assertEqual(ADDON_KEYS, ('arena_minigames', 'brew_08_backgrounds', 'java_look', 'hires_portraits', 'ms3_characters',
-                                      'smartphone_music', 'word_grid_skin', 'ch_portraits', 'ch_backdrop', 'dim_backdrops', 'hollywood_art',
+                                      'smartphone_music', 'word_grid_skin', 'ch_portraits', 'ch_backdrop', 'dim_backdrops', 'ch_43',
+                                      'hollywood_art',
                                       'arena_skin'))
         self.assertEqual((SWITCH_LABELS['hollywood_art'], LABEL_TINTS['hollywood_art']), ('Use SHW Art in Preview', 'SHW'))
         self.assertEqual(list(TITLE_MUSIC_NAMES)[2:], ['brew', 'shw', 'nr', 'x360', 'shs11', 'chc'])

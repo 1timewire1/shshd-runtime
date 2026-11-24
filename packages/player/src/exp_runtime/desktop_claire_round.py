@@ -32,12 +32,18 @@ ORB_CENTRE, ORB_DIAMETER = (749.5, 95.5), 87
 # crosshair).
 COUNT_AT = {cr.CLAIRVOYANCE: (0.22, 0.35), cr.FOCUS: (0.30, 0.22), cr.TIME_WARP: (0.22, 0.72), cr.LOCATOR: (0.18, 0.72)}
 ORB_TINT = (120, 255, 150, 255)             # the fill's pink smoke made Classic's green
-LIST_CENTRE = (382, 89)                    # the six names' node, from the bottom bar's top
+LIST_CENTRE = (375, 86)                    # the six names' node, from the bottom bar's top (chc_05's names, 2026-11-22)
 LABELS = ((-175, 5), (-175, -15), (0, 5), (0, -15), (175, 17), (175, -3))      # activeobjectlist.labelPositions (y up)
 FOUND_LINE = (287, 51)
 COMBO_SLOT = (21, 6, 182, 23)              # the combo bar in the top bar: x, y, width, height
-NAME_PLATE, SCORE_AT = (400, 19), (651, 19)     # (the score's star is the top bar art's own: R7 dropped a second)
-MENU_AT = (25, 91)
+NAME_PLATE, SCORE_AT = (370, 18), (596, 17)     # (the score's star is the top bar art's own: R7 dropped a second)
+# Classic's HUD text is Romic regular throughout, its sizes fitted to chc_05-chc_10's widths (owner, 2026-11-22: "match
+# Claire Hart's layout exactly"; the bold face ran short) but the count, bold: the scene's name, the combo, the score, the
+# count, HINT, a name.
+NAME_PX, COMBO_PX, SCORE_PX, COUNT_PX, HINT_PX, LABEL_PX = 19, 20, 22, 19, 27, 17     # (the count bold: regular has no /)
+HINT_SHIFT = (5, -2)                        # HINT's centre from the orb's, as Classic's sits
+MENU_SCALE = 1.0                            # icn_menu at Classic's size (its bars 47 units long; 0.75 drew them short)
+MENU_AT = (32, 91)                         # (Classic's bars' centre, chc_05)
 TEXT, NAME_TEXT, LIST_TEXT, BLUE_TEXT = (110, 50, 20), (110, 50, 20), (239, 236, 226), (18, 224, 188)
 SCORE_TEXT, VALUE_TEXT = (255, 255, 255), (255, 236, 90)
 ARROW_SIZE = (54, 120)                     # the edge arrows (new: Classic has none), in canvas pixels at 768 wide
@@ -487,9 +493,9 @@ class ClaireRoundRenderer:
             shown = max(1, round(w * k * game.combo))
             self.canvas.blit(fitted, (round(x * k), round(pad + y * kt)), pygame.Rect(0, 0, shown, fitted.get_height()))
         if game.combo_running:
-            self.text(f'Combo x{game.multiplier}', True, 15, TEXT, self.design(x + w / 2, y + h / 2), scale=kt)
-        self.text(self.spec_name(game), True, 17, NAME_TEXT, self.design(*NAME_PLATE), scale=kt)
-        self.text(str(game.score), True, 18, SCORE_TEXT, self.design(*SCORE_AT), scale=kt)
+            self.text(f'Combo x{game.multiplier}', False, COMBO_PX, TEXT, self.design(x + w / 2, y + h / 2), scale=kt)
+        self.text(self.spec_name(game), False, NAME_PX, NAME_TEXT, self.design(*NAME_PLATE), scale=kt)
+        self.text(str(game.score), False, SCORE_PX, SCORE_TEXT, self.design(*SCORE_AT), scale=kt)
 
     def spec_name(self, game):
         """The scene's name as its plate shows it (the round's own scene name, given by the service; else the folder's)."""
@@ -502,7 +508,7 @@ class ClaireRoundRenderer:
         grow = 1.0
         if self._expanded_at is not None and self.clock - self._expanded_at < COUNT_EXPAND_MS:
             grow = 1 + 0.35 * math.sin(math.pi * (self.clock - self._expanded_at) / COUNT_EXPAND_MS)   # (itemCountExpand)
-        self.text(f'{game.found_count}/{game.to_find} Items Found', True, round(16 * grow), TEXT if grow == 1.0 else BLUE_DARK,
+        self.text(f'{game.found_count}/{game.to_find} Items Found', True, round(COUNT_PX * grow), TEXT if grow == 1.0 else BLUE_DARK,
                   self.design(*FOUND_LINE, bottom=True), scale=kt)
         for slot, obj in enumerate(game.slots):
             if obj == cr.NO_OBJECT:
@@ -517,12 +523,12 @@ class ClaireRoundRenderer:
                 colour = VALUE_TEXT                                                 # (the Psychic Locator's glow)
             if game.focus_target == obj and (self.clock // 300) % 2:
                 colour = VALUE_TEXT                                                 # (Focus: its name blinks)
-            font = self.font(False, round(17 * kt))
+            font = self.font(False, round(LABEL_PX * kt))
             surface = font.render(name, True, colour)
             surface.set_alpha(alpha)
             x, y = self.label_point(slot)
             self.canvas.blit(surface, surface.get_rect(center=(round(x), round(y))))
-        menu = self.scaled(self.hud('icn_menu'), 0.75 * kb)
+        menu = self.scaled(self.hud('icn_menu'), MENU_SCALE * kb)
         self.canvas.blit(menu, menu.get_rect(center=tuple(round(v) for v in self.design(*MENU_AT, bottom=True))))
         self.draw_wheel(game)
 
@@ -575,7 +581,8 @@ class ClaireRoundRenderer:
         self.canvas.blit(fill, fill.get_rect(center=orb.center))
         glass = self.scaled(self.hud('hint_glass_reflection'), orb.width / 84)
         self.canvas.blit(glass, glass.get_rect(center=orb.center))
-        self.text('HINT', True, 22, (226, 255, 200) if game.hint_ready else (150, 170, 150), orb.center, outline=(20, 110, 40),
+        self.text('HINT', False, HINT_PX, (232, 255, 236) if game.hint_ready else (150, 170, 150),
+                  (orb.centerx + HINT_SHIFT[0] * k, orb.centery + HINT_SHIFT[1] * k), outline=(20, 110, 40),
                   scale=k)
 
     def green_fill(self, number):

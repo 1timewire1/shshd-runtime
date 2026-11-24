@@ -359,6 +359,8 @@ class HdShell:
             settings.update(ch_portraits=state.ch_portraits, ch_backdrop=state.ch_backdrop)
         if self.app.dim_backdrops_offered():
             settings['dim_backdrops'] = state.dim_backdrops
+        if self.app.ch_43_offered():
+            settings['ch_43'] = state.ch_43
         if self.app.ch_dialogue_offered():
             from .desktop_pause_hd import CH_DIALOGUE_NAMES
             settings['ch_dialogue'] = CH_DIALOGUE_NAMES[state.ch_dialogue]

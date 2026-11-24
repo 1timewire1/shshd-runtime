@@ -112,6 +112,7 @@ STORY_SCALE = 2
 # window is wider so there's real room for the background layer to use it.
 DEFAULT_WINDOW_SIZE = (round(SIZE[1] * 3 / 4), SIZE[1])
 FRAME_UNITS = (384, 512)
+BAR_UNITS = 72                  # the column's bottom bar and gear band, in its 480 units (the edge layer's height)
 HD_BG_SHIFT = (48, -20.5)
 UI_BOTTOM_INSET = 5.5
 INK = (245, 241, 233)
@@ -131,6 +132,8 @@ OPAQUE_ENOUGH = 250
 # shshd-runtime: the pictures `_image` cut from a 4:3 scene about its 3:4 slice (Claire Hart decision M), a quarter wider so
 # they pan with the speaker as CoD's own scenes do (`_slice_placement`).
 SLICED_BACKDROPS = weakref.WeakSet()
+# ...and the whole 4:3 scene each was cut from, drawn in its place in Claire Hart's 4:3 frame (Desktop.wide_frame).
+WHOLE_BACKDROPS = weakref.WeakKeyDictionary()
 # "DSi Pixels" (the DSiWare add-on's backgrounds): nearest neighbour, the DS's own pixels (the default), or smooth scaling.
 DSI_PIXELS = ('sharp', 'smooth')
 
@@ -391,6 +394,7 @@ class Desktop:
     ch_portraits = True             # CoD with its portrait addon: the CH "HD Portraits in CoD" switch (set_ch_portraits)
     ch_backdrop = True              # ...and its "Backdrop", in place of SHS HD's collage (_window_backdrop)
     dim_backdrops = True            # Claire Hart's translations: the "Dim Backdrops" switch (backdrop_dim)
+    ch_43 = True                    # ...and "Claire Hart 4:3": their cases in their own 4:3 where there's room (wide_frame)
     _ch_dialogue = 'cases'          # Claire Hart UI: Off, Claire Hart Cases or Everywhere (set_ch_dialogue)
     _claire_powerups = 'once'       # Claire Hart's rounds' Power-Ups: Once Each Round, Unlimited or Off
     _arena_minigames = True         # translated episodes: the "Use Translated Mini-Games" switch (arena_minigames)
@@ -2040,6 +2044,14 @@ class Desktop:
     # A speaker's bubble may hold extra rows in a frame taller than HD's (owner, 2026-11-11): as many whole rows (HD's
     # 26-unit line step) as fit in this share of the height the frame adds.
     EXTRA_ROWS_SHARE = .5
+    # Claire Hart's 4:3 frame (wide_frame): the column's dialogue drawn this much larger, to use the room (owner's pick
+    # of 1.2 / 1.35 / 1.5, 2026-11-22: claire_hart/43_dialogue_sizes.png).
+    WIDE_DIALOGUE = 1.35
+
+    def column_zoom(self, units):
+        """How much larger than HD's the column is drawn in a frame `units` (width, tall) in size: WIDE_DIALOGUE in
+        Claire Hart's 4:3 frame (wider than HD's 384 units), else 1."""
+        return self.WIDE_DIALOGUE if units[0] > FRAME_UNITS[0] else 1
     ROW_UNITS = 26
 
     def _sync_story_scale(self):
@@ -2052,7 +2064,8 @@ class Desktop:
         # A narrator's bubble keeps HD's distance from the frame's edge (its 32-unit margin less this frame's), and every
         # bubble sits nearer the middle of a taller frame, as the choice does (owner, 2026-11-11: narration was cut at a
         # phone's edge, and the bubbles read low).
-        self.session.dialogue_offset = (FRAME_UNITS[0] / 2 - 160 - self._edge_units,
+        # (Claire Hart's 4:3 frame keeps the bubbles in the column, enlarged with it: wide_frame.)
+        self.session.dialogue_offset = (0 if width > FRAME_UNITS[0] else FRAME_UNITS[0] / 2 - 160 - self._edge_units,
                                         (tall - FRAME_UNITS[1]) / 2)
         # A phone's status bar over the frame's top (Android draws an app under it): what hangs from the frame's top (a
         # game's HUD, the Faceplace alert) keeps below it.
@@ -2078,6 +2091,11 @@ class Desktop:
             if card is not None:
                 card.frame_units = (width, tall)        # drawn over the whole frame, its shape (desktop_title)
         scale = STORY_SCALE * FRAME_UNITS[0] / width
+        zoom = self.column_zoom((width, tall))
+        if zoom != 1:
+            # Claire Hart's 4:3 frame: drawn at the enlarged column's own density (a phone then needs no resample).
+            px = min(window_w / width, window_h / tall) if window_w > 0 and window_h > 0 else STORY_SCALE / 2
+            scale = round(px * zoom, 3)
         self.dialogue_renderer.edge_units = self._edge_units        # its bar's margins (cached with its scale)
         for renderer in (self.dialogue_renderer, self.choice_renderer, self.input_renderer, self.message_renderer):
             set_story_scale(renderer, scale)
@@ -2718,6 +2736,19 @@ class Desktop:
         TRANSLATED_BACKDROP_DIM: Claire Hart's translations)."""
         return pack_setting(self.session.resources, 'TRANSLATED_BACKDROP_DIM') is not None
 
+    def ch_43_switch(self):
+        """Whether this episode's scenes are 4:3 ones cut to a 3:4 slice (the profile's BACKDROP_SLICES: Claire Hart's
+        cases), which "Claire Hart 4:3" shows whole in a 4:3 frame."""
+        session = self.__dict__.get('_session')
+        resources = getattr(session, 'resources', None)      # (none before a story opens)
+        return resources is not None and pack_setting(resources, 'BACKDROP_SLICES') is not None
+
+    def wide_frame(self):
+        """Whether the frame is Claire Hart's 4:3 (CLAIRE_HART_43_PLAN.md): the switch on, a Claire Hart case, and a window
+        (above a phone's navigation bar) at least 4:3. Asked as each frame is laid out, so turning a phone or resizing the
+        window switches it at once."""
+        return bool(self.ch_43) and frame_shape.has_wide_room(self.usable_size()) and self.ch_43_switch()
+
     def backdrop_dim(self):
         """The level this episode's backdrops are darkened to (0-255), or None to draw them as they are."""
         session = self.__dict__.get('_session')
@@ -2904,6 +2935,7 @@ class Desktop:
         sliced = image.subsurface(pan_box(image.get_size(), x)).copy()
         self.images[asset_id] = sliced
         SLICED_BACKDROPS.add(sliced)
+        WHOLE_BACKDROPS[sliced] = image          # (kept: a 4:3 frame shows it whole, and the frame may switch at any time)
 
     def _dsi_screen(self, background):
         """shshd-runtime: the DSi screen to draw in place of `background` (DSi Backgrounds), or None: the left screen while the
@@ -3013,11 +3045,16 @@ class Desktop:
         self._present_scale = scale
         frame = pygame.Rect(0, 0, max(1, round(units[0] * scale)), max(1, round(units[1] * scale)))
         frame.center = (width // 2, usable // 2)
-        # A whole 3:4 picture is as wide as the frame (narrower than HD's from 9:16, so a fifth smaller there).
-        picture = pygame.Rect(0, 0, frame.width, max(1, round(units[0] * 4 / 3 * scale)))
+        # A whole 3:4 picture is as wide as the frame (narrower than HD's from 9:16, so a fifth smaller there); in Claire
+        # Hart's 4:3 frame (wide_frame) it is as tall as the frame, centred across it.
+        across = min(units[0], units[1] * 3 / 4)
+        picture = pygame.Rect(0, 0, max(1, round(across * scale)), max(1, round(across * 4 / 3 * scale)))
+        picture.x = (frame.width - picture.width) // 2
         self._frames = (frame, picture.move(frame.x, frame.bottom - picture.height),
                         picture.move(frame.x, frame.centery - picture.height // 2), picture.move(frame.x, frame.y))
-        target_size = (max(1, round(320 * scale)), max(1, round(480 * scale)))
+        # Claire Hart's 4:3 frame draws the column's dialogue WIDE_DIALOGUE larger (the gear and bar as they are).
+        zoom = self.column_zoom(units)
+        target_size = (max(1, round(320 * scale * zoom)), max(1, round(480 * scale * zoom)))
         with frame_log.section('present'):
             # A screen with its own layer leaves the canvas empty: no pass, and nothing to blit.
             if self._canvas_empty():
@@ -3035,6 +3072,11 @@ class Desktop:
         # 3.9 px per unit; the right border matched to a pixel).
         self.viewport = pygame.Rect(frame.x + round(edge * scale),
                                     frame.bottom - target_size[1] - round(UI_BOTTOM_INSET * scale), *target_size)
+        if zoom != 1:
+            # Enlarged about the top of the column's bar, so the bubbles keep their place above the (unenlarged) bar;
+            # the column's top runs past the frame's, where nothing of a line is drawn.
+            self.viewport.x = frame.centerx - target_size[0] // 2
+            self.viewport.y += round(BAR_UNITS * (zoom - 1) * scale)
         self.bg_viewport = frame
         bg_size = frame.size
         with frame_log.section('backdrop'):
@@ -3109,7 +3151,7 @@ class Desktop:
             ui_layers.append((layer, area))
         if self.edge_layer is not None and not self.capture:
             # HD's bottom bar and gear run to the edges of its frame.
-            edge_height = round(self.viewport.height * 72 / 480)
+            edge_height = round(self.viewport.height * BAR_UNITS / 480 / zoom)
             edge_size = (self.bg_viewport.width, edge_height)
             # The layer is the same surface until the bar changes (bottom_bar_layer's cache).
             if self._edge_scaled[:2] != (self.edge_layer, edge_size):
@@ -3406,7 +3448,12 @@ class Desktop:
         background = self.pending_background
         dsi = self._dsi_screen(background)
         if dsi is None and background is not None and background in SLICED_BACKDROPS:
-            placement = self._slice_placement(background, target_size)
+            whole = WHOLE_BACKDROPS.get(background)
+            if whole is not None and self.__dict__.get('_frame_width', FRAME_UNITS[0]) > FRAME_UNITS[0]:
+                # Claire Hart's 4:3 frame: the whole scene, as Classic framed it, fitted to the frame, no pan.
+                background, placement = whole, self._whole_placement(whole, target_size)
+            else:
+                placement = self._slice_placement(background, target_size)
         elif dsi is not None:
             # A DSi screen is the frame's own 3:4: it fills HD's frame, and covers a taller one centred, its sides cut
             # (owner, 2026-11-15); the speaker's side picks the screen rather than panning it.
@@ -3686,6 +3733,15 @@ class Desktop:
                                  round(384 * bg_scale), round(512 * bg_scale))
             sx, sy = tw / window.width, th / window.height
             return (-window.x * sx, -window.y * sy, bw * sx, bh * sy)
+
+    @staticmethod
+    def _whole_placement(background, target_size):
+        """Where a whole 4:3 scene lies in Claire Hart's 4:3 frame, (x, y, width, height) in target pixels: covering it,
+        centred (the same shape, so exactly the frame)."""
+        bw, bh = background.get_size()
+        tw, th = target_size
+        k = max(tw / bw, th / bh)
+        return (tw - bw * k) / 2, (th - bh * k) / 2, bw * k, bh * k
 
     def _slice_placement(self, background, target_size):
         """Where a sliced scene lies (SLICED_BACKDROPS), (x, y, width, height) in target pixels: as tall as the frame (or
@@ -4135,6 +4191,7 @@ class Desktop:
                     **({'grids_as_memory': self.grids_as_memory} if self.memory_grid_switch() else {}),
                     **(dict(ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop) if self.ch_switch() else {}),
                     **({'dim_backdrops': self.dim_backdrops} if self.dim_switch() else {}),
+                    **({'ch_43': self.ch_43} if getattr(self, 'ch_43_switch', None) and self.ch_43_switch() else {}),
                     **({'ch_dialogue': CH_DIALOGUE_NAMES[self.ch_dialogue]} if self.ch_dialogue_switch() else {}),
                     **({'claire_powerups': CLAIRE_POWERUPS_NAMES[self.claire_powerups]}
                        if getattr(self, 'claire_powerups_switch', None) and self.claire_powerups_switch() else {}),
@@ -4143,7 +4200,9 @@ class Desktop:
 
     def frame_units(self):
         """The frame's size in layout units for General's Aspect Ratio in this window (frame_shape.frame_units), above a
-        phone's navigation bar (usable_size)."""
+        phone's navigation bar (usable_size); Claire Hart's 4:3 where it applies (wide_frame)."""
+        if self.wide_frame():
+            return frame_shape.WIDE_UNITS
         return frame_shape.frame_units(self.aspect_ratio, self.usable_size(), self.fixed_window)
 
     def nav_height(self):
@@ -4462,6 +4521,8 @@ class Desktop:
                 self.set_ch_portraits(not self.ch_portraits)
             elif command[1] == 'ch_backdrop':
                 self.ch_backdrop = not self.ch_backdrop
+            elif command[1] == 'ch_43':
+                self.ch_43 = not self.ch_43
             elif command[1] == 'dim_backdrops':
                 self.dim_backdrops = not self.dim_backdrops
             elif command[1] == 'arena_minigames':

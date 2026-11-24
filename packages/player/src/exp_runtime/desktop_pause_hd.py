@@ -89,6 +89,7 @@ WORD_GRID_SKIN_LABEL = 'Use Word Grid Skin'     # ...their minigames in the HD w
 CH_PORTRAITS_LABEL = 'HD Portraits in CoD'      # CoD with its portrait addon: Claire Hart's sharper originals
 CH_BACKDROP_LABEL = 'Backdrop'                  # ...and Claire Hart's green backdrop, in place of SHS HD's collage
 DIM_BACKDROPS_LABEL = 'Dim Backdrops'           # Claire Hart's translations: backdrops darkened as the game drew them
+CH_43_LABEL = 'Claire Hart 4:3'                # ...their cases in Claire Hart's own 4:3 where the window has room (owner, 2026-11-22)
 # Claire Hart UI (owner, 2026-11-19 as Claire Hart Dialogue; renamed 2026-11-22 when it took CoD's other screens): CoD's
 # dialogue in Claire Hart's speech bubbles and Romic, its choices, windows and pause menu in Classic's dress. Everywhere ('all')
 # is every episode and the main menu's screens too (but the episode grid); Claire Hart Cases leaves the menus CoD's.
@@ -103,7 +104,7 @@ ARENA_SKIN_LABEL = 'Use X360 Arena Skin'        # ...New Rules' arena in the X36
 # are there (application.hires_portraits_offered, Desktop.hires_switch). Use Translated Mini-Games concerns several.
 SWITCH_BADGES = {'hires_portraits': 'SHSNR', 'ms3_characters': 'SHSX360', 'java_look': 'SHS08', 'brew_08_backgrounds': 'SHS07', 'hollywood_art': 'SHS07', 'dsi_backgrounds': 'SHSDSI', 'smartphone_music': 'SHS11', 'word_grid_skin': 'SHS11', 'arena_skin': 'SHSNR',
                  'ch_portraits': 'CHC',
-                 'ch_backdrop': 'CHC', 'dim_backdrops': 'CHC', 'ch_dialogue': 'CHC', 'claire_powerups': 'CHC'}
+                 'ch_backdrop': 'CHC', 'dim_backdrops': 'CHC', 'ch_43': 'CHC', 'ch_dialogue': 'CHC', 'claire_powerups': 'CHC'}
 # The skin concerns New Rules' episodes, so it wears their tag; the other game it comes from is named in that game's
 # colour (owner, 2026-11-02). key -> the tag whose name in the label is coloured.
 LABEL_TINTS = {'arena_skin': 'SHSX360', 'hollywood_art': 'SHW'}
@@ -138,7 +139,7 @@ EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames', 'skip_a
 # In the episode lists' order of their games (owner, 2026-11-19): '07, '08, New Rules, X360, '11, then CoD's; last the two
 # that need two add-ons, Use SHW Art in Preview ('07's story with `shshw`) and the X360 Arena Skin.
 ADDON_KEYS = ('arena_minigames', 'brew_08_backgrounds', 'java_look', 'hires_portraits', 'ms3_characters', 'smartphone_music',
-              'word_grid_skin', 'ch_portraits', 'ch_backdrop', 'dim_backdrops', 'hollywood_art', 'arena_skin')
+              'word_grid_skin', 'ch_portraits', 'ch_backdrop', 'dim_backdrops', 'ch_43', 'hollywood_art', 'arena_skin')
 # General's Preferred Language (owner, 2026-11-18; it was Episode Titles): the episode titles, and the stories of the
 # add-ons that have a translation (DSi, SHS '11, the Creator's), in it where each has it (languages.language_settings);
 # `settings['preferred_language']` is the current one's name. Data Management's rows are actions, tapped like Help &
@@ -248,7 +249,7 @@ SWITCH_LABELS = {'side_panels': SIDE_PANELS_LABEL, 'device_vibration': DEVICE_VI
                  'hd_backdrop': HD_BACKDROP_LABEL, 'hires_portraits': HIRES_PORTRAITS_LABEL,
                  'ms3_characters': MS3_CHARACTERS_LABEL, 'java_look': JAVA_LOOK_LABEL, 'brew_08_backgrounds': BREW_08_BACKGROUNDS_LABEL, 'hollywood_art': HOLLYWOOD_ART_LABEL, 'dsi_backgrounds': DSI_BACKGROUNDS_LABEL, 'smartphone_music': SMARTPHONE_MUSIC_LABEL, 'word_grid_skin': WORD_GRID_SKIN_LABEL,
                  'ch_portraits': CH_PORTRAITS_LABEL,
-                 'ch_backdrop': CH_BACKDROP_LABEL, 'dim_backdrops': DIM_BACKDROPS_LABEL,
+                 'ch_backdrop': CH_BACKDROP_LABEL, 'dim_backdrops': DIM_BACKDROPS_LABEL, 'ch_43': CH_43_LABEL,
                  'arena_minigames': ARENA_MINIGAMES_LABEL, 'arena_skin': ARENA_SKIN_LABEL,
                  'check_updates': CHECK_UPDATES_LABEL}
 # HD dims and sepia-tints what was on screen; a fit to IMG_0110's untouched margins
