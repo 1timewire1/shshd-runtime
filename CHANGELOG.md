@@ -4,6 +4,24 @@
 
 ### Changed
 
+- **HD art for standard episodes: the art audit's corrections** (owner's review, 2026-11-24/25). Every SHS episode,
+  standard and HD, was walked through its branches with the engine, and every SD-HD pair checked by eye with the owner.
+  The twin map (`shs/hd_twin_map.py`, version `946e44cd28e2`) now holds 2,023 pairs (was 1,795):
+  - **Added:** 187 portraits (characters the old short walk never reached, costume looks, art one story shares
+    with another story's HD) and 43 backgrounds.
+  - **Removed:** a night house paired with a cemetery path, and the rainy windshield whose scenes are about the rain.
+    **Moved:** two mountain views to the HD copy with the same grade.
+  - **Recreated pictures:** 30 pairs carry an effect (`hd_effects.py`, new): the HD picture is recreated to match a
+    standard picture that looks different on purpose, fitted from the player's own copy of it. 34_Andy_Cannelloni_PI's
+    and 38_The_Prince_Plot_Part_2's noir scenes stay greyscale in HD, a green-tinted hallway stays green, Magic School's
+    cave stays blue, a motion-blurred lab stays blurred, and Ben's mirrored copy faces the way it does in SD.
+  - **Every player's store follows the map:** a new map version now rebuilds the store from nothing
+    (`build_from_map`), so removed and moved pairs leave existing stores too.
+  - Coverage of the owner's 80 standard episodes: mean 92.1% → 93.8%, 29 complete (was 28).
+  - New `tools/write_hd_twins.py` writes the store from the reviewed pairs (kept with the art catalogue, outside the
+    project). `export_hd_twin_map.py` writes effects and marks the owner's store as built from the new map, and leaves
+    the translated games out of coverage. CoD's background effects share the engine's fitting helpers.
+
 - **Claire Hart's rounds: Classic's HUD text** (owner, 2026-11-22: "match Claire Hart's layout exactly"). The scene's
   name, the combo, the score and HINT are Romic regular at Classic's sizes (the bold face drew them short), and the
   count is bold at its size. The name, score, menu icon and the six names sit where Classic's do, measured against

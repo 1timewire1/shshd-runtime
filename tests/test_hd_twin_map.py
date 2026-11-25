@@ -16,6 +16,21 @@ def png(size, colour):
     return stream.getvalue()
 
 
+def gradient(size, grey=False):
+    """A picture with structure (a colour gradient), or its grey version."""
+    width, height = size
+    image = Image.new('RGB', size)
+    image.putdata([(x * 255 // width, y * 255 // height, (x + y) * 255 // (width + height))
+                   for y in range(height) for x in range(width)])
+    return image.convert('L').convert('RGB') if grey else image
+
+
+def jpeg(image):
+    stream = BytesIO()
+    image.save(stream, 'JPEG', quality=95)
+    return stream.getvalue()
+
+
 class Library:
     """Just what build_from_map reads: episodes, their archives and resources, the store and the HD bundle."""
 
@@ -71,6 +86,41 @@ class TwinMapTests(unittest.TestCase):
         self.assertFalse(build_from_map(library, self.map))            # already built from this map version
         self.assertTrue(build_from_map(library, SimpleNamespace(**{**vars(self.map), 'VERSION': 'v2'})))
 
+    def test_a_new_map_version_drops_pairs_it_no_longer_has(self):
+        # The 2026-11 art audit removed and moved pairs: an updated player's store must lose them too, not only gain.
+        library = self.library()
+        build_from_map(library, self.map)
+        self.assertIsNotNone(library.twin_store().twin(self.sd_room))
+        newer = SimpleNamespace(**{**vars(self.map), 'VERSION': 'v2',
+                                   'TWINS': {fingerprint(self.sd_face): (fingerprint(self.hd_face), 64, 64)}})
+        self.assertTrue(build_from_map(library, newer))
+        store = library.twin_store()
+        self.assertIsNone(store.twin(self.sd_room))
+        self.assertEqual(store.twin(self.sd_face), self.hd_face)
+        self.assertEqual(len(store), 1)
+
+    def test_an_entry_with_an_effect_stores_the_hd_picture_recreated_from_the_players_standard_one(self):
+        sd = jpeg(gradient((48, 72), grey=True))
+        hd = jpeg(gradient((96, 144)))
+        library = Library(self.root, {'hd': ('hd', {26000: hd}), 'standard': ('standard', {26000: sd})})
+        twin_map = SimpleNamespace(VERSION='v1', COVERAGE={},
+                                   TWINS={fingerprint(sd): (fingerprint(hd), 48, 72, ('E',))})
+        build_from_map(library, twin_map)
+        stored = library.twin_store().twin(sd)
+        self.assertIsNotNone(stored)
+        self.assertNotEqual(stored, hd)
+        image = Image.open(BytesIO(stored)).convert('RGB')
+        self.assertEqual(image.size, (96, 144))
+        self.assertTrue(all(abs(r - g) <= 3 and abs(g - b) <= 3 for r, g, b in image.getdata()))   # grey, as the SD is
+
+    def test_an_effect_entry_is_left_out_when_the_player_lacks_the_standard_picture(self):
+        sd, hd = jpeg(gradient((48, 72), grey=True)), jpeg(gradient((96, 144)))
+        library = Library(self.root, {'hd': ('hd', {26000: hd})})
+        twin_map = SimpleNamespace(VERSION='v1', COVERAGE={},
+                                   TWINS={fingerprint(sd): (fingerprint(hd), 48, 72, ('E',))})
+        build_from_map(library, twin_map)
+        self.assertEqual(len(library.twin_store()), 0)
+
     def test_a_picture_the_players_files_lack_is_left_out_and_coverage_says_so(self):
         library = self.library(with_room=False)
         build_from_map(library, self.map)
@@ -84,10 +134,16 @@ class ShippedMapTests(unittest.TestCase):
         shipped = twin_map()
         self.assertRegex(shipped.VERSION, r'^[0-9a-f]{12}$')
         self.assertGreater(len(shipped.TWINS), 0)
-        for standard, (hd, width, height) in shipped.TWINS.items():
+        from exp_runtime.hd_effects import recreate
+        for standard, (hd, width, height, *effect) in shipped.TWINS.items():
             self.assertRegex(standard, r'^[0-9a-f]{20}$')
             self.assertRegex(hd, r'^[0-9a-f]{20}$')
             self.assertTrue(isinstance(width, int) and isinstance(height, int))
+            if effect:                                  # a name `hd_effects.recreate` knows, never a picture
+                (effect,) = effect
+                self.assertIsInstance(effect, tuple)
+                self.assertIn(effect[0], ('E', 'Ecolour', 'F', 'M', 'MIRROR'))
+                recreate(Image.new('RGB', (8, 12)), Image.new('RGB', (16, 24)), effect)
         for record_id, ids in shipped.COVERAGE.items():
             self.assertRegex(record_id, r'^[0-9a-f]{64}$')
             self.assertTrue(all(isinstance(i, int) for i in ids))

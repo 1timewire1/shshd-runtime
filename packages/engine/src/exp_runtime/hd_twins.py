@@ -29,6 +29,7 @@ DIRECTORY = 'hd_twins'
 INDEX, PACK = 'index.json', 'pack.bin'
 COVERAGE = 'coverage.json'      # how much of a standard episode's own art has an HD twin (tools/build_hd_coverage.py)
 SOURCE = 'source.json'          # which shipped twin map last built the store (`build_from_map`)
+EFFECTS = 'effects.json'        # tools/write_hd_twins.py: {standard: [HD fingerprint, effect]} of recreated pictures
 MODES = ('off', 'twins', 'fill')
 LOCAL_ART = 26000               # resource ids from here are the episode's own; below are the app's shared bank
 RATIO = (1.6, 2.6)              # an HD twin is about twice the standard picture in each direction (HD pads its sprite sheets)
@@ -238,6 +239,16 @@ class TwinStore:
     def mark_source(self, version: str) -> None:
         self.directory.mkdir(parents=True, exist_ok=True)
         (self.directory / SOURCE).write_text(json.dumps({'map': version}), encoding='utf-8')
+
+    def clear(self) -> None:
+        """Empty the store's pictures (`build_from_map` before a new map's rebuild); the coverage cache stays."""
+        for name in (INDEX, PACK, SOURCE, EFFECTS):
+            try:
+                (self.directory / name).unlink()
+            except FileNotFoundError:
+                pass
+        self._index = {}
+        self._filled = {}
 
     def add_pictures(self, pictures: dict) -> int:
         """Add `pictures` ({standard fingerprint: (standard size, hd bytes)}) that the store does not hold yet: the
@@ -572,21 +583,32 @@ def build_from_map(library, twin_map, progress=None) -> bool:
     player's own episodes, and copied into the store under its standard twin's fingerprint; a picture the player's
     files cannot supply is left out, and coverage is counted from what was actually built, so a standard episode loses
     its SD mark only when it really plays entirely in HD. Returns False when the store already came from this map.
-    `progress(done, total)` reports the episodes searched. Runs off the UI thread (the app's preview job)."""
+    `progress(done, total)` reports the episodes searched. Runs off the UI thread (the app's preview job).
+
+    A new map version rebuilds the store from nothing, so a pair the new map drops or moves (the 2026-11 art audit's
+    corrections) leaves every player's store too, not only the owner's. An entry may carry a fifth field, an effect
+    (`hd_effects`): the HD picture recreated to match the standard one (the noir scenes' greyscale, a mirrored copy),
+    fitted from the player's own copy of that standard picture; without it the entry is left out."""
+    from .hd_effects import apply as apply_effect
     store = library.twin_store()
     if store.source().get('map') == twin_map.VERSION:
         return False
-    wanted = {}                                         # hd fingerprint -> [standard fingerprint]
-    for standard, (hd, width, height) in twin_map.TWINS.items():
-        if standard not in store.index:
-            wanted.setdefault(hd, []).append((standard, (width, height)))
+    store.clear()
+    wanted = {}                                         # hd fingerprint -> [(standard fingerprint, size, effect)]
+    standards = set()                                   # standard pictures an effect is fitted to
+    for standard, entry in twin_map.TWINS.items():
+        hd, width, height = entry[:3]
+        effect = tuple(entry[3]) if len(entry) > 3 and entry[3] else None
+        wanted.setdefault(hd, []).append((standard, (width, height), effect))
+        if effect:
+            standards.add(standard)
     # HD episodes first: in the owner's library every HD picture the map names is in one.
     records = sorted(library.episodes, key=lambda record: record.get('variant') != 'hd')
-    found = set()
+    found, held = set(), {}                             # held: the bytes an effect needs, standard and HD
     for done, record in enumerate(records):
         if progress is not None:
             progress(done, len(records))
-        if len(found) == len(wanted):
+        if len(found) == len(wanted) and standards <= set(held):
             break
         try:
             archive = library.open_episode(record['id']).archive
@@ -600,12 +622,28 @@ def build_from_map(library, twin_map, progress=None) -> bool:
             except Exception:
                 continue
             key = fingerprint(data)
+            if key in standards:
+                held.setdefault(key, data)
             if key in wanted and key not in found:
                 found.add(key)
-                for standard, size in wanted[key]:
-                    pictures[standard] = (size, data)
+                for standard, size, effect in wanted[key]:
+                    if effect:
+                        held.setdefault(key, data)
+                    else:
+                        pictures[standard] = (size, data)
         if pictures:
             store.add_pictures(pictures)
+    pictures = {}
+    for hd, entries in wanted.items():
+        for standard, size, effect in entries:
+            if not effect or hd not in held or standard not in held:
+                continue                                # this player lacks one of the two pictures: nothing shows it
+            try:
+                pictures[standard] = (size, apply_effect(held[standard], held[hd], effect))
+            except (OSError, ValueError) as error:
+                logging.warning('HD art: %s not recreated: %s', standard, error)
+    if pictures:
+        store.add_pictures(pictures)
     store.coverage('')                                  # loads the cache: other episodes' entries are kept
     coverage = dict(store._coverage or {})
     ids_by_record = {record['id']: record for record in library.episodes}

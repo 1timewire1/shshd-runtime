@@ -365,7 +365,14 @@ The store holds extracted art, so it is never shipped. It is built on the
 player's machine from **SHS's shipped twin map**
 (`packages/shs/src/exp_runtime/shs/hd_twin_map.py`), which contains no art:
 - each standard picture's fingerprint and size, with its HD twin's
-  fingerprint;
+  fingerprint, and for a few an **effect** (`hd_effects.py`): the HD picture
+  is recreated to match a standard picture that looks different on purpose.
+  `E` makes a greyscale scene (34_Andy_Cannelloni_PI's noir) from the HD
+  colour picture through the standard picture's own colour-to-grey mix, with
+  a local levels fit's lighting; `Ecolour` does the same for a colour-graded
+  one (Magic School's blue cave); `F` colours E's grey by the standard
+  picture's tint (a green hallway); `('M', n)` is a horizontal motion blur;
+  `MIRROR` flips a portrait a standard episode ships mirrored;
 - per standard episode, the resource ids its coverage counts.
 
 **The build** (`hd_twins.build_from_map`):
@@ -373,23 +380,33 @@ player's machine from **SHS's shipped twin map**
   episodes"), for any SHS library with HD episodes whose store did not come
   from the shipped map's `VERSION`. A library imported by an earlier version
   gets it on its next open; nothing is re-imported.
-- **How:** it searches the library's own episodes for each HD fingerprint
-  (HD episodes first), copies what it finds, and counts coverage from what
-  was actually built. A picture the player's files cannot supply stays
+- **How:** a new `VERSION` empties the store first, so a pair the new map
+  drops or moves leaves every player's store too. It then searches the
+  library's own episodes for each HD fingerprint (HD episodes first), copies
+  what it finds, and counts coverage from what was actually built. An entry
+  with an effect also needs the player's own copy of the standard picture,
+  which the effect is fitted to; without it the entry is left out (nothing in
+  that library shows it). A picture the player's files cannot supply stays
   standard, and the episode keeps its SD mark.
 - **Time:** on the owner's 284-episode library it found all 1,795 twins in
   about 45 seconds.
 
 **Making the map.** The map comes from a library that holds both the standard
-and HD copies of the stories:
-1. `tools/build_hd_twins.py` pairs them story by story.
-2. `tools/extend_hd_twins.py` adds season bundles, reused backgrounds and the
-   hand-confirmed pairs (`--confirmed`).
-3. `tools/build_hd_coverage.py` measures coverage.
-4. `tools/export_hd_twin_map.py --library LIBRARY` writes the map.
+and HD copies of the stories. Since the 2026-11 art audit (every SHS episode
+walked through its branches, every pair checked by eye with the owner) the
+store is written from that audit's reviewed list of pairs:
+1. `tools/write_hd_twins.py --library LIBRARY --pairs audit_pairs.json
+   --source REFERENCE_LIBRARY` writes the store (the list holds fingerprints
+   only and lives with the art catalogue, outside the project; `--source`
+   supplies the standard copies the owner's library lacks).
+2. `tools/export_hd_twin_map.py --library LIBRARY` writes the map, counts
+   that library's coverage and marks its store as built from the new map, so
+   the app does not rebuild the owner's store from its own files alone.
 
-Rerun the export after improving that library's store; the new `VERSION`
-makes every library rebuild once.
+The earlier tools (`build_hd_twins.py`, `extend_hd_twins.py`,
+`build_hd_coverage.py`) still pair stories automatically, for a library the
+list does not cover. Rerun the export after changing that library's store;
+the new `VERSION` makes every library rebuild once.
 
 ### Frame-time log (this fork)
 
