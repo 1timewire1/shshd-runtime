@@ -29,6 +29,8 @@ DIRECTORY = 'hd_twins'
 INDEX, PACK = 'index.json', 'pack.bin'
 COVERAGE = 'coverage.json'      # how much of a standard episode's own art has an HD twin (tools/build_hd_coverage.py)
 SOURCE = 'source.json'          # which shipped twin map last built the store (`build_from_map`)
+EFFECTS = 'effects.json'        # tools/write_hd_twins.py: {standard: [HD fingerprint, effect]} of recreated pictures
+PORTRAITS = 'portraits.json'    # tools/write_hd_twins.py: SD Portraits' tables, for export_hd_twin_map.py
 MODES = ('off', 'twins', 'fill')
 LOCAL_ART = 26000               # resource ids from here are the episode's own; below are the app's shared bank
 RATIO = (1.6, 2.6)              # an HD twin is about twice the standard picture in each direction (HD pads its sprite sheets)
@@ -161,7 +163,10 @@ class TwinStore:
         return len(self.index)
 
     def twin(self, data: bytes):
-        entry = self.index.get(fingerprint(data))
+        return self.twin_by_key(fingerprint(data))
+
+    def twin_by_key(self, key: str):
+        entry = self.index.get(key)
         if entry is None:
             return None
         try:
@@ -179,7 +184,14 @@ class TwinStore:
         found = self.twin(data)
         if found is not None:
             return found
-        if mode != 'fill' or is_hd_size(image_size(data)):
+        if mode != 'fill':
+            return data
+        return self.fill(data)
+
+    def fill(self, data: bytes) -> bytes:
+        """A standard picture at twice its size, so it is drawn at the HD layout's density (`art`'s 'fill' without the
+        twin: SD Portraits keeps a standard episode's own portrait)."""
+        if is_hd_size(image_size(data)):
             return data                             # an HD picture in a standard file is not doubled again
         key = fingerprint(data)
         if key not in self._filled:
@@ -239,6 +251,16 @@ class TwinStore:
         self.directory.mkdir(parents=True, exist_ok=True)
         (self.directory / SOURCE).write_text(json.dumps({'map': version}), encoding='utf-8')
 
+    def clear(self) -> None:
+        """Empty the store's pictures (`build_from_map` before a new map's rebuild); the coverage cache stays."""
+        for name in (INDEX, PACK, SOURCE, EFFECTS, PORTRAITS):
+            try:
+                (self.directory / name).unlink()
+            except FileNotFoundError:
+                pass
+        self._index = {}
+        self._filled = {}
+
     def add_pictures(self, pictures: dict) -> int:
         """Add `pictures` ({standard fingerprint: (standard size, hd bytes)}) that the store does not hold yet: the
         shipped twin map's form, which names the standard picture by fingerprint and size only. Returns how many."""
@@ -275,6 +297,106 @@ class TwinStore:
         self.directory.mkdir(parents=True, exist_ok=True)
         (self.directory / COVERAGE).write_text(json.dumps(entries, separators=(',', ':')), encoding='utf-8')
         self._coverage = entries
+
+
+SD_DIRECTORY = 'sd_portraits'   # SD Portraits (owner, 2026-11-25): the standard originals HD portraits go back to
+TABLES = 'tables.json'
+SD_ADDON = 'shssd'              # the SD add-on (tools/build_sd_addon.py): the originals a typical HD install lacks
+SD_MODES = ('off', 'all', 'redesigns')
+
+
+class SdPortraits:
+    """The library's SD Portraits store: the standard originals of HD portraits, by their own fingerprint (`index.json`
+    beside `pack.bin`, as the twin store), and the shipped map's tables (`tables.json`): which original each HD
+    portrait goes back to (`sd_of`, with an HD episode's own where its story says otherwise, `sd_of_episode`), which
+    pairs are redesigns (`redesigned`) and which shared-bank ids are portraits (`bank_portraits`). Built with the
+    twin store from the player's own standard episodes and the SD add-on (`build_from_map`)."""
+
+    def __init__(self, directory: Path):
+        self.pictures = TwinStore(directory)
+        self.pictures.directory = Path(directory) / SD_DIRECTORY
+        self._tables = None
+        self._scaled = {}
+
+    @property
+    def tables(self):
+        if self._tables is None:
+            try:
+                data = json.loads((self.pictures.directory / TABLES).read_text(encoding='utf-8'))
+            except (OSError, ValueError):
+                data = {}
+            self._tables = dict(sd_of=data.get('sd_of', {}), sd_of_episode=data.get('sd_of_episode', {}),
+                                redesigned=set(data.get('redesigned', ())),
+                                bank_portraits=set(data.get('bank_portraits', ())))
+        return self._tables
+
+    def write_tables(self, twin_map):
+        self.pictures.directory.mkdir(parents=True, exist_ok=True)
+        data = dict(sd_of=getattr(twin_map, 'SD_OF', {}), sd_of_episode=getattr(twin_map, 'SD_OF_EPISODE', {}),
+                    redesigned=sorted(getattr(twin_map, 'REDESIGNED', ())),
+                    bank_portraits=sorted(getattr(twin_map, 'BANK_PORTRAITS', ())))
+        (self.pictures.directory / TABLES).write_text(json.dumps(data, separators=(',', ':')), encoding='utf-8')
+        self._tables = None
+
+    def candidates(self, record_id, hd_key):
+        """The originals an HD episode's picture `hd_key` may go back to, best first: the episode's own (where its
+        story's standard release shows a different one: alone when it is a different look) then the map's."""
+        own = self.tables['sd_of_episode'].get(record_id, {}).get(hd_key)
+        shared = list(self.tables['sd_of'].get(hd_key, ()))
+        if own is None:
+            return shared
+        key, strict = own
+        return [key] if strict else [key, *shared]
+
+    def original(self, record_id, hd_key):
+        """(the original's bytes, whether its pair is a redesign) for an HD episode's portrait, or None."""
+        for key in self.candidates(record_id, hd_key):
+            data = self.pictures.twin_by_key(key)
+            if data is not None:
+                return data, key in self.tables['redesigned']
+        return None
+
+    def wanted(self):
+        keys = {key for keys in self.tables['sd_of'].values() for key in keys}
+        keys.update(key for episode in self.tables['sd_of_episode'].values() for key, _ in episode.values())
+        return keys
+
+    def scaled(self, data):
+        """The original at twice its size (the HD layout's density, as `fill` draws a standard picture)."""
+        key = fingerprint(data)
+        if key not in self._scaled:
+            if len(self._scaled) > 256:
+                self._scaled.clear()
+            self._scaled[key] = upscale(data)
+        return self._scaled[key]
+
+    def source(self):
+        try:
+            data = json.loads((self.pictures.directory / SOURCE).read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def mark_source(self, version, addon):
+        self.pictures.directory.mkdir(parents=True, exist_ok=True)
+        (self.pictures.directory / SOURCE).write_text(json.dumps({'map': version, 'addon': addon}), encoding='utf-8')
+
+
+def sd_addon_revision(library):
+    """The imported SD add-on's revision, or None."""
+    try:
+        found = library.addon(SD_ADDON) if hasattr(library, 'addon') else None
+    except Exception:
+        found = None
+    return None if found is None else found[0].get('revision')
+
+
+def sd_portraits_due(library, twin_map):
+    """Whether the SD Portraits store is from another map version or another SD add-on than the library has."""
+    if not hasattr(twin_map, 'SD_OF'):
+        return False
+    source = library.sd_portraits_store().source()
+    return source.get('map') != twin_map.VERSION or source.get('addon') != sd_addon_revision(library)
 
 
 # ---------------------------------------------------------------------------------------------------------------- building
@@ -572,53 +694,122 @@ def build_from_map(library, twin_map, progress=None) -> bool:
     player's own episodes, and copied into the store under its standard twin's fingerprint; a picture the player's
     files cannot supply is left out, and coverage is counted from what was actually built, so a standard episode loses
     its SD mark only when it really plays entirely in HD. Returns False when the store already came from this map.
-    `progress(done, total)` reports the episodes searched. Runs off the UI thread (the app's preview job)."""
+    `progress(done, total)` reports the episodes searched. Runs off the UI thread (the app's preview job).
+
+    A new map version rebuilds the store from nothing, so a pair the new map drops or moves (the 2026-11 art audit's
+    corrections) leaves every player's store too, not only the owner's. An entry may carry a fifth field, an effect
+    (`hd_effects`): the HD picture recreated to match the standard one (the noir scenes' greyscale, a mirrored copy),
+    fitted from the player's own copy of that standard picture; without it the entry is left out."""
+    from .hd_effects import apply as apply_effect
     store = library.twin_store()
-    if store.source().get('map') == twin_map.VERSION:
+    sd_store = library.sd_portraits_store() if hasattr(library, 'sd_portraits_store') else None
+    twins_due = store.source().get('map') != twin_map.VERSION
+    sd_due = sd_store is not None and sd_portraits_due(library, twin_map)
+    if not twins_due and not sd_due:
         return False
-    wanted = {}                                         # hd fingerprint -> [standard fingerprint]
-    for standard, (hd, width, height) in twin_map.TWINS.items():
-        if standard not in store.index:
-            wanted.setdefault(hd, []).append((standard, (width, height)))
-    # HD episodes first: in the owner's library every HD picture the map names is in one.
+    wanted, standards = {}, set()                       # hd fingerprint -> [(standard, size, effect)]; effect sources
+    if twins_due:
+        store.clear()
+        for standard, entry in twin_map.TWINS.items():
+            hd, width, height = entry[:3]
+            effect = tuple(entry[3]) if len(entry) > 3 and entry[3] else None
+            wanted.setdefault(hd, []).append((standard, (width, height), effect))
+            if effect:
+                standards.add(standard)
+    originals = set()                                   # SD Portraits: the standard originals of HD portraits
+    if sd_due:
+        sd_store.pictures.clear()
+        sd_store.write_tables(twin_map)
+        originals = sd_store.wanted()
+    # HD episodes first: in the owner's library every HD picture the map names is in one. The SD add-on last.
     records = sorted(library.episodes, key=lambda record: record.get('variant') != 'hd')
-    found = set()
-    for done, record in enumerate(records):
+    found, held, kept = set(), {}, set()                # held: the bytes an effect needs, standard and HD
+
+    def archives():
+        for record in records:
+            try:
+                yield record.get('name'), library.open_episode(record['id']).archive
+            except Exception as error:                  # one unreadable episode must not stop the rest
+                logging.warning('HD art: skipped %s: %s', record.get('name'), error)
+        if originals:
+            found_addon = library.addon(SD_ADDON) if hasattr(library, 'addon') else None
+            if found_addon is not None:
+                yield SD_ADDON, found_addon[1]
+
+    total = len(records) + bool(originals)
+    for done, (name, archive) in enumerate(archives()):
         if progress is not None:
-            progress(done, len(records))
-        if len(found) == len(wanted):
+            progress(min(done, total - 1), total)
+        if len(found) == len(wanted) and standards <= set(held) and originals <= kept:
             break
-        try:
-            archive = library.open_episode(record['id']).archive
-        except Exception as error:                      # one unreadable episode must not stop the rest
-            logging.warning('HD art: skipped %s: %s', record.get('name'), error)
-            continue
-        pictures = {}
+        pictures, sd_pictures = {}, {}
         for resource_id in archive.entries:
+            if resource_id < LOCAL_ART:
+                continue
             try:
                 data = archive.read(resource_id)
             except Exception:
                 continue
             key = fingerprint(data)
+            if key in standards:
+                held.setdefault(key, data)
+            if key in originals and key not in kept:
+                kept.add(key)
+                sd_pictures[key] = (image_size(data) or (0, 0), data)
             if key in wanted and key not in found:
                 found.add(key)
-                for standard, size in wanted[key]:
-                    pictures[standard] = (size, data)
+                for standard, size, effect in wanted[key]:
+                    if effect:
+                        held.setdefault(key, data)
+                    else:
+                        pictures[standard] = (size, data)
         if pictures:
             store.add_pictures(pictures)
-    store.coverage('')                                  # loads the cache: other episodes' entries are kept
-    coverage = dict(store._coverage or {})
-    ids_by_record = {record['id']: record for record in library.episodes}
-    for record_id, ids in twin_map.COVERAGE.items():
-        if record_id not in ids_by_record:
-            continue
-        try:
-            total, matched = coverage_counts(library, library.open_episode(record_id), ids)
-        except Exception as error:
-            logging.warning('HD art: no coverage for %s: %s', ids_by_record[record_id].get('name'), error)
-            continue
-        coverage[record_id] = {'total': total, 'matched': matched}
-    store.write_coverage(coverage)
-    store.mark_source(twin_map.VERSION)
-    logging.info('HD art: %d of %d HD pictures found; %d episodes measured', len(found), len(wanted), len(coverage))
+        if sd_pictures:
+            sd_store.pictures.add_pictures(sd_pictures)
+    if originals - kept:
+        # An original a story's standard release shows from the shared bank (by id, BANK_PORTRAITS): Android's own
+        # copy, which every library's APK holds.
+        sd_pictures = {}
+        for resource_id in sorted(sd_store.tables['bank_portraits']):
+            try:
+                data = library.android_asset(resource_id)
+            except Exception:
+                continue
+            key = fingerprint(data)
+            if key in originals and key not in kept:
+                kept.add(key)
+                sd_pictures[key] = (image_size(data) or (0, 0), data)
+        if sd_pictures:
+            sd_store.pictures.add_pictures(sd_pictures)
+    if twins_due:
+        pictures = {}
+        for hd, entries in wanted.items():
+            for standard, size, effect in entries:
+                if not effect or hd not in held or standard not in held:
+                    continue                            # this player lacks one of the two pictures: nothing shows it
+                try:
+                    pictures[standard] = (size, apply_effect(held[standard], held[hd], effect))
+                except (OSError, ValueError) as error:
+                    logging.warning('HD art: %s not recreated: %s', standard, error)
+        if pictures:
+            store.add_pictures(pictures)
+        store.coverage('')                              # loads the cache: other episodes' entries are kept
+        coverage = dict(store._coverage or {})
+        ids_by_record = {record['id']: record for record in library.episodes}
+        for record_id, ids in twin_map.COVERAGE.items():
+            if record_id not in ids_by_record:
+                continue
+            try:
+                total, matched = coverage_counts(library, library.open_episode(record_id), ids)
+            except Exception as error:
+                logging.warning('HD art: no coverage for %s: %s', ids_by_record[record_id].get('name'), error)
+                continue
+            coverage[record_id] = {'total': total, 'matched': matched}
+        store.write_coverage(coverage)
+        store.mark_source(twin_map.VERSION)
+        logging.info('HD art: %d of %d HD pictures found; %d episodes measured', len(found), len(wanted), len(coverage))
+    if sd_due:
+        sd_store.mark_source(twin_map.VERSION, sd_addon_revision(library))
+        logging.info('SD Portraits: %d of %d originals found', len(kept), len(originals))
     return True

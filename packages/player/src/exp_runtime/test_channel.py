@@ -1115,6 +1115,8 @@ class Commands:
                 setattr(self.app.game, key, value.strip())     # (the open story's too, as its pause menu's page sets it)
             if key == 'ch_dialogue':
                 self.app.apply_ch_dialogue()
+            if key == 'sd_portraits':
+                self.app.apply_sd_portraits()
             if key == 'claire_powerups':
                 self.app.apply_claire_powerups()
             if key == 'claire_round_style':

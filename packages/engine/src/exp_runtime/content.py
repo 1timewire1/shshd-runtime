@@ -931,8 +931,12 @@ class ContentLibrary:
         self.dsi_language = 'off'       # ...and its stories' lines in 'fr', 'it', 'de' or 'es' (HD only), or 'off'
         self.shs11_language = 'off'     # "'11 Language": SHS '11's episodes in their own Italian ('it'; HD only)
         self.story_language = 'off'     # "Story Language": Creator episodes in another of their languages (HD only)
+        # SD Portraits (Extras; owner, 2026-11-25): 'off'; 'all', every portrait in its standard original; 'redesigns',
+        # only the pairs the HD release redesigned (hd_twins.SdPortraits).
+        self.sd_portraits = 'off'
         self._portrait_addon_map = None, None
         self._twins = None
+        self._sd_portraits = None
         self.hd_ipa, self.hd_members = None, {}
         self._hd_resource_cache = {}
         if 'hd_ipa' in m:
@@ -1075,6 +1079,13 @@ class ContentLibrary:
             from .hd_twins import TwinStore
             self._twins = TwinStore(self.directory)
         return self._twins
+
+    def sd_portraits_store(self):
+        """The library's SD Portraits store (hd_twins.SdPortraits; built with the twin store)."""
+        if self.__dict__.get('_sd_portraits') is None:
+            from .hd_twins import SdPortraits
+            self._sd_portraits = SdPortraits(self.directory)
+        return self._sd_portraits
 
     def hd_app_version(self) -> str | None:
         """The HD bundle's `CFBundleVersion` (SHSEngine::getAppVersionString), or None without one."""
@@ -2329,10 +2340,17 @@ class EpisodeResources:
             # it is already HD, so running it through the twin store below too would upscale it a second time.
             hd_data = self.library.hd_asset(resource_id)
             if hd_data is not None:
+                if self._sd_bank_portrait(resource_id):
+                    return self.library.sd_portraits_store().scaled(self.library.android_asset(resource_id))
                 return hd_data
             data = self.library.android_asset(resource_id)
         mode = self.library.hd_art_mode
+        original = self._sd_original(data) if resource_id >= 26000 else None
+        if original is not None:
+            return original
         if mode != 'off' and self.record.get('variant') == 'standard':
+            if self._keeps_standard_portrait(data):
+                return self.library.twin_store().fill(data) if mode == 'fill' else data
             return self.library.twin_store().art(data, mode)      # the HD release's picture, or a 2x fill
         if mode != 'off' and getattr(self.library, 'game_id', None) == 'cod':
             # Cause of Death: the SHS HD picture a background is (cod/hd_twins.py), never a 2x fill.
@@ -2340,6 +2358,45 @@ class EpisodeResources:
             if twin is not None:
                 return twin
         return data
+
+    # -- SD Portraits (Extras; owner, 2026-11-25): portraits only, each in its standard original at twice its size.
+
+    def _sd_mode(self):
+        mode = getattr(self.library, 'sd_portraits', 'off')
+        return mode if mode in ('all', 'redesigns') and getattr(self.library, 'game_id', None) == 'shs' else 'off'
+
+    def _sd_bank_portrait(self, resource_id):
+        """Whether this shared-bank picture is a portrait SD Portraits draws from Android's bank (Everywhere only: no
+        bank portrait's pair is a redesign)."""
+        return (self._sd_mode() == 'all' and resource_id in HD_SHARED_CONTENT_RANGE
+                and resource_id in self.library.sd_portraits_store().tables['bank_portraits'])
+
+    def _keeps_standard_portrait(self, data):
+        """Whether a standard episode's own portrait is drawn as itself rather than its HD twin."""
+        mode = self._sd_mode()
+        if mode == 'off':
+            return False
+        from .hd_twins import fingerprint, image_size
+        size = image_size(data)
+        if not size or max(size) >= 300:                # a background: SD Portraits is portraits only
+            return False
+        return mode == 'all' or fingerprint(data) in self.library.sd_portraits_store().tables['redesigned']
+
+    def _sd_original(self, data):
+        """For an HD episode's portrait, its standard original at twice its size when SD Portraits asks for it, else
+        None. The original comes from the player's standard episodes or the SD add-on (hd_twins.SdPortraits)."""
+        mode = self._sd_mode()
+        if mode == 'off' or self.record.get('variant') != 'hd':
+            return None
+        from .hd_twins import fingerprint, image_size
+        size = image_size(data)
+        if not size or size[0] >= 300 or size[1] > 300:
+            return None
+        store = self.library.sd_portraits_store()
+        found = store.original(self.record.get('id'), fingerprint(data))
+        if found is None or (mode == 'redesigns' and not found[1]):
+            return None
+        return store.scaled(found[0])
 
     def standard_portrait(self, resource_id):
         """The episode's own portrait (raw bytes) that `read_asset`'s hi-res copy stands in for, so the player can

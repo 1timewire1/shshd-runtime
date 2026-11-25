@@ -168,7 +168,9 @@ full original-game visual-equivalence coverage.
 
 ## HD twin map (this fork)
 
-`tools/export_hd_twin_map.py --library LIBRARY` regenerates
-`packages/shs/src/exp_runtime/shs/hd_twin_map.py` from a library's reviewed
-twin store (fingerprints, sizes and resource ids; no art). The app builds
-each player's store from it; see [RUNTIME.md](RUNTIME.md#hd-art-for-standard-episodes-this-fork).
+`tools/write_hd_twins.py` writes a library's twin store from the art audit's
+reviewed pairs, and `tools/export_hd_twin_map.py --library LIBRARY` then
+regenerates `packages/shs/src/exp_runtime/shs/hd_twin_map.py` from it
+(fingerprints, sizes, effect names and resource ids; no art). The app builds
+each player's store from it, recreating the few effect pictures from the
+player's own files (`hd_effects.py`); see [RUNTIME.md](RUNTIME.md#hd-art-for-standard-episodes-this-fork).

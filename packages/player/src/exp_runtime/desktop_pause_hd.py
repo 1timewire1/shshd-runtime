@@ -100,6 +100,11 @@ CH_43_LABEL = 'Claire Hart 4:3'                # ...their cases in Claire Hart's
 # the main menu's screens too (but the episode grid). content.skin_entry chooses.
 CH_DIALOGUE_LABEL = 'Claire Hart UI'
 CH_DIALOGUE_NAMES = {'auto': 'Auto', 'off': 'Off', 'classic': 'Claire Hart Classic', 'shadows': 'Secret in the Shadows'}
+# Extras' SD Portraits (owner, 2026-11-25): SHS's portraits in their standard originals, everywhere or only the pairs the HD
+# release redesigned (content.EpisodeResources._sd_original; the originals HD episodes need come from the player's standard
+# episodes or the SD Portraits add-on, `shssd`).
+SD_PORTRAITS_LABEL = 'SD Portraits'
+SD_PORTRAITS_NAMES = {'off': 'Off', 'all': 'Everywhere', 'redesigns': 'Redesigns Only'}
 CLAIRE_POWERUPS_LABEL = 'Power-Ups'           # Claire Hart's rounds' four power-ups (R2, owner, 2026-11-20)
 CLAIRE_POWERUPS_NAMES = {'once': 'Once Each Round', 'unlimited': 'Unlimited', 'off': 'Off'}
 # ...and which game's rules and screen a round plays under (owner's idea, 2026-11-24; claire_round_style.py), offered with
@@ -210,19 +215,19 @@ CHOICE_NAMES = {'aspect_ratio': ASPECT_NAMES, 'preferred_language': LANGUAGE_NAM
                 'text_animation': TEXT_ANIMATION_NAMES, 'controller_confirm': CONFIRM_NAMES,
                 'grid_controls': GRID_CONTROLS_NAMES, 'title_music': TITLE_MUSIC_NAMES, 'title_look': TITLE_LOOK_NAMES,
                 'dsi_backgrounds': DSI_BACKGROUNDS_NAMES, 'ch_backdrop': CH_BACKDROP_NAMES, 'ch_dialogue': CH_DIALOGUE_NAMES,
-                'claire_powerups': CLAIRE_POWERUPS_NAMES, 'claire_round_style': ROUND_STYLE_NAMES}
+                'sd_portraits': SD_PORTRAITS_NAMES, 'claire_powerups': CLAIRE_POWERUPS_NAMES, 'claire_round_style': ROUND_STYLE_NAMES}
 CHOICE_LABELS = {'aspect_ratio': ASPECT_LABEL, 'preferred_language': PREFERRED_LANGUAGE_LABEL, 'start_in': START_IN_LABEL,
                  'text_animation': TEXT_ANIMATION_LABEL,
                  'controller_confirm': CONFIRM_BUTTON_LABEL, 'grid_controls': GRID_CONTROLS_LABEL,
                  'title_music': TITLE_MUSIC_LABEL, 'title_look': TITLE_LOOK_LABEL, 'dsi_backgrounds': DSI_BACKGROUNDS_LABEL,
                  'ch_backdrop': CH_BACKDROP_LABEL, 'ch_dialogue': CH_DIALOGUE_LABEL, 'claire_powerups': CLAIRE_POWERUPS_LABEL,
-                 'claire_round_style': ROUND_STYLE_LABEL}
+                 'sd_portraits': SD_PORTRAITS_LABEL, 'claire_round_style': ROUND_STYLE_LABEL}
 CHOICE_PARENTS = {'aspect_ratio': 'options:general', 'preferred_language': 'options:general', 'start_in': 'options:general',
                   'text_animation': 'options:general',
                   'controller_confirm': 'options:controller', 'grid_controls': 'options:controller',
                   'title_music': 'options:addons', 'title_look': 'options:addons', 'dsi_backgrounds': 'options:extras',
                   'ch_backdrop': 'options:per_game', 'ch_dialogue': 'options:per_game', 'claire_powerups': 'options:per_game',
-                  'claire_round_style': 'options:per_game'}
+                  'sd_portraits': 'options:extras', 'claire_round_style': 'options:per_game'}
 # Add-on choices the main menu keeps on Per-Game Settings rather than Add-Ons: their page's way back goes there.
 PER_GAME_CHOICES = ('ch_backdrop', 'ch_dialogue', 'claire_powerups', 'claire_round_style')
 VALUE_PX, VALUE_GAP, VALUE_ALPHA = 19, 3, 150
@@ -1118,6 +1123,8 @@ class HdPauseMenu:
             rows = [('switch', self.SWITCH_LABELS[key], key) for key in EXTRAS_KEYS if key in settings]
             if 'dsi_backgrounds' in settings:
                 rows.append(('choice', DSI_BACKGROUNDS_LABEL, 'dsi_backgrounds'))
+            if 'sd_portraits' in settings:
+                rows.append(('choice', SD_PORTRAITS_LABEL, 'sd_portraits'))
             if 'unlock_warp' in settings:
                 rows.append(('action', UNLOCK_WARP_LABEL, 'unlock_warp'))
             return rows

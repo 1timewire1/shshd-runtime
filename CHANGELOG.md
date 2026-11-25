@@ -8,6 +8,25 @@
   add-on; a saved On is Classic's. In a round zoomed in, the scene can now be dragged out from under the HUD's bars, and
   whatever lies past the scene's edge shows the chosen backdrop (black when it's Off). Long names on Classic's round
   screen fit their column in tall frames.
+
+- **HD art for standard episodes: the art audit's corrections** (owner's review, 2026-11-24/25). Every SHS episode,
+  standard and HD, was walked through its branches with the engine, and every SD-HD pair checked by eye with the owner.
+  The twin map (`shs/hd_twin_map.py`, version `38d44022bf30`) now holds 2,023 pairs (was 1,795):
+  - **Added:** 187 portraits (characters the old short walk never reached, costume looks, art one story shares
+    with another story's HD) and 43 backgrounds.
+  - **Removed:** a night house paired with a cemetery path, and the rainy windshield whose scenes are about the rain.
+    **Moved:** two mountain views to the HD copy with the same grade.
+  - **Recreated pictures:** 30 pairs carry an effect (`hd_effects.py`, new): the HD picture is recreated to match a
+    standard picture that looks different on purpose, fitted from the player's own copy of it. 34_Andy_Cannelloni_PI's
+    and 38_The_Prince_Plot_Part_2's noir scenes stay greyscale in HD, a green-tinted hallway stays green, Magic School's
+    cave stays blue, a motion-blurred lab stays blurred, and Ben's mirrored copy faces the way it does in SD.
+  - **Every player's store follows the map:** a new map version now rebuilds the store from nothing
+    (`build_from_map`), so removed and moved pairs leave existing stores too.
+  - Coverage of the owner's 80 standard episodes: mean 92.1% → 93.8%, 29 complete (was 28).
+  - New `tools/write_hd_twins.py` writes the store from the reviewed pairs (kept with the art catalogue, outside the
+    project). `export_hd_twin_map.py` writes effects and marks the owner's store as built from the new map, and leaves
+    the translated games out of coverage. CoD's background effects share the engine's fitting helpers.
+
 - **Claire Hart's rounds: Classic's HUD text** (owner, 2026-11-22: "match Claire Hart's layout exactly"). The scene's
   name, the combo, the score and HINT are Romic regular at Classic's sizes (the bold face drew them short), and the
   count is bold at its size. The name, score, menu icon and the six names sit where Classic's do, measured against
@@ -48,6 +67,16 @@
   Saves are version 48 (a round may be the sequel's). Checked: all 58 entries against an independent walk; save/load and
   Skip Ahead; every round of both games under both styles at 3:4, 4:3 and 9:20 (`tools/claire_round_audit/`); the
   g54 at 57–60 fps in rounds.
+
+- **SD Portraits** (owner, 2026-11-25; Options › Extras, SHS only). Draws portraits in their standard originals:
+  **Off** (the default), **Everywhere** or **Redesigns Only**, which brings back the 54 portraits the HD release
+  redesigned (Magic School's red-haired Cady, Madame Fortuna, Kevin's lime shirt...) and leaves every redraw in HD.
+  - Backgrounds stay HD, and each original is drawn at twice its size, so the layout does not move.
+  - A standard episode keeps its own portraits.
+  - An HD episode takes the original its story's standard release shows, from the player's standard episodes or the
+    new **SD Portraits add-on** (`shssd`, built by `tools/build_sd_addon.py`). Built for the v1.1.0 bulk zip, it carries
+    the 444 originals that install lacks.
+  - Changes at once, mid-episode too; saves are unaffected.
 
 - **Claire Hart Classic in the Creator** (Claire Hart plan Stage 6, owner 2026-11-24; `claire-hart` branch). A Cause of Death
   project can take `chc` as its primary add-on (Add-ons and settings…, now open to CoD projects, which also reaches CoD's

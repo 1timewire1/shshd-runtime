@@ -631,6 +631,19 @@ python tools/translate/claire_hart_shadows.py rounds --mirror CH2_DIR --out OUT_
 
 About 573 MB. Story objects are resolved by name (decision G2): 630 of 646; the 16 the game couldn't place either are left out.
 
+### `shssd`: SD Portraits
+
+Optional, for SHS's **SD Portraits** (Options › Extras; [RUNTIME.md](RUNTIME.md#hd-art-for-standard-episodes-this-fork)).
+Revision 1. It holds the standard originals of the HD portraits an install shows that its own files lack, at 26000 on
+in no particular order: the app finds each by content (`hd_twins.build_from_map` gathers them into `sd_portraits/`,
+and gathers them again when the add-on's revision changes). Its pack is 32100.
+
+`tools/build_sd_addon.py --source LIBRARY --install INSTALL --out DIR` builds it from the player's own standard episodes
+(`--source`: a library holding them, such as a reference library) for what INSTALL (a zip, a folder or an `.exp`, such as
+the tester bulk zip) shows: every HD portrait in INSTALL's files whose originals (the twin map's `SD_OF`, and an
+episode's own different look in `SD_OF_EPISODE`) are all absent from INSTALL. For the v1.1.0 bulk zip that is 444
+portraits. Without it, SD Portraits still shows every original the library's standard episodes hold.
+
 ## Settings
 
 Switches that only concern translated games and addons live on **Options › Add-Ons** (`ADDON_KEYS` in `desktop_pause_hd.py`), which

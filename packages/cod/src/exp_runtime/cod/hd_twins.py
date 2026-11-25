@@ -23,97 +23,10 @@ import json
 import logging
 from pathlib import Path
 
-from PIL import Image, ImageEnhance, ImageFilter, ImageMath
+from PIL import Image, ImageEnhance, ImageFilter
 
+from ..hd_effects import JPEG_QUALITY, apply_levels as _apply_levels, levels as _levels, local as _local
 from ..hd_twins import fingerprint, image_size
-
-CELL = .04              # the local transfer's cell, as a fraction of the CoD picture's width
-EPSILON = 25.           # its variance floor: flat areas keep a gain near 0 rather than amplifying noise
-JPEG_QUALITY = 95
-
-
-def _product(a, b):
-    """a * b for float images (ImageMath: `lambda_eval` from Pillow 10.3, `eval` before)."""
-    if hasattr(ImageMath, 'lambda_eval'):
-        return ImageMath.lambda_eval(lambda x: x['a'] * x['b'], a=a, b=b)
-    return ImageMath.eval('a * b', a=a, b=b)                    # pragma: no cover (Pillow < 10.3)
-
-
-def _gain_offset(a, gain, offset):
-    """a * gain + offset for float images."""
-    if hasattr(ImageMath, 'lambda_eval'):
-        return ImageMath.lambda_eval(lambda x: x['a'] * x['g'] + x['o'], a=a, g=gain, o=offset)
-    return ImageMath.eval('a * g + o', a=a, g=gain, o=offset)     # pragma: no cover (Pillow < 10.3)
-
-
-def _float(channel):
-    return channel.convert('F')
-
-
-def _mean(image):
-    """The mean of a float image."""
-    return image.resize((1, 1), Image.BOX).getpixel((0, 0))
-
-
-def _levels(source, target):
-    """Per-channel (gain, offset) taking `source` to `target` (same size, RGB)."""
-    fits = []
-    for x, y in zip(source.split(), target.split()):
-        fx, fy = _float(x), _float(y)
-        mx, my = _mean(fx), _mean(fy)
-        var = _mean(_product(fx, fx)) - mx * mx
-        cov = _mean(_product(fx, fy)) - mx * my
-        gain = cov / var if var > 1e-6 else 1.
-        fits.append((gain, my - gain * mx))
-    return fits
-
-
-def _apply_levels(image, fits):
-    return Image.merge('RGB', [channel.point(lambda v, g=g, o=o: g * v + o)
-                               for channel, (g, o) in zip(image.split(), fits)])
-
-
-def _smooth(grid, width, height, passes=1):
-    """A 3 x 3 mean over a small row-major grid, edges clamped."""
-    for _ in range(passes):
-        out = []
-        for j in range(height):
-            for i in range(width):
-                total = count = 0
-                for dj in (-1, 0, 1):
-                    for di in (-1, 0, 1):
-                        jj, ii = min(height - 1, max(0, j + dj)), min(width - 1, max(0, i + di))
-                        total += grid[jj * width + ii]
-                        count += 1
-                out.append(total / count)
-        grid = out
-    return grid
-
-
-def _local(hd_small, cod, hd):
-    """The local levels transfer: fitted between `hd_small` and `cod` (CoD's size), applied to `hd`."""
-    width, height = cod.size
-    cell = max(2, round(width * CELL))
-    grid = (max(1, round(width / cell)), max(1, round(height / cell)))
-    channels = []
-    for x, y, full in zip(hd_small.split(), cod.split(), hd.split()):
-        fx, fy = _float(x), _float(y)
-        means = [image.resize(grid, Image.BOX) for image in
-                 (fx, fy, _product(fx, fx), _product(fx, fy))]
-        mx, my, mxx, mxy = (list(image.getdata()) for image in means)
-        gains, offsets = [], []
-        for i in range(len(mx)):
-            gain = (mxy[i] - mx[i] * my[i]) / (mxx[i] - mx[i] * mx[i] + EPSILON)
-            gains.append(gain)
-            offsets.append(my[i] - gain * mx[i])
-        maps = []
-        for values in (_smooth(gains, *grid), _smooth(offsets, *grid)):
-            image = Image.new('F', grid)
-            image.putdata(values)
-            maps.append(image.resize(full.size, Image.BICUBIC))
-        result = _gain_offset(_float(full), maps[0], maps[1])
-        channels.append(result.convert('L'))
-    return Image.merge('RGB', channels)
 
 
 def _decode(data):

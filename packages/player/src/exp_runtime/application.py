@@ -588,6 +588,11 @@ class Application:
         if store.directory.exists():
             shutil.rmtree(store.directory)
         library._twins = None
+        if hasattr(library, 'sd_portraits_store'):       # SD Portraits' originals too (hd_twins.SdPortraits)
+            sd_directory = library.sd_portraits_store().pictures.directory
+            if sd_directory.exists():
+                shutil.rmtree(sd_directory)
+            library._sd_portraits = None
         if self.cod_twin_map(library) is not None:
             self._build_cod_twins(library)
         else:
@@ -1334,6 +1339,19 @@ class Application:
             self.game.ch_dialogue = self.state.ch_dialogue
 
     @library_answer
+    def sd_portraits_offered(self):
+        """Whether SD Portraits concerns this library: SHS, with the shipped twin map's SD tables."""
+        return self.library is not None and self.library.game_id == 'shs' and hasattr(self.twin_map(), 'SD_OF')
+
+    def apply_sd_portraits(self):
+        """SD Portraits reaches the library (content.EpisodeResources._sd_original) and a paused episode, whose portraits
+        are drawn again at once."""
+        if self.library is not None:
+            self.library.sd_portraits = self.state.sd_portraits
+        if self.game:
+            self.game.set_sd_portraits(self.state.sd_portraits)
+
+    @library_answer
     def portrait_addon_offered(self):
         """Whether the library has the game's optional portrait addon (the profile's PORTRAIT_ADDON), so its switches
         change something."""
@@ -1714,6 +1732,7 @@ class Application:
         library.hires_portraits = state.hires_portraits
         library.ms3_characters = state.ms3_characters
         library.ch_dialogue = getattr(state, 'ch_dialogue', 'auto')
+        library.sd_portraits = getattr(state, 'sd_portraits', 'off')
         library.claire_powerups = getattr(state, 'claire_powerups', 'once')
         library.claire_round_style = getattr(state, 'claire_round_style', 'own')
         library.java_look = state.java_look
@@ -1952,7 +1971,10 @@ class Application:
         twin_map = self.twin_map()
         if twin_map is None or not any(r.get('variant') == 'hd' for r in self.library.episodes):
             return False
-        return self.library.twin_store().source().get('map') != twin_map.VERSION
+        from .hd_twins import sd_portraits_due
+        # SD Portraits' store too: a new map, or the SD add-on imported or replaced since (hd_twins.SdPortraits).
+        return (self.library.twin_store().source().get('map') != twin_map.VERSION
+                or sd_portraits_due(self.library, twin_map))
 
     def _prepare_previews(self, library):
         library.index_missing()
@@ -2519,6 +2541,7 @@ class Application:
         self.game.dim_backdrops = self.state.dim_backdrops
         self.game.ch_43 = getattr(self.state, 'ch_43', True)
         self.game.ch_dialogue = self.state.ch_dialogue
+        self.game.sd_portraits = getattr(self.state, 'sd_portraits', 'off')
         self.game.claire_powerups = getattr(self.state, 'claire_powerups', 'once')
         self.game.claire_round_style = getattr(self.state, 'claire_round_style', 'own')
         self.game.arena_minigames = self.state.arena_minigames
@@ -2645,6 +2668,7 @@ class Application:
         self.state.dim_backdrops = self.game.dim_backdrops
         self.state.ch_43 = getattr(self.game, 'ch_43', True)
         self.state.ch_dialogue = self.game.ch_dialogue
+        self.state.sd_portraits = getattr(self.game, 'sd_portraits', 'off')
         self.state.claire_powerups = getattr(self.game, 'claire_powerups', 'once')
         self.state.claire_round_style = getattr(self.game, 'claire_round_style', 'own')
         self.state.arena_minigames = self.game.arena_minigames
