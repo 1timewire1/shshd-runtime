@@ -57,7 +57,7 @@ TRANSLATED_NARRATION_PORTRAITS = {31500: True, 31900: True}     # (the sequel: i
 # narrator's portrait, a Creator setting (owner, 2026-11-19); and its primary add-on, its extras' aliases and its asking for the
 # translated mini-games, as an SHS episode made in the Creator declares them (Claire Hart plan Stage 6, owner 2026-11-24).
 # SHS's profile accepts every member (True).
-PRESENTATION_RECORD = ('narration_portrait', 'addons', 'aliases', 'minigames')
+PRESENTATION_RECORD = ('narration_portrait', 'addons', 'aliases', 'minigames', 'journal')    # (journal: its quest nodes')
 # shshd-runtime: the primary add-on an episode made in the Creator may name, and the translated pack whose settings it then
 # takes (content.feature_pack; shs/profile.py's, CREATOR_ADDONS_PLAN.md): Claire Hart Classic's `chc` brings pack 31500's,
 # its dialogue skin with Claire Hart Cases, narrator portraits, Dim Backdrops, the green beside the scene, its looks, its
@@ -84,7 +84,7 @@ LOOK_BANKS = {31500: ('chc', 26998, 30000), 31900: ('ch2', 26998, 30000)}    # (
 BACKDROP_SLICES = {31500: ('chc', 26998), 31900: ('ch2', 26998)}
 # shshd-runtime: translated packs whose title cards show a part's title over its case's, so the picker's preview, a photo of
 # the first card, swaps them back: the case on top (Claire Hart; episode_thumbnails.capture_title_card).
-PREVIEW_CASE_TITLE = (31500,)
+PREVIEW_CASE_TITLE = (31500, 31900)
 # shshd-runtime: a translated pack's own picture for the whole frame, under its backdrops (desktop._frame_backdrop): Claire
 # Hart's 4:3 scenes leave bands in CoD's 3:4 frame, which take chslim's green backdrop (28001, kept in chc).
 TRANSLATED_FRAME_BACKDROP = {31500: 28001, 31900: 26999}       # (31900: the sequel's violet episode-select backdrop)

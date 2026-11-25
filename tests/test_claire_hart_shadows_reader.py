@@ -217,6 +217,69 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(mirror.story_object_ids(), {photo: 27000, found: 27001})   # (the round sprite after the pictures)
 
 
+@unittest.skipUnless(HAS_PIL, 'Pillow and NumPy are needed')
+class ConverterTests(unittest.TestCase):
+    def setUp(self):
+        import claire_hart_shadows
+        self.S = claire_hart_shadows
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+
+    def test_a_later_parts_introduction_and_self_description_go(self):
+        trim = self.S.trim_intro
+        self.assertEqual(trim("I'm Harper. I'm a grad student in the Bay Area. I also have an unusual ability. Eric was hurt."),
+                         'Eric was hurt.')
+        self.assertEqual(trim("I'm Claire Hart. I'm a writer and I have a unique ability."), '')
+        self.assertEqual(trim('Eric was hurt. I am sad.'), 'Eric was hurt. I am sad.')      # (no introduction: as it is)
+
+    def test_round_places_are_said_plainly(self):
+        names = ['Harper', 'Eric Ito', 'Claire Hart']
+        self.assertEqual([self.S.place_name(n, names) for n in ('HarpersLivingRoom', 'EricsStudio', 'DeliteDiner',
+                                                                 "Claire's Living Room", 'ItoGuest')],
+                         ["Harper's Living Room", "Eric's Studio", 'Delite Diner', "Claire's Living Room", 'Ito Guest Room'])
+
+    def test_journal_text_keeps_paragraphs_by_the_text_rules(self):
+        self.assertEqual(self.S.journal_text('My ‘husband’, Troy.\n\nWill  helps… '),
+                         "My 'husband', Troy.\nWill helps...")
+
+    def test_a_case_with_its_journal_and_notice(self):
+        S = self.S
+        den = {'type': 'texture', 'resource': 'references/backgrounds/Den_HO/hd/template'}
+        refs = {f'SCENE 1_{n}': chapter_refs(backgrounds={'Den': den}) for n in range(1, 7)}
+        refs['SCENE 1_1']['journal'] = [{'header': 'Journal 1:1', 'body': 'Troy was arrested.\nI must help.'}]
+        refs['SCENE 1_2']['journal'] = [{'header': 'Journal 1:1', 'body': 'Troy was arrested.\nI must help.',
+                                         'pastEntry': True},
+                                        {'header': 'Journal 1:2', 'body': 'Will helps.'}]      # (no unlock: at its end)
+        chapters = {'SCENE 1_1': [dict(type='stageBlockIntro', ref='Den', id='Den', intro='enterFromBottom'),
+                                  dict(type='stageBlockIntro', ref='CLAIRE', id='CLAIRE'),
+                                  line('Hello.', 'Claire'), dict(type='event', eventtype='animateJournalIcon'),
+                                  line('I wondered.', narrator='Claire')]}
+        config, sequences = episode(chapters=chapters, refs=refs)
+        config['hogConfig'] = {f'HIDDEN OBJECT GAME {n}': {'scene': 'Den_HO'} for n in range(1, 6)}
+        mirror = S.Mirror(mirror_at(self.folder.name, [(case('Bitter Revenge', 'Cloud of Suspicion'), [(config, sequences)])],
+                                    portraits=[CLAIRE['default'], CLAIRE['Happy']]))
+        art = dict(looks=[[28000, 28000, 28001, 28000, 28000]], look_names=['Claire Hart'],
+                   faces={CLAIRE['default']: (0, 0), CLAIRE['Happy']: (0, 2)}, scenes={'Den_HO': (26000, 224)},
+                   own_scenes=set(), music={}, story_objects={}, store={'case1/ep1': 'Den_HO'}, names={})
+        number, title, parts = mirror.cases()[0]
+        project, _, report = S.convert(mirror, art, number, title, parts)
+        kinds = [node.kind for node in project.nodes]
+        self.assertEqual((project.pack_id, project.episode_id, project.title), (31900, 10, 'Bitter Revenge (CH2)'))
+        quests = [node for node in project.nodes if node.kind == 'quest']
+        self.assertEqual([(q.params['number'], q.params['title'], q.text) for q in quests],
+                         [(0, 'Cloud of Suspicion', 'Troy was arrested.\nI must help.'),
+                          (0, 'Cloud of Suspicion', 'Troy was arrested.\nI must help.\n\nWill helps.')])
+        notice = kinds.index('quest') + 1
+        self.assertEqual(kinds[notice:notice + 3], ['speakers', 'sound', 'dialogue'])
+        self.assertEqual(project.nodes[notice].params['narrator'], '')                       # (no portrait)
+        self.assertEqual(project.nodes[notice + 1].params['resource'], S.JOURNAL_SOUND)
+        self.assertEqual(project.nodes[notice + 2].text, S.JOURNAL_NOTICE)
+        self.assertEqual(report['journal notices'], 2)
+        self.assertEqual(project.addons, [dict(id='ch2', revision=1)])
+        from claire_hart import compiled
+        self.assertTrue(compiled(project, {}))                 # (it compiles)
+
+
 class Pack31900Tests(unittest.TestCase):
     def test_ch2_brings_the_sequels_settings(self):
         from exp_runtime.cod import profile

@@ -682,9 +682,15 @@ class DialogueLayout:
             name_bounds = None if name_bounds is None else replace(name_bounds, y=name_bounds.y - lift)
             story_objects = tuple((picture, replace(r, y=r.y - lift)) for picture, r in story_objects)
             tab = None if tab is None else replace(tab, y=tab.y - lift)
-        # Above the box at its right (the narrator's too), kept inside the column's canvas.
+        # Above the box at its right (the narrator's too), and above a speaker's name plate, which rises over the box's
+        # top edge at its right (the pilot, 2026-11-24: the plate covered the photo's foot); kept inside the column.
         width, height = STORY_PHOTO_SIZE
-        place = Rect(box.x + box.width - width, max(2, box.y - STORY_PHOTO_GAP - height), width, height)
+        top = box.y
+        if details.get('speaker') and name_bounds is not None and getattr(name, 'lines', None):
+            top = min(top, name_bounds.y)
+        if tab is not None:
+            top = min(top, tab.y)
+        place = Rect(box.x + box.width - width, max(2, top - STORY_PHOTO_GAP - height), width, height)
         story_photo = (details['story_photo'], place) if details.get('story_photo', -1) >= 0 else ()
         leaving = (details['story_photo_leaving'], place) if details.get('story_photo_leaving', -1) >= 0 else ()
         return DialoguePage(box, drawn_origin, body_font, body, portrait, name_font,

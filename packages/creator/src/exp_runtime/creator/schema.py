@@ -45,10 +45,10 @@ NOTES = {
                 ', '.join(f'{i} {name.lower()}' for i, name in enumerate(EMOTICONS, 1)) + '; 0 none) using the '
                 'image set in the project\'s emoticons (project_update changes.emoticons: six asset IDs or null).',
     'choice': 'Provide 2–8 nonempty answers. Conditions enable answers; timeout_option is a zero-based visible row; native shuffling moves labels/return values, while enabled flags remain on rows. An answer\'s detail is a smaller line under it (SHS, SHSHD Runtime; other apps show it after the label).',
-    'quest': "SHS only, SHSHD Runtime's quest journal (the pause menu's Quest Journal). Sets quest params.number (0-63): its "
+    'quest': "SHS and CoD, SHSHD Runtime's quest journal (the pause menu's Quest Journal; CoD's Case Journal). Sets quest params.number (0-63): its "
              'params.title and its lines (text, one per line); an empty title takes it off. The journal lists quests by '
              'number. Its stats come from the project\'s journal (project_update changes.journal: [{label, key, prefix}], '
-             'owner-0 properties kept by Score / property nodes). Other apps keep the texts and show nothing.',
+             'owner-0 properties kept by Score / property nodes; SHS only). Other apps keep the texts and show nothing.',
     'start_calendar': 'SHS only. Starts the calendar params.calendar (its ID in the project\'s calendars): its clock at its first '
                       'school day\'s start, its table\'s events on their days. One runs at a time. The story goes on in its '
                       'events; when it runs out, at its After node (or the episode ends).',

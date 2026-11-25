@@ -58,9 +58,10 @@ MEMBERS = ('duet', 'narration_theme', 'portrait_effects', 'music_loops', 'creato
            'three_word_games', 'big_pickers', 'minigames', 'aliases', 'optional_art', 'journal', 'name_keys',
            'narration_portrait')
 # The packs the translators use (tools/translate: BREW 31000-31200, New Rules 31300, the X360 prototype 31400, Claire Hart
-# 31500, SHS '11 31600, Surviving Hollywood 31700): their episodes take their game's settings from the profile's tables and declare none of the members
-# above for an episode made in the Creator.
-TRANSLATION_PACKS = range(31000, 31800)
+# 31500, SHS '11 31600, Surviving Hollywood 31700, the DSi's metadata 31800, Claire Hart: Secret in the Shadows 31900): their
+# episodes take their game's settings from the profile's tables and declare none of the members above for an episode made in
+# the Creator, but a journal (their quest nodes' own keys).
+TRANSLATION_PACKS = range(31000, 32000)
 # narration_portrait (Claire Hart plan, E): a narrator line shows the narrator's portrait when the narrator has art.
 FLAGS = ('creator', 'word_forms', 'date_first', 'three_word_games', 'big_pickers', 'minigames', 'narration_portrait')
 EDITIONS = ('', '07', '08')

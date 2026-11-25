@@ -51,6 +51,7 @@ SKIP_MINIGAMES_LABEL = 'Ask to Skip Mini-Games'
 SKIP_AHEAD_LABEL = 'Skip Ahead'                # the pause menu's row, and its key's action (skip_ahead.py)
 UNDO_LABEL = 'Undo'                            # the pause menu's row: back to the last stop kept (undo.py)
 JOURNAL_LABEL = 'Quest Journal'                # the pause menu's row in a story with a journal (quest_journal.py)
+COD_JOURNAL_LABEL = 'Case Journal'            # ...in CoD's (Claire Hart: Secret in the Shadows' case notes)
 ALLOW_UNDO_LABEL = 'Allow Undo'                # Extras: keeps a save at each stop and offers that row (owner, 2026-11-06)
 ALLOW_SKIP_AHEAD_LABEL = 'Allow Skip Ahead'    # Extras: offers that row and key (owner, 2026-11-04)
 GRIDS_AS_MEMORY_LABEL = "Use '11's Memory for Word Grid"     # SHS '11's game in place of letter grids (owner, 2026-11-04)
@@ -372,6 +373,7 @@ class PauseState:
 
 class HdPauseMenu:
     main_menu = False               # the main menu's copy: the longer Help & About list
+    journal_label = JOURNAL_LABEL   # the row of a story's journal (CoD's: a case journal)
     scale = S                       # layer pixels per frame point
     PAGES = PAGES                   # page -> (title, body) string ids
     # Style, overridable by a game that keeps this layout in its own dress (desktop_cod_pause.CodPauseMenu).
@@ -857,7 +859,7 @@ class HdPauseMenu:
                        (strings[120], ('pause_open', 'help'))]
             entries.append((strings[9], ('main_menu',)))
             if settings.get('journal_row'):
-                entries.insert(1, (JOURNAL_LABEL, ('journal',)))
+                entries.insert(1, (self.journal_label, ('journal',)))
             if settings.get('undo_row'):
                 entries.insert(1, (UNDO_LABEL, ('undo',)))
             if settings.get('skip_ahead_row'):

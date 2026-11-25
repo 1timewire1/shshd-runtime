@@ -43,7 +43,7 @@ TEXT_BUFFER_WORDS = 512
 # What a failed survey upload shows: the offline runtime replaces exactly this response with its local receipt
 # (exp_runtime.shs.survey.CONNECTION_ERROR).
 SURVEY_FAILURE = 'Connection failed. Please try again later.'
-SHS_ONLY_KINDS = frozenset(('loading', 'survey', 'quest', 'journal_updated', 'start_calendar', 'calendar_back', 'schedule_event', 'cancel_event', 'set_clock', 'skip_ahead', 'run_due', 'call_scene', 'return_scene', 'nr_arena', 'minigames_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
+SHS_ONLY_KINDS = frozenset(('loading', 'survey', 'journal_updated', 'start_calendar', 'calendar_back', 'schedule_event', 'cancel_event', 'set_clock', 'skip_ahead', 'run_due', 'call_scene', 'return_scene', 'nr_arena', 'minigames_available', 'x360_slot', 'x360_leash', 'x360_puzzle', 'x360_diss',
                             'x360_battle', 'shs11_memory', 'shs11_reflex', 'brew_catch',
                             'cutscene_available', 'cutscene'))
 # SHS HD's side panels: Faceplace (services 113-120) and the Decision Tree (101-112). CoD has neither.
@@ -505,6 +505,11 @@ def presentation_record(project):
              if p['then_loop'] != -1}
     if loops:
         record['music_loops'] = loops
+    if any(node.kind == 'quest' for node in project.nodes) and (project.game == 'cod' or project.pack_id in TRANSLATION_PACKS):
+        # A CoD story's or a translation's quests, under the episode's own keys (Claire Hart: Secret in the Shadows' case
+        # journal, owner 2026-11-24); an SHS Creator story declares its journal below, with its stats.
+        title_form, lines_form = journal_forms(project)
+        record['journal'] = dict(count=JOURNAL_COUNT_KEY, title=title_form, lines=lines_form, stats=[])
     if project.native or project.pack_id in TRANSLATION_PACKS:
         return record                   # an original episode, or a translation: its game's own tables
     if project.game == 'cod':

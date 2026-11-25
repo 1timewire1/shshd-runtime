@@ -55,7 +55,7 @@ from .x360_diss import (ROUND_BACKGROUNDS as X360_ROUND_BACKGROUNDS, ROUND_EPISO
                         SOUND_GOOD as X360_SOUND_GOOD, SOUND_REMIX as X360_SOUND_REMIX)
 from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, GRID_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
-from .desktop_pause_hd import (ASPECT_NAMES, CH_DIALOGUE_NAMES, CLAIRE_POWERUPS_NAMES, TEXT_ANIMATION_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE, LANGUAGE_NAMES,
+from .desktop_pause_hd import (ASPECT_NAMES, CH_DIALOGUE_NAMES, CLAIRE_POWERUPS_NAMES, TEXT_ANIMATION_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, LANGUAGE_NAMES,
                                drag_scroll, focus_step, place_controls)
 from . import backdrop_fit, frame_shape
 from .desktop_hd_menu import HdMenuWindows
@@ -4369,7 +4369,7 @@ class Desktop:
             if kind == 'journal':
                 rows = [('quest:stats', quest_journal.STATS_TITLE)] if stats is not None else []
                 rows += [(f'quest:{n}', title) for n, (title, _) in enumerate(journal)]
-                self.pause_hd.show_rows('journal', JOURNAL_LABEL, rows, 'pause')
+                self.pause_hd.show_rows('journal', self.pause_hd.journal_label, rows, 'pause')
             elif command[1] == 'quest:stats':
                 self.pause_hd.show_text('journal:stats', quest_journal.STATS_TITLE, stats or ' ', 'journal')
             else:

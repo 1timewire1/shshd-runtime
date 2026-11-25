@@ -31,7 +31,7 @@ from . import graphics as pygame
 
 from .content import ContentError
 from .desktop_cod_menu import draw_cod_card
-from .desktop_pause_hd import (BORDER, FOOT, HEADER, PANEL_W, PANEL_X, PAGES, ROW, S, SWITCH_LABELS, UPSTREAM_VERSION, VERSION,
+from .desktop_pause_hd import (COD_JOURNAL_LABEL, BORDER, FOOT, HEADER, PANEL_W, PANEL_X, PAGES, ROW, S, SWITCH_LABELS, UPSTREAM_VERSION, VERSION,
                                HdPauseMenu)
 from .menu import MenuStrings
 
@@ -52,6 +52,8 @@ class CodPauseMenu(HdPauseMenu):
     # Choice hints also show faint answers in CoD's typed puzzles (exp-runtime v0.6.0, input_hints.py); only CoD has
     # them, so only CoD's label says so (owner's choice, 2026-10-20).
     SWITCH_LABELS = {**SWITCH_LABELS, 'choice_hints': 'Choice & Answer Hints'}
+    # A CoD story's journal is its case's notes (Claire Hart: Secret in the Shadows; owner, 2026-11-24).
+    journal_label = COD_JOURNAL_LABEL
 
     def __init__(self, resources, art, text=None):
         super().__init__(resources)

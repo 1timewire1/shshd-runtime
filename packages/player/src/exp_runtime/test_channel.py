@@ -161,7 +161,7 @@ KEYS = _keys()
 REPLY_TIMEOUT_S = 300
 HANG_S = 15                     # the app's thread silent this long: its stacks are written (_watch)
 SLOW_MS = 100
-TEXT_KEYS = ('text', 'title', 'prompt', 'speaker', 'options')
+TEXT_KEYS = ('text', 'title', 'prompt', 'speaker', 'options', 'story_photo', 'story_photo_leaving')   # (the sequel's photo: its resource)
 
 
 LOG_LINES = 1000
@@ -940,7 +940,7 @@ class Commands:
             # A story's pause menu itself: Resume, (Skip Ahead, Undo, Quest Journal,) Options, Help, Main Menu.
             entries = [(strings[20], ('resume',)), (strings[10], ('pause_open', 'options')),
                        (strings[120], ('pause_open', 'help')), (strings[9], ('main_menu',))]
-            for flag, label, command in (('journal_row', JOURNAL_LABEL, ('journal',)), ('undo_row', UNDO_LABEL, ('undo',)),
+            for flag, label, command in (('journal_row', getattr(pause, 'journal_label', JOURNAL_LABEL), ('journal',)), ('undo_row', UNDO_LABEL, ('undo',)),
                                          ('skip_ahead_row', SKIP_AHEAD_LABEL, ('skip_ahead',))):
                 if settings.get(flag):
                     entries.insert(1, (label, command))

@@ -42,6 +42,7 @@ scaled to CoD's portrait at twice its size (220 x 240), as chslim.whole gives Cl
     26000-26519  the scenes' clean bases (the round layout's `default` layer: the scene without its objects; else the
                  template), 1024 x 768, full brightness (dimmed at draw time to 102), in the folders' sorted order
     26900-26936  the tracks, MP3 128 kb/s (FFmpeg)
+    26940        the journal's cue, DS_Call_Attention (MP3)
     26998        the spec, JSON: looks, look names, pictures, scenes and slices, tracks, story objects (as chc's)
     26999        the frame backdrop beside CoD's frame (the episode selector's own backdrop)
     27000-27257  the story-object photos, their original PNGs: the 253 pictures, then the 5 round sprites photos show
@@ -69,8 +70,11 @@ SLOTS = ('Normal', 'Angry', 'Happy', 'Sad', 'Surprised')
 FACE_SLOTS = {'normal': 0, 'neutral': 0, 'angry': 1, 'happy': 2, 'sad': 3, 'surprised': 4}
 BACKDROP_BASE, MUSIC_BASE, STORY_OBJECT_BASE, PORTRAIT_BASE = 26000, 26900, 27000, 28000
 SPEC, FRAME_BACKDROP, SPEC_VERSION = 26998, 26999, 1
+JOURNAL_SOUND = 26940                        # DS_Call_Attention, the journal's cue (decision J)
+STORY_VERSION = 1                            # the cases' version (episode_version.py)
 LOOK_BANK_BASE = 30000                       # cod/profile.py LOOK_BANKS[31900]: look n is 30000 + 5n on
 FRAME_ART = 'textures/SD/episodeSelector/episodeselector_bg'
+JOURNAL_CUE = 'references/gamesfx/ogg/Claire_Hart_2_DS_Call_Attention'
 BACKDROP_SIZE = (1024, 768)
 SLICE_X = (BACKDROP_SIZE[0] - round(BACKDROP_SIZE[1] * 3 / 4)) // 2     # centred: CoD cut none of these scenes (M, ENGINE 12)
 CROP_HEIGHT, CROP_MARGIN, HEAD_BAND = 380, 14, 140
@@ -498,6 +502,319 @@ def story_object_names(mirror):
     return out
 
 
+# --- the converter: a case as a Creator project (plan Stage S2) -------------------------------------------------------
+# Decision J (owner, 2026-11-24): the case journal is the pause menu's, its notes grouped by part; each unlock adds the
+# data's new entry and says so in a narration box without a portrait, with the game's own cue.
+JOURNAL_NOTICE = 'Your case journal has been updated. Pause to view it.'
+JOURNAL_TEXT = str.maketrans({'‘': "'", '’': "'", '“': '"', '”': '"', '…': '...',
+                              '–': '-', '—': '-', ' ': ' ', 'а': 'a', '\r': ''})
+
+
+def journal_text(body):
+    """A journal entry's text by the text rules (story_text's), its paragraphs kept a line each."""
+    return '\n'.join(' '.join(line.translate(JOURNAL_TEXT).split()) for line in body.split('\n') if line.strip())
+
+
+# A later part's opening: its player's introduction and the self-description after it ("I'm Harper. I'm a grad student in
+# the San Francisco Bay Area. I also have an unusual ability..."), which goes as Classic's does (owner, 2026-11-20).
+SELF = re.compile(r"^(I'm|I am|I also|I have|And I)\b")
+# Round places the data spells oddly (case 31's run-together names), as said.
+PLACES = {'ItoGuest': 'Ito Guest Room', 'ZooGiftshop': 'Zoo Gift Shop', 'BoomboxxInterior': 'BoomBoxx',
+          'BoomBoxxExterior': 'BoomBoxx entrance'}
+
+
+def trim_intro(text):
+    """claire_hart.trim_intro, and every self-description sentence after the introduction."""
+    from claire_hart import ABBREVIATION, INTRO
+    marked = ABBREVIATION.sub(lambda match: match.group(1) + '.\0', text)
+    sentences = [sentence.replace('\0', ' ') for sentence in re.split(r'(?<=[.!?])\s+', marked)]
+    if not INTRO.match(sentences[0]):
+        return text
+    rest = sentences[1:]
+    while rest and SELF.match(rest[0]):
+        rest = rest[1:]
+    return ' '.join(rest).strip()
+
+
+def place_name(name, look_names):
+    """A round's place as a line says it: the data's `location`, a run-together one spaced, a first name of the cast
+    possessive ('HarpersLivingRoom' -> "Harper's Living Room")."""
+    if name.strip() in PLACES:
+        return PLACES[name.strip()]
+    name = name.strip()
+    if ' ' not in name:
+        name = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', name)
+    firsts = {look.split()[0] for look in look_names}
+    words = [word[:-1] + "'s" if word.endswith('s') and word[:-1] in firsts else word for word in name.split()]
+    return ' '.join(words)
+
+
+def journal_queue(part):
+    """[(chapter, entry text)]: the part's new journal entries in chapter order (an entry once; ENGINE 4.6)."""
+    out, seen = [], set()
+    for chapter, _ in chapters_of(part.sequences):
+        for entry in part.config['sceneRefs'][chapter].get('journal') or []:
+            text = journal_text(entry.get('body', ''))
+            if not entry.get('pastEntry') and text and text not in seen:
+                seen.add(text)
+                out.append((chapter, text))
+    return out
+
+
+def player_folder(mirror, part):
+    """The portrait folder of a part's player: whom its narration shows most (Claire, Harper, Troy, Sara...)."""
+    folders = collections.Counter()
+    log = collections.Counter()
+    for chapter, _ in chapters_of(part.sequences):
+        stage = Stage(refs_for(part.config['sceneRefs'][chapter]), log)
+        for node in part.sequences[chapter]['nodes']:
+            if node['type'] != 'dialogText':
+                stage.step(node)
+            elif node['header'] == '':
+                path = mirror.path(stage.face(node)[1] or '')
+                if path:
+                    folders[path.split('/')[2]] += 1
+    return folders.most_common(1)[0][0] if folders else 'Avatar_ClaireHart'
+
+
+def make_builder():
+    """ShadowsBuilder, made on first use (Classic's CaseBuilder needs the Creator)."""
+    from claire_hart import CaseBuilder, plate_name
+
+    class ShadowsBuilder(CaseBuilder):
+        """One case's nodes, characters and assets: Classic's builder with the sequel's stage, music, photos and journal."""
+
+        def __init__(self, mirror, art, names):
+            super().__init__(mirror, art)
+            self.names = names              # (folder, chapter, object id) -> the photo's name (decision L)
+            self.queue = []                 # the part's journal entries still to unlock: [(chapter, text)]
+            self.notes = []                 # the part's entries unlocked so far
+            self.quest = (0, '')            # the part's journal number and title
+            self.log = collections.Counter()
+
+        def asset(self, ident, name):
+            self.assets.setdefault(ident, self.Asset(ident, name, None, ADDON_ID))
+
+        def unlock(self, count=1):
+            """`count` journal entries in (decision J): the part's journal page rewritten, then the notice."""
+            taken = [self.queue.pop(0)[1] for _ in range(min(count, len(self.queue)))]
+            if not taken:
+                self.log['journal unlocks with nothing left to add (skipped)'] += 1
+                return
+            self.notes += taken
+            number, title = self.quest
+            self.add('quest', text='\n\n'.join(self.notes), params={'number': number, 'title': title})
+            self.add('speakers', params={'player': self.player or '', 'narrator': ''})    # (narration without a portrait)
+            self.asset(JOURNAL_SOUND, 'journal cue')
+            self.add('sound', params={'resource': JOURNAL_SOUND})
+            self.add(text=JOURNAL_NOTICE, expression=0)
+            self.cast = (self.player, None)     # (the next line says who's who again)
+            self.report['journal entries'] += len(taken)
+            self.report['journal notices'] += 1
+
+        def chapter(self, mirror, part, chapter, last=False, reintroduced=False):
+            """A chapter's nodes in order (ENGINE 4.2): its lines with the stage's faces, backdrops, music from its own
+            map, photos and journal unlocks. In a part's `last` chapter its sign-off goes; a `reintroduced` player's first
+            line loses the introduction (claire_hart's trims)."""
+            from claire_hart import UPSELL, trim_outro
+            refs = refs_for(part.config['sceneRefs'][chapter])
+            stage = Stage(refs, self.log)
+            for node in part.sequences[chapter]['nodes']:
+                kind = node['type'] if node['type'] != 'event' else node['eventtype']
+                if kind == 'dialogText':
+                    text = story_text(node['body'])
+                    if not text:
+                        self.log['blank lines (the game shows an empty box; dropped)'] += 1
+                        continue
+                    if reintroduced:
+                        reintroduced = False
+                        kept = trim_intro(text)
+                        if kept != text:
+                            self.reviews['intros'].append((part.epid, text, kept))
+                            if not kept:
+                                continue
+                            text = kept
+                    if last and UPSELL.search(text):
+                        kept = trim_outro(text)
+                        self.reviews['outros'].append((part.epid, text, kept))
+                        if not kept:
+                            continue
+                        text = kept
+                    _, path = stage.face(node)
+                    path = mirror.path(path) if path else None
+                    if node['header'] == '':
+                        if path in self.art['faces']:
+                            self.add(text=text, expression=self.narrate(path))
+                        else:
+                            self.narrate_as_player()
+                            self.add(text=text, expression=0)
+                        self.report['narration'] += 1
+                    elif path in self.art['faces']:
+                        cid, slot = self.speaker(node['header'], path)
+                        self.add(text=text, character=cid, expression=slot)
+                        self.report['speaker lines'] += 1
+                    else:
+                        self.add(text=text, speaker=plate_name(node['header']))
+                        self.report['speaker lines without a portrait'] += 1
+                elif kind == 'stageBlockIntro':
+                    entry = refs.get(node['ref']) or refs.get(str(node['ref']).lower())
+                    if isinstance(entry, dict) and entry.get('type') == 'texture':
+                        self.add('background', asset=self.scene(entry['resource'].split('/')[2]))
+                        self.report['backdrops'] += 1
+                    else:
+                        stage.step(node)
+                elif kind in ('stageBlockExpressionChange', 'stageBlockOutro', 'clearStage'):
+                    stage.step(node)
+                elif kind == 'playMusic':
+                    # audioPlayer: the chapter's own map only; no track (`FILL THIS IN`) keeps the one playing; a found
+                    # one always restarts.
+                    track = (refs.get('music') or {}).get(node['id'])
+                    if not track or '/' not in track:
+                        self.report['music ids missing (track kept)'] += 1
+                        continue
+                    ident = self.art['music'][track.rsplit('/', 1)[1].rsplit('.', 1)[0]]
+                    self.asset(ident, track)
+                    self.add('music', params={'resource': ident, 'loop': True})
+                elif kind == 'showStoryObject':
+                    picture = (refs.get('dialogStoryObjects') or {}).get(node['id'])
+                    ident = self.art['story_objects'][picture]
+                    self.asset(ident, picture.rsplit('/', 1)[1])
+                    self.add('story_object', text=self.names.get((part.folder, chapter, node['id']), ''), asset=ident)
+                    self.report['story objects'] += 1
+                elif kind == 'animateJournalIcon':
+                    self.unlock()
+                elif kind == 'dialogIntro':
+                    continue                # (the box comes with a line)
+                else:
+                    raise ValueError(f'{part.epid}: a node this converter doesn\'t know: {kind}')
+            # An entry the chapter adds without an unlock (3 chapters, ENGINE 4.6) comes in at its end (decision J: the
+            # journal follows its data's entries).
+            left = sum(1 for held, _ in self.queue if held == chapter)
+            if left:
+                self.log['journal entries added at their chapter\'s end'] += left
+                self.unlock(left)
+
+        def stand_in(self, mirror, part, chapter, round_id, next_chapter):
+            """A round with the real rounds off (S3 brings them): a line naming what the player finds (G, G2), unless the
+            next chapter's first two lines tell it (claire_hart.round_told)."""
+            from claire_hart import first_name, round_line, round_told
+            entry = mirror.round_entry(part.config, chapter, round_id) or {}
+            items = []
+            for _, item in mirror.round_items(entry) if entry else ():
+                if item is not None and item['name'] not in items:
+                    items.append(item['name'])
+            lines, shown = [], []
+            for node in part.sequences[next_chapter]['nodes']:
+                if node['type'] == 'dialogText':
+                    lines.append(story_text(node['body']))
+                    if len(lines) == 2:
+                        break
+                elif node.get('eventtype') == 'showStoryObject':
+                    shown.append(self.names.get((part.folder, next_chapter, node['id']), ''))
+            told = round_told(lines, items + [s for s in shown if s], shown=bool(shown))
+            scene = entry.get('scene') or part.config['hogConfig'][round_id]['scene']
+            where = place_name(entry.get('location') or scene.replace('_HO', ''), self.art['look_names'])
+            line = round_line(where, items, first_name(re.sub(r'^Avat[ao]r_', '', self.player_folder)))
+            self.reviews['rounds'].append((part.epid, round_id, where, ', '.join(items), told or 'stand-in', line,
+                                           ' / '.join(lines)[:220]))
+            self.report['rounds'] += 1
+            if told:
+                self.report['rounds told by the next chapter'] += 1
+            else:
+                self.add('background', asset=self.scene(scene))
+                self.narrate_as_player()
+                self.add(text=line, expression=0)
+                self.report['round lines'] += 1
+            self.cast = (None, None)
+
+    return ShadowsBuilder
+
+
+def converter_art(mirror, cache=None):
+    """What convert reads: the look table, scenes, tracks, photos and their names, and the parts' title-card scenes."""
+    banks, names, faces = mirror.look_banks()
+    return dict(looks=banks, look_names=names, faces=faces, scenes=mirror.scenes(), own_scenes=set(),
+                music={stem: ident for stem, (ident, _) in mirror.tracks().items()},
+                story_objects=mirror.story_object_ids(), store=store_scenes(mirror, cache),
+                names={(folder, chapter, key): name for folder, chapter, key, _, name, _ in story_object_names(mirror)})
+
+
+def store_scenes(mirror, cache=None):
+    """{part folder: scene folder}: the scene each part's store picture shows (a template shrunk; as Classic's title cards,
+    decision N2), else the part's first backdrop (case 31's unlisted parts and case 45 have no picture)."""
+    if cache is not None and Path(cache).exists():
+        return json.loads(Path(cache).read_text(encoding='utf-8'))
+    import numpy as np
+    from PIL import Image
+
+    def vector(image):
+        pixels = np.asarray(image.convert('L').resize((64, 48), Image.BILINEAR), dtype=float)
+        pixels -= pixels.mean()
+        return (pixels / (np.linalg.norm(pixels) + 1e-9)).ravel()
+    folders = mirror.scene_folders()
+    table = np.stack([vector(Image.open(mirror.files[f'references/backgrounds/{f}/hd/template'])) for f in folders])
+    thumbnails = {}
+    for number, case in enumerate(load(mirror.cases_dir / 'caselist.json')['case_list'], 1):
+        for index, episode in enumerate(case['episodes'], 1):
+            thumbnails[f'case{number}/ep{index}'] = episode.get('thumbnail', '')
+    out = {}
+    for _, _, parts in mirror.cases():
+        for part in parts:
+            picture = mirror.path(thumbnails.get(part.folder, '') if part.listed else '')
+            if picture:
+                scores = table @ vector(Image.open(mirror.files[picture]))
+                best = int(scores.argmax())
+                if scores[best] >= 0.9:
+                    out[part.folder] = folders[best]
+                    continue
+            first = chapters_of(part.sequences)[0][0]
+            refs = refs_for(part.config['sceneRefs'][first])
+            backdrop = next((refs.get(n['ref']) or refs.get(str(n['ref']).lower()) for n in part.sequences[first]['nodes']
+                             if n['type'] == 'stageBlockIntro' and (refs.get(n['ref']) or refs.get(str(n['ref']).lower()) or
+                                                                     {}).get('type') == 'texture'), None)
+            out[part.folder] = backdrop['resource'].split('/')[2]
+    if cache is not None:
+        Path(cache).write_text(json.dumps(out, indent=1, sort_keys=True), encoding='utf-8')
+    return out
+
+
+def convert(mirror, art, number, title, parts):
+    """A case as (a Creator Project for Cause of Death, its backdrop slices, a report): its parts in order, each opened by
+    a title card over its store picture's scene (N, N2), its chapters, and each round as a stand-in line (G)."""
+    from exp_runtime.creator import Project
+    builder = make_builder()(mirror, art, art['names'])
+    title = story_text(title)
+    for part in parts:
+        # The part's title over the case's, as Classic's cards (owner, 2026-11-20).
+        builder.add('title', text=story_text(part.title), params={
+            'subtitle': title, 'background': builder.scene(art['store'][part.folder]), 'flag': 0})
+        player = player_folder(mirror, part)
+        again = player == builder.player_folder and part.number > 1
+        builder.play_as(player)
+        builder.queue, builder.notes = journal_queue(part), []
+        builder.quest = (part.number - 1, (f'Part {part.number}: {story_text(part.title)}' if len(parts) > 1
+                                           else story_text(part.title))[:80])
+        order = chapters_of(part.sequences)
+        for k, (chapter, round_id) in enumerate(order):
+            builder.chapter(mirror, part, chapter, last=k == len(order) - 1, reintroduced=again and k == 0)
+            if round_id:
+                builder.stand_in(mirror, part, chapter, round_id, order[k + 1][0])
+        builder.log['journal entries never unlocked'] += len(builder.queue)
+    builder.add('end')
+    project = Project(title=title + TITLE_TAG, game='cod', pack_id=PACK_ID, episode_id=number * 10,
+                      episode_version=STORY_VERSION, nodes=builder.nodes)
+    project.addons = [dict(id=ADDON_ID, revision=ADDON_REVISION)]
+    project.assets = [builder.assets[ident] for ident in sorted(builder.assets)]
+    project.characters = list(builder.characters.values())
+    project.start = builder.nodes[0].id
+    for i, node in enumerate(project.nodes):
+        node.x, node.y = 40 + 320 * (i % 12), 80 + 140 * (i // 12)
+    builder.report.update(builder.log)
+    builder.report['parts'] = len(parts)
+    builder.report.reviews = builder.reviews
+    return project, builder.slices, builder.report
+
+
 # --- the add-on ---------------------------------------------------------------------------------------------------------
 def spec(mirror, art=None):
     banks, names, faces = art or mirror.look_banks()
@@ -533,6 +850,7 @@ def addon(mirror, progress=print):
     with tempfile.TemporaryDirectory() as folder:
         for stem, (ident, ogg) in tracks.items():
             resources[ident] = mp3(ogg, folder)
+        resources[JOURNAL_SOUND] = mp3(mirror.files[JOURNAL_CUE], folder)
     progress(f'tracks: {len(tracks)}')
     with Image.open(mirror.files[FRAME_ART]) as image:
         resources[FRAME_BACKDROP] = png(image.convert('RGB'))
@@ -614,13 +932,33 @@ def names_sheet(mirror, rows, out):
     return sum(1 for row in rows if not row[4])
 
 
+def write_reviews(folder, reviews):
+    """The owner's lists, as Classic's: every round's stand-in line or why the next chapter tells it, and the sign-offs
+    and later parts' introductions trimmed."""
+    folder = Path(folder)
+    rounds = reviews['rounds']
+    markdown_table(folder / 'rounds.md', 'Secret in the Shadows: rounds as lines',
+                   "With the real rounds off (until S3), a round is one stand-in line, unless the next chapter's first two "
+                   f'lines already tell the search. {sum(1 for row in rounds if row[4] == "stand-in")} of {len(rounds)} keep '
+                   'their line.', ('Episode', 'Round', 'Place', 'Finds', 'Decision', 'Stand-in line', 'Next chapter opens'),
+                   rounds)
+    for name, title in (('outros', 'episode-end sign-offs'), ('intros', "later parts' introductions")):
+        rows = reviews[name]
+        markdown_table(folder / f'{name}.md', f'Secret in the Shadows: {title}',
+                       f'{sum(1 for row in rows if not row[2])} of {len(rows)} lines go whole; the rest keep their story.',
+                       ('Episode', 'Line', 'Kept (blank: the line goes)'), rows)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest='command', required=True)
-    for name in ('report', 'ids', 'faces', 'portraits', 'names', 'addon'):
+    for name in ('report', 'ids', 'faces', 'portraits', 'names', 'addon', 'build'):
         command = commands.add_parser(name)
         command.add_argument('--mirror', type=Path, required=True)
-        command.add_argument('--out', type=Path, required=name in ('ids', 'names', 'addon'))
+        command.add_argument('--out', type=Path, required=name in ('ids', 'names', 'addon', 'build'))
+        if name == 'build':
+            command.add_argument('--cases', help='only these case numbers (1,2,31)')
+            command.add_argument('--cache', type=Path, help='the store pictures matched (made on first use)')
         if name in ('portraits', 'names'):
             command.add_argument('--sheet', type=Path, required=name == 'portraits')
         if name == 'portraits':
@@ -667,6 +1005,22 @@ def main(argv=None):
         if args.sheet:
             print(f'{len(rows)} photos, {names_sheet(mirror, rows, args.sheet)} without a name -> {args.sheet}')
         print(f'{len(rows)} photos -> {args.out}: {dict(hows)}')
+    elif args.command == 'build':
+        from claire_hart import compiled
+        wanted = {int(n) for n in args.cases.split(',')} if args.cases else None
+        art = converter_art(mirror, args.cache)
+        args.out.mkdir(parents=True, exist_ok=True)
+        reviews = dict(rounds=[], outros=[], intros=[])
+        for number, title, parts in mirror.cases():
+            if wanted is not None and number not in wanted:
+                continue
+            project, slices, report = convert(mirror, art, number, title, parts)
+            for key in reviews:
+                reviews[key] += report.reviews[key]
+            name = f'CH2_{number:03d}.exp'
+            (args.out / name).write_bytes(compiled(project, slices))
+            print(f'{name}: {project.title!r}, {len(project.nodes)} nodes, {dict(report)}')
+        write_reviews(args.out, reviews)
     else:
         from exp_runtime.exp import encode_exp
         resources, report = addon(mirror)

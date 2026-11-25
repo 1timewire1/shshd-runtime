@@ -97,15 +97,26 @@ class Journal(unittest.TestCase):
         record = presentation_record(ExpArchive(compile_project(story(Node('a', text='Hi.', next='end')))))
         self.assertNotIn('journal', record)
 
-    def test_quests_are_shs_only_and_numbered_0_to_63(self):
+    def test_quests_are_numbered_0_to_63_and_the_updated_badge_is_shs_only(self):
         bad = self.project()
         bad.nodes[0].params['number'] = 64
         with self.assertRaisesRegex(ProjectError, '0 to 63'):
             compile_project(bad)
         cod = self.project()
         cod.game = 'cod'
-        with self.assertRaises(ProjectError):
+        with self.assertRaisesRegex(ProjectError, 'journal updated'):
             compile_project(cod)
+
+    def test_a_cod_story_or_translation_keeps_its_own_journal(self):
+        """Claire Hart: Secret in the Shadows' case journal (owner, 2026-11-24): CoD's pause menu lists a story's quests
+        (its Case Journal), under the episode's own keys, with no stats; a translation (pack 31900) declares it too."""
+        from exp_runtime.presentation import presentation_record
+        for pack in (30000, 31900):
+            project = story(Node('q0', 'quest', params={'number': 0, 'title': 'Part 1'}, text='Notes.', next='say'),
+                            Node('say', text='Done.', next='end'), pack_id=pack, episode_id=10)
+            project.game = 'cod'
+            count, title, lines, stats = presentation_record(ExpArchive(compile_project(project)))['journal']
+            self.assertEqual((count, title % 0, stats), (31728, f'{{quest {pack}.10 title 0}}', ()))
 
     def test_stats_are_checked(self):
         for journal in ([dict(label='', key=1, prefix='')], [dict(label='A', key=1)], [dict(label='A', key=1, prefix='')] * 9):
