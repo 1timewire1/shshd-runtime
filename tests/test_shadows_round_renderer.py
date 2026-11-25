@@ -233,5 +233,15 @@ class ShadowsRendererTests(unittest.TestCase):
             game.close_pip()
 
 
+class RoundsWarmedAheadTests(unittest.TestCase):
+    def test_a_case_reads_its_own_rounds_spec_ahead_and_the_others_under_another_style(self):
+        from exp_runtime.desktop import claire_rounds_to_warm
+        self.assertEqual(claire_rounds_to_warm({'chc'}), ['chcrounds'])
+        self.assertEqual(claire_rounds_to_warm({'ch2'}), ['ch2rounds'])           # the sequel's too (2026-11-25)
+        self.assertEqual(claire_rounds_to_warm({'ch2'}, 'classic'), ['ch2rounds', 'chcrounds'])
+        self.assertEqual(claire_rounds_to_warm({'chc'}, 'shadows'), ['chcrounds', 'ch2rounds'])
+        self.assertEqual(claire_rounds_to_warm({'shsnr'}, 'shadows'), [])
+
+
 if __name__ == '__main__':
     unittest.main()

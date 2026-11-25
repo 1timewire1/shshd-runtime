@@ -295,6 +295,19 @@ def arena_menu_prompt(details):
     return title, text, [sentences(option) for option in details.get('options', [])]
 
 
+CLAIRE_ROUNDS_OF = {'chc': 'chcrounds', 'ch2': 'ch2rounds'}     # a Claire Hart story add-on -> its rounds add-on
+
+
+def claire_rounds_to_warm(requires, style='own'):
+    """The rounds add-ons whose spec (26000) a Claire Hart case needing the story add-ons `requires` reads at its rounds,
+    in order: its own game's, and under a Round Style that isn't Each Game's Own also the other game's (its rules and round
+    screen read that spec too). Empty for any other episode."""
+    own = [CLAIRE_ROUNDS_OF[addon] for addon in ('chc', 'ch2') if addon in requires]
+    if not own or style == 'own':
+        return own
+    return own + [rounds for rounds in CLAIRE_ROUNDS_OF.values() if rounds not in own]
+
+
 # After New Rules' exit the arena's last picture (the bare frame) fades out over the story's next screen, rather than
 # cutting to it (owner, 2026-10-30; this player's own, as New Rules shows the next screen at once).
 ARENA_HANDOVER_MS = 400
@@ -1532,7 +1545,8 @@ class Desktop:
                                                       background_pan=engine.background_pan))
 
     def _warm_claire_rounds(self, session):
-        """A Claire Hart case (one needing `chc`) opening with the rounds add-on in: its spec parsed now, behind the opening,
+        """A Claire Hart case (one needing `chc` or `ch2`) opening with a rounds add-on in: the specs its rounds read
+        (claire_rounds_to_warm; the sequel's 1.9 MB, 54 ms a parse on the PC, 2026-11-25) parsed now, behind the opening,
         once for the library (ContentLibrary.addon_json), not at the case's first round (owner, 2026-11-21: ~200 ms a
         parse on the g54, and both the engine and the renderer parsed it); and the choice panel's fonts, which its rounds'
         skip prompt is the case's first use of (~300 ms on the g54 at a start's first round; the library keeps them)."""
@@ -1541,8 +1555,11 @@ class Desktop:
         if not getattr(session.engine, 'claire_rounds_ready', False) or library is None or record is None:
             return
         try:
-            if any(addon == 'chc' for addon, _ in library.episode_requires(record)):
-                library.addon_json('chcrounds', 26000)
+            specs = claire_rounds_to_warm({addon for addon, _ in library.episode_requires(record)},
+                                          self._claire_round_style)
+            if specs:
+                for addon in specs:
+                    library.addon_json(addon, 26000)
                 from .choice import BODY_FONT
                 from .vector_text import load_font
                 for name in ('PajamaHipY26', BODY_FONT):

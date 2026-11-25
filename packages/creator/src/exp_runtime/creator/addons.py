@@ -41,10 +41,12 @@ ADDON_FEATURES = {
              "Its title tune and title screen, where Title Screen Music and Look are on Auto"), ()),
     'chcrounds': ((), ("Claire Hart's hidden-object rounds",)),
     'ch2rounds': ((), ("Secret in the Shadows' hidden-object rounds",)),
-    # ...and Secret in the Shadows' pack 31900 (sequel Stage S1): its skin and title look come in later revisions.
-    'ch2': (("Narration with the narrator's portrait", 'Backdrops darkened as the sequel drew them (Dim Backdrops)',
+    # ...and Secret in the Shadows' pack 31900 (sequel Stages S1-S3: its skin in revision 2, its title in revision 3).
+    'ch2': (("Secret in the Shadows UI's dialogue box and screens with Claire Hart UI on Auto",
+             "Narration with the narrator's portrait", 'Backdrops darkened as the sequel drew them (Dim Backdrops)',
              "The sequel's violet beside the scene", "Its scenes as a 3:4 slice that fills the frame, whole with Claire Hart 4:3",
-             "Its story objects as one photo above the dialogue box"), ()),
+             "Its story objects as one photo above the dialogue box",
+             "Its title tune and title screen, where Title Screen Music and Look are on Auto"), ()),
 }
 # Node kinds only this runtime answers, and how to name them to a person.
 MECHANIC_NODES = {'minigames_available': 'the translated mini-games', 'x360_slot': 'the X360 slot machine',
