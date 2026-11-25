@@ -161,6 +161,9 @@ The plans and the engine study (`CLAIRE_HART_SHADOWS_ENGINE.md`, `CLAIRE_HART_SH
 - **Every round of both games, under both round styles** (`tools/claire_round_audit/` beside the repository), at 3:4, 4:3
   and 9:20: every object can be seen and tapped clear of the HUD, every close-up opens, and every round plays to its summary.
 - **The g54:** the sequel's round screen holds 57–60 fps idle, panning, in a close-up, under the spotlight and at the end.
+- **Sync Devices** (g54 to a PC library, 2026-11-25): the whole Cause of Death library, both sequel add-ons with it, in
+  about 5½ minutes over Wi-Fi. Every add-on's SHA-256 matched, all 58 entries arrived, the rounds spec and sprite packs
+  read back, and nothing was left in the staging area.
 
 ## Not verified yet
 
