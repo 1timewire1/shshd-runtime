@@ -62,7 +62,8 @@ All carry the CH tag; on the main menu they're on Add-Ons › Per-Game Settings,
 | Round Style | Each Game's Own, Claire Hart Classic, Secret in the Shadows: which game's rules and round screen both games' rounds play under (shown with both rounds add-ons) | Each Game's Own |
 | Dim Backdrops | The scenes darkened to 110/255, as Classic drew them | On |
 | Claire Hart 4:3 | A 4:3 frame where the window has room (above) | On |
-| HD Portraits in CoD, Backdrop | Claire Hart's sharper originals of CoD's own portraits; its green beside CoD's frame | On |
+| HD Portraits in CoD | Claire Hart's sharper originals of CoD's own portraits | On |
+| Backdrop | Beside CoD's frame: Off (SHS HD's collage or the dark fill), Claire Hart Classic's green, or Secret in the Shadows' violet (its episode select's, `ch2` 26999); each offered with its add-on. A saved On is Classic's (owner, 2026-11-25) | Claire Hart Classic |
 | Use Translated Mini-Games | The real rounds (with `chcrounds`), else the narrated line | On |
 
 Title Screen Music and Look (Add-Ons) offer each game's: Claire Hart Classic's 13-second main jingle, played once, and its

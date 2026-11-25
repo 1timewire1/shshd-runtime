@@ -194,6 +194,39 @@ class BackdropTests(unittest.TestCase):
         self.assertIsNone(addon_backdrop(SimpleNamespace(game_id='cod', addon=lambda name: None), (10, 10)))
         self.assertIsNone(addon_backdrop(SimpleNamespace(game_id='shs', addon=lambda name: None), (10, 10)))
 
+    def test_backdrop_is_off_classics_or_the_sequels(self):
+        """(owner, 2026-11-25) the switch became a choice: Off, Claire Hart Classic's green, Secret in the Shadows' violet
+        (ch2's 26999); each offered with its art, a saved On / Off carried over."""
+        os.environ['SDL_VIDEODRIVER'] = 'dummy'
+        import pygame
+        pygame.init()
+        pygame.display.set_mode((1, 1))
+        self.addCleanup(pygame.quit)
+        from exp_runtime.desktop_cod_main import addon_backdrop, ch_backdrops_offered
+        from exp_runtime.menu import accepted_preferences, ch_backdrop_choice
+        pictures = {}
+        for resource, colour in ((28001, (0, 200, 180)), (26999, (90, 40, 140))):
+            image = pygame.Surface((32, 18))
+            image.fill(colour)
+            out = io.BytesIO()
+            pygame.image.save(image, out, 'x.png')
+            pictures[resource] = out.getvalue()
+        both = SimpleNamespace(game_id='cod', addon=lambda name: (dict(id='x'), Archive({28001: pictures[28001]})),
+                               portrait_addon_map=lambda addon: dict(backdrop=28001),
+                               addon_has=lambda name, resource: (name, resource) == ('ch2', 26999),
+                               addon_resource=lambda name, resource: pictures[26999] if name == 'ch2' else None)
+        self.assertEqual(addon_backdrop(both, (50, 50), 'shadows').get_at((1, 1))[:3], (90, 40, 140))
+        self.assertEqual(addon_backdrop(both, (50, 50), 'classic').get_at((1, 1))[:3], (0, 200, 180))
+        self.assertIsNone(addon_backdrop(both, (50, 50), 'off'))
+        self.assertEqual(ch_backdrops_offered(both), ['off', 'classic', 'shadows'])
+        sequel_alone = SimpleNamespace(game_id='cod', addon=lambda name: None, addon_has=both.addon_has)
+        self.assertEqual(ch_backdrops_offered(sequel_alone), ['off', 'shadows'])
+        self.assertEqual(ch_backdrops_offered(SimpleNamespace(game_id='cod', addon=lambda name: None,
+                                                              addon_has=lambda *a: False)), [])
+        self.assertEqual([ch_backdrop_choice(v) for v in (True, False, 'shadows', 'nonsense')],
+                         ['classic', 'off', 'shadows', 'classic'])
+        self.assertEqual(accepted_preferences({'ch_backdrop': True}), {'ch_backdrop': 'classic'})     # (another device's)
+
 
 class DeletingTheSlimPackTests(unittest.TestCase):
     """Data Management's Delete, on a CoD library: its pictures go back to CoD's, and nothing still reads it."""

@@ -236,7 +236,7 @@ class AppOptions:
                                             'hd_backdrop', 'hires_portraits', 'ms3_characters', 'java_look', 'brew_08_backgrounds',
                                             'hollywood_art', 'smartphone_music', 'word_grid_skin',
                                             'grids_as_memory', 'skip_ahead', 'undo',
-                                            'ch_portraits', 'ch_backdrop', 'dim_backdrops', 'ch_43',
+                                            'ch_portraits', 'dim_backdrops', 'ch_43',
                                             'arena_minigames', 'arena_skin',
                                             'skip_sound_prompt')}
         settings.update(music_volume=v['music_volume'] / 100, sound_volume=v['sound_volume'] / 100,

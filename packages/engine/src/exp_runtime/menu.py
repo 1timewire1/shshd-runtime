@@ -66,6 +66,18 @@ def group_episodes(records, catalog, *, mega_label, novel_label, saved_label, sa
 # game profile's TITLE_LOOKS); BREW's two editions are two looks.
 TITLE_LOOK_GAMES = ('nr', 'brew07', 'brew08', 'shw', 'shs11', 'x360', 'chc', 'ch2')     # (chc, ch2: CoD's Claire Hart looks)
 
+# shshd-runtime: CoD's Claire Hart Backdrop beside the frame (owner, 2026-11-25; a switch until then, its On Classic's):
+# none (SHS HD's collage or the dark fill), Classic's green, or Secret in the Shadows' violet (cod/profile.py SIDE_BACKDROPS).
+CH_BACKDROPS = ('off', 'classic', 'shadows')
+
+
+def ch_backdrop_choice(value):
+    """A saved Backdrop as a choice of CH_BACKDROPS: the old switch's True / False are Classic's and Off."""
+    if value is True or value is False:
+        return 'classic' if value else 'off'
+    return value if value in CH_BACKDROPS else 'classic'
+
+
 MAX_NAMES = 4096               # player.json `names`: far more keys than the whole library writes
 
 # The preferences both games share (owner, 2026-10-29): Options' switches, sliders and the Preferred Language,
@@ -75,7 +87,7 @@ MAX_NAMES = 4096               # player.json `names`: far more keys than the who
 SHARED_PREFERENCES = dict(
     music=bool, sound=bool, vibration=bool, device_vibration=bool, logging_disabled=bool, choice_hints=bool,
     skip_minigames=bool, skip_ad_intros=bool, skip_upsell_intros=bool, autoplay=bool, disable_choice_timer=bool,
-    side_panels=bool, hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, brew_08_backgrounds=bool, hollywood_art=bool, dsi_backgrounds=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, undo=bool, ch_portraits=bool, ch_backdrop=bool, dim_backdrops=bool, ch_43=bool, ch_dialogue=('auto', 'off', 'classic', 'shadows'), claire_powerups=('once', 'unlimited', 'off'), claire_round_style=('own', 'classic', 'shadows'), arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
+    side_panels=bool, hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, brew_08_backgrounds=bool, hollywood_art=bool, dsi_backgrounds=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, undo=bool, ch_portraits=bool, ch_backdrop=CH_BACKDROPS, dim_backdrops=bool, ch_43=bool, ch_dialogue=('auto', 'off', 'classic', 'shadows'), claire_powerups=('once', 'unlimited', 'off'), claire_round_style=('own', 'classic', 'shadows'), arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
     controller_confirm=('south', 'east'), grid_controls=('tap', 'hold'), dsi_pixels=('sharp', 'smooth'),
     text_animation=TEXT_ANIMATIONS,
     preferred_language=PREFERRED_LANGUAGES,
@@ -103,6 +115,8 @@ def accepted_preferences(values):
         if key == 'ch_dialogue' and isinstance(value, str):
             from .content import skin_choice
             value = skin_choice(value)
+        if key == 'ch_backdrop':
+            value = ch_backdrop_choice(value)
         if shared_preference(key, value):
             out[key] = value
     return out
@@ -209,8 +223,8 @@ class MenuState:
                     self.grids_as_memory = data['grids_as_memory']
                 if type(data.get('ch_portraits')) is bool:
                     self.ch_portraits = data['ch_portraits']
-                if type(data.get('ch_backdrop')) is bool:
-                    self.ch_backdrop = data['ch_backdrop']
+                if 'ch_backdrop' in data:
+                    self.ch_backdrop = ch_backdrop_choice(data['ch_backdrop'])     # (the switch's On / Off carry over)
                 if type(data.get('dim_backdrops')) is bool:
                     self.dim_backdrops = data['dim_backdrops']
                 if type(data.get('ch_43')) is bool:
@@ -319,9 +333,10 @@ class MenuState:
         # With the DSiWare add-on (`shsdsi`, dsi.py): its backgrounds (off by default; owner, 2026-11-15), enlarged sharp or smooth
         self.dsi_backgrounds = False
         self.dsi_pixels = 'sharp'
-        # CoD with the chslim addon: Claire Hart's sharper portraits (ContentLibrary), and its backdrop beside the frame
+        # CoD with the chslim addon: Claire Hart's sharper portraits (ContentLibrary); and a Claire Hart game's backdrop beside
+        # the frame (CH_BACKDROPS)
         self.ch_portraits = True
-        self.ch_backdrop = True
+        self.ch_backdrop = 'classic'
         self.dim_backdrops = True      # Claire Hart's translations: their backdrops darkened as the game drew them
         self.ch_43 = True              # Claire Hart's cases in their own 4:3 where the window has room (CLAIRE_HART_43_PLAN.md)
         # Claire Hart UI: each game's own skin ('auto'), none ('off'), or one by name everywhere ('classic', 'shadows')

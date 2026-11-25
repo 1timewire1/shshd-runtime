@@ -141,15 +141,26 @@ def hd_collage(library):
         return None
 
 
-def addon_backdrop(library, size):
-    """The portrait addon's backdrop covering `size`, its middle kept, or None without the addon."""
+def addon_backdrop(library, size, which='classic'):
+    """A Claire Hart game's backdrop (the Backdrop choice: menu.CH_BACKDROPS) covering `size`, its middle kept, or None
+    for Off or without its add-on: Classic's from the portrait addon, another from the profile's SIDE_BACKDROPS."""
     from .games import GAMES
-    addon = getattr(GAMES.get(getattr(library, 'game_id', None)), 'PORTRAIT_ADDON', None)
-    found = library.addon(addon[0]) if addon is not None and hasattr(library, 'addon') else None
-    if found is None:
+    profile = GAMES.get(getattr(library, 'game_id', None))
+    if not which or which == 'off':
         return None
     try:
-        image = _image(found[1].read(library.portrait_addon_map(addon)['backdrop']))
+        if which == 'classic':
+            addon = getattr(profile, 'PORTRAIT_ADDON', None)
+            found = library.addon(addon[0]) if addon is not None and hasattr(library, 'addon') else None
+            if found is None:
+                return None
+            image = _image(found[1].read(library.portrait_addon_map(addon)['backdrop']))
+        else:
+            entry = getattr(profile, 'SIDE_BACKDROPS', {}).get(which)
+            data = library.addon_resource(*entry) if entry is not None and hasattr(library, 'addon_resource') else None
+            if data is None:
+                return None
+            image = _image(data)
     except (KeyError, pygame.error, ValueError):
         return None
     factor = max(size[0] / image.get_width(), size[1] / image.get_height())
@@ -159,11 +170,26 @@ def addon_backdrop(library, size):
     return surface
 
 
+def ch_backdrops_offered(library):
+    """The Backdrop choices this library has the art for (menu.CH_BACKDROPS): Off, then Classic's with the portrait addon
+    and each of SIDE_BACKDROPS whose add-on carries its picture; [] when there's none to choose."""
+    from .games import GAMES
+    profile = GAMES.get(getattr(library, 'game_id', None))
+    offered = ['off']
+    addon = getattr(profile, 'PORTRAIT_ADDON', None)
+    if addon is not None and hasattr(library, 'addon') and library.addon(addon[0]) is not None:
+        offered.append('classic')
+    for which, entry in getattr(profile, 'SIDE_BACKDROPS', {}).items():
+        if hasattr(library, 'addon_has') and library.addon_has(*entry):
+            offered.append(which)
+    return offered if len(offered) > 1 else []
+
+
 @lru_cache(maxsize=4)
-def side_backdrop(library, size, enabled, ch_enabled=False):
-    """What fills the window beside the frame: the portrait addon's backdrop when `ch_enabled`, else SHS HD's faded collage
-    when `enabled` and available (as SHS HD's menus and episodes show it), else the dark fill."""
-    backdrop = addon_backdrop(library, size) if ch_enabled else None
+def side_backdrop(library, size, enabled, ch_backdrop='off'):
+    """What fills the window beside the frame: the Claire Hart Backdrop chosen (`ch_backdrop`: addon_backdrop), else SHS
+    HD's faded collage when `enabled` and available (as SHS HD's menus and episodes show it), else the dark fill."""
+    backdrop = addon_backdrop(library, size, ch_backdrop)
     if backdrop is not None:
         return backdrop
     collage = hd_collage(library) if enabled else None

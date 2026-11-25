@@ -88,6 +88,9 @@ PREVIEW_CASE_TITLE = (31500, 31900)
 # shshd-runtime: a translated pack's own picture for the whole frame, under its backdrops (desktop._frame_backdrop): Claire
 # Hart's 4:3 scenes leave bands in CoD's 3:4 frame, which take chslim's green backdrop (28001, kept in chc).
 TRANSLATED_FRAME_BACKDROP = {31500: 28001, 31900: 26999}       # (31900: the sequel's violet episode-select backdrop)
+# shshd-runtime: the Backdrop choice beside the frame (owner, 2026-11-25; menu.CH_BACKDROPS): Classic's is PORTRAIT_ADDON's
+# map's `backdrop` (chslim's green, kept in chc); the others an add-on's picture: (add-on, resource).
+SIDE_BACKDROPS = {'shadows': ('ch2', 26999)}
 # shshd-runtime: Add-Ons' Title Screen Look for CoD (as shs/profile.py's; owner, 2026-11-19): Claire Hart's Play Now screen
 # (its forest, and Claire and Paul over the gem banner) from chc's spec at 26960 (title_look.py), drawn in place of CoD's
 # painting behind the same buttons (desktop_cod_main). Auto follows the case last played. Secret in the Shadows' (owner,

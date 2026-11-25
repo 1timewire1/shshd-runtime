@@ -356,7 +356,12 @@ class HdShell:
         if self.app.smartphone_music_offered():
             settings['smartphone_music'] = state.smartphone_music
         if self.app.portrait_addon_offered():
-            settings.update(ch_portraits=state.ch_portraits, ch_backdrop=state.ch_backdrop)
+            settings['ch_portraits'] = state.ch_portraits
+        offered = self.app.ch_backdrops_offered()
+        if offered:
+            from .desktop_pause_hd import CH_BACKDROP_NAMES
+            settings['ch_backdrop'] = CH_BACKDROP_NAMES[state.ch_backdrop if state.ch_backdrop in offered else 'off']
+            settings['ch_backdrop_names'] = {key: CH_BACKDROP_NAMES[key] for key in offered}
         if self.app.dim_backdrops_offered():
             settings['dim_backdrops'] = state.dim_backdrops
         if self.app.ch_43_offered():
@@ -485,6 +490,11 @@ class HdShell:
             state.title_music = value
             self.app._attempt(state.persist)
             self.app.play_menu_music()                  # the new tune at once, from its start
+        elif key == 'ch_backdrop':
+            state.ch_backdrop = value                   # (the side art follows at once: side_backdrop's arguments)
+            self.app._attempt(state.persist)
+            if self.app.game is not None:
+                self.app.game.ch_backdrop = value
         elif key == 'ch_dialogue':
             state.ch_dialogue = value
             self.app._attempt(state.persist)

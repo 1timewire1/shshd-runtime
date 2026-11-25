@@ -1341,6 +1341,14 @@ class Application:
         return addon is not None and self.library.addon(addon[0]) is not None
 
     @library_answer
+    def ch_backdrops_offered(self):
+        """The Backdrop choices this library has art for (desktop_cod_main.ch_backdrops_offered), [] for none."""
+        if not self.library:
+            return []
+        from .desktop_cod_main import ch_backdrops_offered
+        return ch_backdrops_offered(self.library)
+
+    @library_answer
     def minigames_offered(self):
         """Whether the library has an episode the "Use Translated Mini-Games" switch changes (TRANSLATED_MINIGAMES)."""
         if not self.library:
@@ -2902,7 +2910,7 @@ class Application:
                 key = command[1]
                 if key not in ('music', 'sound', 'vibration', 'device_vibration', 'choice_hints', 'skip_minigames',
                                'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
-                               'hires_portraits', 'ms3_characters', 'java_look', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'skip_ahead', 'undo', 'ch_portraits', 'ch_backdrop',
+                               'hires_portraits', 'ms3_characters', 'java_look', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'skip_ahead', 'undo', 'ch_portraits',
                                'dim_backdrops', 'ch_43', 'arena_minigames', 'brew_08_backgrounds', 'hollywood_art', 'dsi_backgrounds',
                                'arena_skin'):
                     raise ValueError('Unknown preference')

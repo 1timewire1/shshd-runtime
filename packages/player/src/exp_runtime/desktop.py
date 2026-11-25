@@ -57,7 +57,7 @@ from .x360_diss import (ROUND_BACKGROUNDS as X360_ROUND_BACKGROUNDS, ROUND_EPISO
                         SOUND_GOOD as X360_SOUND_GOOD, SOUND_REMIX as X360_SOUND_REMIX)
 from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, GRID_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
-from .desktop_pause_hd import (ASPECT_NAMES, CH_DIALOGUE_NAMES, CLAIRE_POWERUPS_NAMES, ROUND_STYLE_NAMES, TEXT_ANIMATION_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, LANGUAGE_NAMES,
+from .desktop_pause_hd import (ASPECT_NAMES, CH_BACKDROP_NAMES, CH_DIALOGUE_NAMES, CLAIRE_POWERUPS_NAMES, ROUND_STYLE_NAMES, TEXT_ANIMATION_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, LANGUAGE_NAMES,
                                drag_scroll, focus_step, place_controls)
 from . import backdrop_fit, frame_shape
 from .desktop_hd_menu import HdMenuWindows
@@ -394,7 +394,7 @@ class Desktop:
     smartphone_music = True        # translated SHS '11 episodes: the "Smartphone Music" switch (smartphone_switch)
     _word_grid_skin = False         # ...their minigames in the HD word game's look: the "Use Word Grid Skin" switch
     ch_portraits = True             # CoD with its portrait addon: the CH "HD Portraits in CoD" switch (set_ch_portraits)
-    ch_backdrop = True              # ...and its "Backdrop", in place of SHS HD's collage (_window_backdrop)
+    ch_backdrop = 'classic'         # ...and the Backdrop choice (menu.CH_BACKDROPS), in place of SHS HD's collage
     dim_backdrops = True            # Claire Hart's translations: the "Dim Backdrops" switch (backdrop_dim)
     ch_43 = True                    # ...and "Claire Hart 4:3": their cases in their own 4:3 where there's room (wide_frame)
     _ch_dialogue = 'auto'           # Claire Hart UI: Auto, Off, Claire Hart Classic or Secret in the Shadows (content.skin_entry)
@@ -2659,9 +2659,9 @@ class Desktop:
         if self._backdrop[0] != key:
             surface = None
             try:
-                if self.ch_backdrop and self.ch_switch():
+                if self.ch_backdrop != 'off':
                     from .desktop_cod_main import addon_backdrop
-                    surface = addon_backdrop(self.session.resources.library, size)
+                    surface = addon_backdrop(self.session.resources.library, size, self.ch_backdrop)
                 collage = self.backdrop_collage() if self.hd_backdrop and surface is None else None
                 if collage is not None:
                     from .hd_ui import window_backdrop
@@ -2794,6 +2794,22 @@ class Desktop:
         engine = getattr(session, 'engine', None)
         if engine is not None:
             engine.claire_round_style = self._claire_round_style
+
+    def ch_backdrops_offered(self):
+        """The Backdrop choices this library has art for (desktop_cod_main.ch_backdrops_offered), [] for none."""
+        from .desktop_cod_main import ch_backdrops_offered
+        try:
+            return ch_backdrops_offered(getattr(self.session.resources, 'library', None))
+        except (ContentError, OSError, ValueError, AttributeError):
+            return []
+
+    def ch_backdrop_settings(self):
+        """The pause menu's Backdrop choice (its current name, and the names it offers), or {} with nothing to choose."""
+        offered = self.ch_backdrops_offered()
+        if not offered:
+            return {}
+        return {'ch_backdrop': CH_BACKDROP_NAMES[self.ch_backdrop if self.ch_backdrop in offered else 'off'],
+                'ch_backdrop_names': {key: CH_BACKDROP_NAMES[key] for key in offered}}
 
     def claire_round_style_switch(self):
         """Whether this is a Claire Hart case and the library holds both games' rounds (plan S2)."""
@@ -4276,7 +4292,8 @@ class Desktop:
                     **({'smartphone_music': self.smartphone_music} if self.smartphone_switch() else {}),
                     **({'word_grid_skin': self.word_grid_skin} if self.smartphone_switch() and self.word_grid_switch() else {}),
                     **({'grids_as_memory': self.grids_as_memory} if self.memory_grid_switch() else {}),
-                    **(dict(ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop) if self.ch_switch() else {}),
+                    **({'ch_portraits': self.ch_portraits} if self.ch_switch() else {}),
+                    **(self.ch_backdrop_settings() if getattr(self, 'ch_backdrop_settings', None) else {}),
                     **({'dim_backdrops': self.dim_backdrops} if self.dim_switch() else {}),
                     **({'ch_43': self.ch_43} if getattr(self, 'ch_43_switch', None) and self.ch_43_switch() else {}),
                     **({'ch_dialogue': CH_DIALOGUE_NAMES[self.ch_dialogue]} if self.ch_dialogue_switch() else {}),
@@ -4481,6 +4498,18 @@ class Desktop:
             self.pause_hd.back()
             self._menu_sound()
             return
+        if kind == 'pause_cycle' and command[1] == 'ch_backdrop':
+            # Add-Ons' Backdrop (owner, 2026-11-25): Off or a Claire Hart game's, picked on its choice page (or stepped to
+            # the next it has art for); the app keeps it.
+            choices = self.ch_backdrops_offered() or list(CH_BACKDROP_NAMES)
+            current = self.ch_backdrop if self.ch_backdrop in choices else choices[0]
+            self.ch_backdrop = command[2] if len(command) > 2 else choices[(choices.index(current) + 1) % len(choices)]
+            if self.on_settings:
+                self.on_settings()
+            if len(command) > 2:
+                self.pause_hd.back()
+            self._menu_sound()
+            return
         if kind == 'pause_cycle' and command[1] == 'claire_round_style':
             # Round Style (both rounds add-ons), picked on its choice page (or stepped to the next); the app keeps it.
             choices = list(ROUND_STYLE_NAMES)
@@ -4619,8 +4648,6 @@ class Desktop:
                 self.grids_as_memory = not self.grids_as_memory
             elif command[1] == 'ch_portraits':
                 self.set_ch_portraits(not self.ch_portraits)
-            elif command[1] == 'ch_backdrop':
-                self.ch_backdrop = not self.ch_backdrop
             elif command[1] == 'ch_43':
                 self.ch_43 = not self.ch_43
             elif command[1] == 'dim_backdrops':
