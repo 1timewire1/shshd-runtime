@@ -73,10 +73,12 @@ STORY_OBJECT_SLOT = 36                  # a square's side, in units, when the ro
 STORY_OBJECT_GAP = 3                    # between squares
 STORY_OBJECT_MARGIN = 6                 # from the box's right and bottom edges, and above the row
 STORY_OBJECT_ROOM = 270                 # the widest a narrator's box grows to hold its row
-# Secret in the Shadows' one photo (the profile's STORY_OBJECT_PHOTO): its 123 x 124 frame and 93 x 74 picture box, 12 below the
-# frame's top, in its 800 x 600 design, at the frame's 512 units for the scene's 600 (0.853), right-aligned with the box and
-# STORY_PHOTO_GAP above it (owner's pick B, 2026-11-24: the sequel's own place, low right of centre, lands on CoD's text).
-STORY_PHOTO_SIZE, STORY_PHOTO_PICTURE, STORY_PHOTO_PICTURE_TOP = (105, 106), (79, 63), 10
+# Secret in the Shadows' one photo (the profile's STORY_OBJECT_PHOTO): its 123 x 124 frame in its 800 x 600 design, at the
+# frame's 512 units for the scene's 600 (0.853), right-aligned with the box and STORY_PHOTO_GAP above it (owner's pick B,
+# 2026-11-24: the sequel's own place, low right of centre, lands on CoD's text). Its picture area as the game draws it
+# (chs_11 measured, 2026-11-24): 94% of the frame's width, 79% of its height, 3% below its top, a deeper foot (the
+# prefab's 93 x 74 constraint is the photo's own fit, not the area).
+STORY_PHOTO_SIZE, STORY_PHOTO_PICTURE, STORY_PHOTO_PICTURE_TOP = (105, 106), (99, 83), 4
 STORY_PHOTO_GAP = 6
 # shshd-runtime: Add-Ons' Claire Hart Dialogue (content.EpisodeResources.dialogue_skin; owner, 2026-11-19): Claire Hart's Romic
 # (vector_text.skin_font: the add-on's own faces) for the text, its bold for emphasis and the name, which goes in the tab.

@@ -182,6 +182,19 @@ class StoryPhotoLayoutTests(unittest.TestCase):
         # (the broom shows; the key replaces it; the key goes as Bo speaks; the clear leaves nothing; 27004 shows)
         self.assertEqual(leaving, [-1, 27001, 27002, -1, -1])
 
+    def test_the_photo_fits_whole_in_its_box(self):
+        """Owner, 2026-11-24: tall photos were cut off (filled and cropped); each is shown whole, its shape kept."""
+        import pygame
+        from exp_runtime.desktop_dialogue import DialogueRenderer
+        pygame.init()
+        self.addCleanup(pygame.quit)
+        pictures = {1: pygame.Surface((200, 100)), 2: pygame.Surface((60, 120)), 3: pygame.Surface((10, 8))}
+        renderer = SimpleNamespace(image=pictures.get, _story_objects={})
+        fit = lambda n: DialogueRenderer.story_photo_image(renderer, n, (79, 63)).get_size()     # noqa: E731
+        self.assertEqual(fit(1), (79, 40))          # (a wide one: its width)
+        self.assertEqual(fit(2), (32, 63))          # (a tall one: its height, where the game cut it)
+        self.assertEqual(fit(3), (79, 63))          # (a small one grows to fit, as the four the game never drew)
+
     def test_it_slides_in_and_the_last_one_fades_out_on_the_lines_clock(self):
         from exp_runtime.desktop_dialogue import (DialogueRenderer, STORY_PHOTO_IN_MS, STORY_PHOTO_OUT_MS,
                                                   STORY_PHOTO_SLIDE)

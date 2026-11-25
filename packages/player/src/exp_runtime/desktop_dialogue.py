@@ -29,6 +29,10 @@ STORY_OBJECT_INSET = 3
 # units (256 of the frame's), and fades out over 0.3 s as the next line starts; its white frame and edge.
 STORY_PHOTO_IN_MS, STORY_PHOTO_OUT_MS, STORY_PHOTO_SLIDE = 500, 300, 256
 STORY_PHOTO_FILL, STORY_PHOTO_EDGE = (250, 248, 242), (150, 140, 120)
+# The photo's picture area: the game's backing, a soft gradient from grey-mauve to deep plum (chs_11), the picture whole
+# and centred in it with a margin (owner, 2026-11-24: cropped to fill, pictures were cut off).
+STORY_PHOTO_BACKING = ((132, 126, 124), (72, 48, 62))
+STORY_PHOTO_MARGIN = 0.8          # (the share of the picture area a photo's longer side takes, as the game's)
 
 
 def _decoded_size(data: bytes) -> tuple[int, int]:
@@ -1248,23 +1252,38 @@ class DialogueRenderer:
         pygame.draw.rect(layer, STORY_PHOTO_EDGE, body, max(1, round(k)))
         box_w, box_h = STORY_PHOTO_PICTURE
         box = pygame.Rect(round((frame.width - box_w) / 2 * k), round(STORY_PHOTO_PICTURE_TOP * k), round(box_w * k), round(box_h * k))
-        image = self.story_photo_image(picture, box.size)
+        layer.blit(self.story_photo_backing(box.size), box.topleft)
+        image = self.story_photo_image(picture, (max(1, round(box.width * STORY_PHOTO_MARGIN)),
+                                                 max(1, round(box.height * STORY_PHOTO_MARGIN))))
         if image is not None:
-            layer.blit(image, box.topleft)
+            layer.blit(image, (box.x + (box.width - image.get_width()) // 2, box.y + (box.height - image.get_height()) // 2))
         self.canvas.blit(faded(layer, round(255 * alpha)) if alpha < 1 else layer, rect.topleft)
 
+    def story_photo_backing(self, size):
+        """The picture area's gradient (STORY_PHOTO_BACKING) at `size`, made once."""
+        key = 'photo backing', size
+        cache = self._story_objects
+        if key not in cache:
+            surface = pygame.Surface(size)
+            top, bottom = STORY_PHOTO_BACKING
+            for row in range(size[1]):
+                t = row / max(1, size[1] - 1)
+                surface.fill(tuple(round(a + (b - a) * t) for a, b in zip(top, bottom)), pygame.Rect(0, row, size[0], 1))
+            cache[key] = surface
+        return cache[key]
+
     def story_photo_image(self, picture, size):
-        """The photo filling its picture box (cut to it, its shape kept), as the sequel's box shows it; None without it."""
+        """The photo whole in its picture box, its shape kept (the game scales by the longer side; checking both, none
+        overflows, where the game's one-side fit cut 59 of 253 off); None without it."""
         key = 'photo', picture, size
         cache = self._story_objects
         if key not in cache:
             image = self.image(picture)
             if image is not None:
                 width, height = image.get_size()
-                factor = max(size[0] / max(width, 1), size[1] / max(height, 1))
-                scaled = pygame.transform.smoothscale(image, (max(1, round(width * factor)), max(1, round(height * factor))))
-                cut = pygame.Rect((scaled.get_width() - size[0]) // 2, (scaled.get_height() - size[1]) // 2, *size)
-                image = scaled.subsurface(cut).copy()
+                factor = min(size[0] / max(width, 1), size[1] / max(height, 1))
+                image = pygame.transform.smoothscale(image, (max(1, min(size[0], round(width * factor))),
+                                                             max(1, min(size[1], round(height * factor)))))
             if len(cache) > 32:
                 cache.clear()
             cache[key] = image
