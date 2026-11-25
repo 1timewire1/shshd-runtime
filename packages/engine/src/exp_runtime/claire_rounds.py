@@ -128,18 +128,22 @@ class ClaireRound:
 
     # --- opening ----------------------------------------------------------------------------------------------------------
     @classmethod
-    def opened(cls, scene, names, story, random, powerups=ONCE_EACH, title=''):
+    def opened(cls, scene, names, story, random, powerups=ONCE_EACH, title='', pool=None):
         """A round of the scene whose objects are `names`, with the story objects `story` (their places in it) forced in:
-        hogscene.selectObjectList, its shuffle drawn from the session's `random` so a reload picks the same."""
+        hogscene.selectObjectList, its shuffle drawn from the session's `random` so a reload picks the same. `pool`: the
+        objects it may pick (Round Style, a sequel scene under Classic's rules: its ordinary objects, not its close-up,
+        multi-part or Gold Key ones, which Classic's screen can't show); None for all."""
         count = len(names)
-        order = list(range(count))
+        order = list(range(count)) if pool is None else [i for i in pool if 0 <= i < count]
+        story = [i for i in story if i in order]
+        count = len(order)
         for i in range(count):                       # (each place swapped with a later one, as hogscene's loop)
             j = i + random.below(count - i)
             order[i], order[j] = order[j], order[i]
         total = min(max(1, SOL_SIZE + ADD_OBJECTS), count)
         picked = []
         for index in story:
-            if 0 <= index < count and index not in picked:
+            if index in order and index not in picked:
                 picked.append(index)
                 order.remove(index)
         picked += order[:max(0, total - len(picked))]
