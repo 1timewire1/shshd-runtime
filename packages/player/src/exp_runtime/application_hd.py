@@ -369,6 +369,9 @@ class HdShell:
             settings['claire_powerups'] = CLAIRE_POWERUPS_NAMES[state.claire_powerups]
         if self.app.minigames_offered():
             settings['arena_minigames'] = state.arena_minigames
+        if self.app.sd_portraits_offered():
+            from .desktop_pause_hd import SD_PORTRAITS_NAMES
+            settings['sd_portraits'] = SD_PORTRAITS_NAMES[state.sd_portraits]
         settings['skip_ahead'] = state.skip_ahead
         settings['undo'] = state.undo
         if self.app.grids_as_memory_offered():
@@ -486,6 +489,10 @@ class HdShell:
             state.ch_dialogue = value
             self.app._attempt(state.persist)
             self.app.apply_ch_dialogue()
+        elif key == 'sd_portraits':
+            state.sd_portraits = value
+            self.app._attempt(state.persist)
+            self.app.apply_sd_portraits()
         elif key == 'claire_powerups':
             state.claire_powerups = value
             self.app._attempt(state.persist)

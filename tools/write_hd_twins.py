@@ -2,8 +2,9 @@
 
     python tools/write_hd_twins.py --library LIBRARY --pairs PAIRS.json [--source OTHER_LIBRARY ...] [--dry-run]
 
-PAIRS.json holds {"pairs": [{"sd": fingerprint, "hd": fingerprint, "size": [w, h], "effect": null | [kind, ...]}]}:
-fingerprints only (`hd_twins.fingerprint`), kept outside the project with the art catalogue. Each picture is found in
+PAIRS.json holds {"pairs": [{"sd": fingerprint, "hd": fingerprint, "size": [w, h], "effect": null | [kind, ...]}]}
+and SD Portraits' tables (`sd_of`, `sd_of_episode`, `redesigned`, `bank_portraits`; `hd_twins.SdPortraits`):
+fingerprints, record ids and resource ids only (`hd_twins.fingerprint`), kept outside the project with the art catalogue. Each picture is found in
 the libraries' own episodes (LIBRARY first, then each --source: the owner's library lacks the standard copies of most
 stories that have an HD release, which a reference library holds). A pair with an effect stores the HD picture
 recreated to match the standard one (`hd_effects`), and the store's `effects.json` keeps its HD fingerprint and
@@ -18,7 +19,7 @@ from pathlib import Path
 
 from exp_runtime.content import ContentLibrary
 from exp_runtime.hd_effects import apply as apply_effect
-from exp_runtime.hd_twins import EFFECTS, fingerprint
+from exp_runtime.hd_twins import EFFECTS, PORTRAITS, fingerprint
 
 
 def find(libraries, wanted):
@@ -51,7 +52,8 @@ def main():
     parser.add_argument('--source', type=Path, action='append', default=[])
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
-    pairs = json.loads(args.pairs.read_text(encoding='utf-8'))['pairs']
+    document = json.loads(args.pairs.read_text(encoding='utf-8'))
+    pairs = document['pairs']
     with ContentLibrary(args.library) as library:
         library.hd_art_mode = 'off'
         sources = [ContentLibrary(path) for path in args.source]
@@ -78,6 +80,11 @@ def main():
         store.clear()
         store.add_pictures(pictures)
         (store.directory / EFFECTS).write_text(json.dumps(effects, separators=(',', ':')), encoding='utf-8')
+        # SD Portraits' tables, for the export: which original each HD portrait goes back to, the redesigns and the
+        # shared bank's portrait ids (`hd_twins.SdPortraits`).
+        tables = {key: document.get(key, {} if key.startswith('sd_of') else [])
+                  for key in ('sd_of', 'sd_of_episode', 'redesigned', 'bank_portraits')}
+        (store.directory / PORTRAITS).write_text(json.dumps(tables, separators=(',', ':')), encoding='utf-8')
         print(f'{len(store)} pictures in {store.directory}')
         for source in sources:
             source.close()

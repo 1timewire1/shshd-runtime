@@ -6,7 +6,7 @@
 
 - **HD art for standard episodes: the art audit's corrections** (owner's review, 2026-11-24/25). Every SHS episode,
   standard and HD, was walked through its branches with the engine, and every SD-HD pair checked by eye with the owner.
-  The twin map (`shs/hd_twin_map.py`, version `946e44cd28e2`) now holds 2,023 pairs (was 1,795):
+  The twin map (`shs/hd_twin_map.py`, version `38d44022bf30`) now holds 2,023 pairs (was 1,795):
   - **Added:** 187 portraits (characters the old short walk never reached, costume looks, art one story shares
     with another story's HD) and 43 backgrounds.
   - **Removed:** a night house paired with a cemetery path, and the rainy windshield whose scenes are about the rain.
@@ -33,6 +33,16 @@
   the save.
 
 ### Added
+
+- **SD Portraits** (owner, 2026-11-25; Options › Extras, SHS only). Draws portraits in their standard originals:
+  **Off** (the default), **Everywhere** or **Redesigns Only**, which brings back the 54 portraits the HD release
+  redesigned (Magic School's red-haired Cady, Madame Fortuna, Kevin's lime shirt...) and leaves every redraw in HD.
+  - Backgrounds stay HD, and each original is drawn at twice its size, so the layout does not move.
+  - A standard episode keeps its own portraits.
+  - An HD episode takes the original its story's standard release shows, from the player's standard episodes or the
+    new **SD Portraits add-on** (`shssd`, built by `tools/build_sd_addon.py`). Built for the v1.1.0 bulk zip, it carries
+    the 444 originals that install lacks.
+  - Changes at once, mid-episode too; saves are unaffected.
 
 - **Claire Hart Classic in the Creator** (Claire Hart plan Stage 6, owner 2026-11-24; `claire-hart` branch). A Cause of Death
   project can take `chc` as its primary add-on (Add-ons and settings…, now open to CoD projects, which also reaches CoD's

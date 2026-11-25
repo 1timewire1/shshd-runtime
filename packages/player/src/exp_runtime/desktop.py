@@ -55,7 +55,7 @@ from .x360_diss import (ROUND_BACKGROUNDS as X360_ROUND_BACKGROUNDS, ROUND_EPISO
                         SOUND_GOOD as X360_SOUND_GOOD, SOUND_REMIX as X360_SOUND_REMIX)
 from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, GRID_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
-from .desktop_pause_hd import (ASPECT_NAMES, CH_DIALOGUE_NAMES, CLAIRE_POWERUPS_NAMES, TEXT_ANIMATION_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE, LANGUAGE_NAMES,
+from .desktop_pause_hd import (ASPECT_NAMES, CH_DIALOGUE_NAMES, CLAIRE_POWERUPS_NAMES, SD_PORTRAITS_NAMES, TEXT_ANIMATION_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, JOURNAL_LABEL, KEYS_ACTIVATE, LANGUAGE_NAMES,
                                drag_scroll, focus_step, place_controls)
 from . import backdrop_fit, frame_shape
 from .desktop_hd_menu import HdMenuWindows
@@ -2991,6 +2991,23 @@ class Desktop:
             library.ch_portraits = enabled
         self._drop_portraits()
 
+    sd_portraits = 'off'        # SD Portraits (Extras): 'off', 'all' or 'redesigns' (set_sd_portraits)
+
+    def set_sd_portraits(self, value):
+        """shshd-runtime: Extras' SD Portraits, from either Options page. The library reads it from the next portrait drawn
+        (content.EpisodeResources._sd_original) and every cached portrait is dropped, so the story shows it at once; both
+        looks fill the ring alike, so nothing else moves. Saves name resources, never pictures, so they need nothing."""
+        from .desktop_pause_hd import SD_PORTRAITS_NAMES
+        self.sd_portraits = value if value in SD_PORTRAITS_NAMES else 'off'
+        library = getattr(self.session.resources, 'library', None)
+        if library is not None:
+            library.sd_portraits = self.sd_portraits
+        self._drop_portraits()
+
+    def sd_portraits_switch(self):
+        """Whether SD Portraits concerns this story: an SHS episode."""
+        return game_id(self.session.resources) == 'shs'
+
     def _drop_portraits(self):
         self.images.clear()
         cached = [DialogueRenderer.portrait, DialogueRenderer.hd_portrait, DialogueRenderer._portrait_parts,
@@ -4190,6 +4207,8 @@ class Desktop:
                     **({'hollywood_art': self.hollywood_art} if self.hollywood_switch() else {}),
                     **({'dsi_backgrounds': DSI_BACKGROUNDS_NAMES[dsi_backgrounds_value(self.dsi_backgrounds, self.dsi_pixels)]}
                        if self.dsi_switch() else {}),
+                    **({'sd_portraits': SD_PORTRAITS_NAMES[self.sd_portraits]}
+                       if getattr(self, 'sd_portraits_switch', None) and self.sd_portraits_switch() else {}),
                     **({'preferred_language': LANGUAGE_NAMES[self.preferred_language]}
                        if self.preferred_language_switch() else {}),
                     **({'smartphone_music': self.smartphone_music} if self.smartphone_switch() else {}),
@@ -4403,6 +4422,17 @@ class Desktop:
             choices = list(CLAIRE_POWERUPS_NAMES)
             self.claire_powerups = (command[2] if len(command) > 2
                                     else choices[(choices.index(self.claire_powerups) + 1) % len(choices)])
+            if self.on_settings:
+                self.on_settings()
+            if len(command) > 2:
+                self.pause_hd.back()
+            self._menu_sound()
+            return
+        if kind == 'pause_cycle' and command[1] == 'sd_portraits':
+            # Extras' SD Portraits, picked on its choice page (or stepped to the next); the app keeps it.
+            choices = list(SD_PORTRAITS_NAMES)
+            self.set_sd_portraits(command[2] if len(command) > 2
+                                  else choices[(choices.index(self.sd_portraits) + 1) % len(choices)])
             if self.on_settings:
                 self.on_settings()
             if len(command) > 2:

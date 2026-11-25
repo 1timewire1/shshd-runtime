@@ -408,6 +408,25 @@ The earlier tools (`build_hd_twins.py`, `extend_hd_twins.py`,
 list does not cover. Rerun the export after changing that library's store;
 the new `VERSION` makes every library rebuild once.
 
+**SD Portraits** (Options › Extras; SHS only; owner, 2026-11-25) draws
+portraits in their standard originals: **Off** (the default), **Everywhere**,
+or **Redesigns Only** (the 54 pairs the HD release redesigned, such as Magic
+School's red-haired Cady or Madame Fortuna). Backgrounds are never affected.
+An original is drawn at twice its size, as `fill` draws a standard picture,
+so the ring and layout stay the same.
+- A standard episode keeps its own portrait instead of the HD twin.
+- An HD episode needs the original from elsewhere. The map's `SD_OF` names
+  it for each HD portrait, and `SD_OF_EPISODE` an episode's own where its
+  story's standard release shows a different one (one HD picture can be Viv
+  in one story and Patchouli in another; a different look never falls back
+  to the shared one). The originals are kept in `sd_portraits/` beside the
+  twin store, gathered in the same build from the library's standard episodes
+  and the SD Portraits add-on (`shssd`, [ADDONS.md](ADDONS.md)); the build
+  runs again when the map's `VERSION` or the add-on's revision changes.
+- A shared-bank portrait is drawn from Android's bank by its id
+  (`BANK_PORTRAITS`); no bank portrait's pair is a redesign.
+- A portrait whose original the player has nowhere stays HD.
+
 ### Frame-time log (this fork)
 
 Set `SHSHD_FRAME_LOG` to a file path before launching to record one CSV line per application frame
