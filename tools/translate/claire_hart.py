@@ -89,7 +89,12 @@ NARRATOR_DEFAULT = {                    # characterutil.NARRATOR.DEFAULT: narrat
 # Text (TRANSLATOR_PLAN's rules for Classic): the Creator's text is Latin-1, so the 124 curly quotes, ellipses and dashes
 # and 3 ō become plain ones; a line's trailing space goes and its 6 newlines join as spaces.
 TEXT = str.maketrans({'\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"', '\u2026': '...', '\u2013': '-',
-                      '\u2014': '-', '\u014d': 'o', '\n': ' ', '\r': ' '})
+                      '\u2014': '-', '\u014d': 'o', '\n': ' ', '\r': ' ',
+                      # Cyrillic letters typed for their Latin look-alikes (the sequel's case 44: "a murderer" with a
+                      # Cyrillic a; a story's text must be Latin-1)
+                      '\u0430': 'a', '\u0435': 'e', '\u043e': 'o', '\u0440': 'p', '\u0441': 'c', '\u0445': 'x',
+                      '\u0443': 'y', '\u0410': 'A', '\u0415': 'E', '\u041e': 'O', '\u0420': 'P', '\u0421': 'C',
+                      '\u0425': 'X', '\u041a': 'K', '\u041c': 'M', '\u041d': 'H', '\u0422': 'T', '\u0412': 'B'})
 WRAPPED = ('textColors', 'music', 'sounds', 'dialog objects', 'sprites')    # driver.runConfig keeps these as sub-maps
 NOTHING = ('nothing', 'none', 'noobject', 'nostoryobject')
 FACE = re.compile(r'(.*?)_?(Normal|Sad|Angry|Happy|Surprised|Scream|Masked)( \d)?$')

@@ -278,6 +278,22 @@ class ConverterTests(unittest.TestCase):
         self.assertEqual(project.addons, [dict(id='ch2', revision=1)])
         from claire_hart import compiled
         self.assertTrue(compiled(project, {}))                 # (it compiles)
+        # A case too long for one script, in halves (owner, 2026-11-25): the second titled "(Part 2)", numbered case x 10
+        # + its first part's number, and opening with the first half's finished journal pages (no notice).
+        second, _, report = S.convert(mirror, art, number, title, parts, half=2, before=parts, case_parts=2)
+        self.assertEqual((second.episode_id, second.title), (11, 'Bitter Revenge (Part 2) (CH2)'))
+        self.assertEqual([second.nodes[0].kind, second.nodes[0].params['number'], second.nodes[0].text, second.nodes[1].kind],
+                         ['quest', 0, 'Troy was arrested.\nI must help.\n\nWill helps.', 'title'])
+        self.assertEqual(report['journal pages carried from the first half'], 1)
+        first, _, _ = S.convert(mirror, art, number, title, parts, half=1, case_parts=2)
+        self.assertEqual((first.episode_id, first.title), (10, 'Bitter Revenge (Part 1) (CH2)'))
+
+    def test_cyrillic_look_alikes_are_read_as_latin(self):
+        """(case 44: "a murderer" typed with a Cyrillic a; a story's text must be Latin-1)"""
+        from claire_hart import story_text
+        self.assertEqual(story_text('tells a story about а murderer'), 'tells a story about a murderer')
+        story_text('АВЕКМНОРСТХаеорсух'
+                   ).encode('latin-1')
 
 
 class Pack31900Tests(unittest.TestCase):

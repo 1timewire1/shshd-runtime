@@ -832,13 +832,26 @@ def store_scenes(mirror, cache=None):
     return out
 
 
-def convert(mirror, art, number, title, parts):
+def convert(mirror, art, number, title, parts, *, half=None, before=(), case_parts=None):
     """A case as (a Creator Project for Cause of Death, its backdrop slices, a report): its parts in order, each opened by
     a title card over its store picture's scene (N, N2), its chapters, and each round: played for real behind the
-    claire2_round query (S3), else its stand-in line (G)."""
+    claire2_round query (S3), else its stand-in line (G).
+
+    A case too long for one episode (the native script's text limit) is built in two halves (owner, 2026-11-25; may be
+    revisited if the limit is raised for Choices): `half` 1 or 2, titled "(Part 1)" / "(Part 2)" in the picker, the second
+    numbered case x 10 + its first part's number; `before` are the first half's parts, whose finished journal pages the
+    second half starts with (no notices); `case_parts` the whole case's part count (the journal's "Part n:" titles)."""
     from exp_runtime.creator import Project
     builder = make_builder()(mirror, art, art['names'])
     title = story_text(title)
+    whole = case_parts or len(parts)
+    for part in before:
+        texts = [text for _, text in journal_queue(part)]
+        if texts:
+            builder.add('quest', text='\n\n'.join(texts), params={
+                'number': part.number - 1, 'title': (f'Part {part.number}: {story_text(part.title)}' if whole > 1
+                                                     else story_text(part.title))[:80]})
+            builder.report['journal pages carried from the first half'] += 1
     for part in parts:
         # The part's title over the case's, as Classic's cards (owner, 2026-11-20).
         builder.add('title', text=story_text(part.title), params={
@@ -847,7 +860,7 @@ def convert(mirror, art, number, title, parts):
         again = player == builder.player_folder and part.number > 1
         builder.play_as(player)
         builder.queue, builder.notes = journal_queue(part), []
-        builder.quest = (part.number - 1, (f'Part {part.number}: {story_text(part.title)}' if len(parts) > 1
+        builder.quest = (part.number - 1, (f'Part {part.number}: {story_text(part.title)}' if whole > 1
                                            else story_text(part.title))[:80])
         order = chapters_of(part.sequences)
         played = 0
@@ -859,7 +872,9 @@ def convert(mirror, art, number, title, parts):
                                  key=shadows_key(number, part.number, played))
         builder.log['journal entries never unlocked'] += len(builder.queue)
     builder.add('end')
-    project = Project(title=title + TITLE_TAG, game='cod', pack_id=PACK_ID, episode_id=number * 10,
+    episode = number * 10 + (parts[0].number if half == 2 else 0)
+    shown = f'{title} (Part {half})' if half else title
+    project = Project(title=shown + TITLE_TAG, game='cod', pack_id=PACK_ID, episode_id=episode,
                       episode_version=STORY_VERSION, nodes=builder.nodes)
     project.addons = [dict(id=ADDON_ID, revision=CASES_NEED_CH2)]
     project.assets = [builder.assets[ident] for ident in sorted(builder.assets)]
@@ -1070,6 +1085,36 @@ def write_reviews(folder, reviews):
                        ('Episode', 'Line', 'Kept (blank: the line goes)'), rows)
 
 
+def case_episodes(mirror, art, number, title, parts):
+    """[(file name, (project, slices, report, .exp bytes))]: the case as one episode, or, too long for the native script
+    (its text limit), as two halves split at the part boundary that balances their text best of those where both fit."""
+    from claire_hart import compiled
+    from exp_runtime.creator.model import ProjectError
+    project, slices, report = convert(mirror, art, number, title, parts)
+    try:
+        return [(f'CH2_{number:03d}.exp', (project, slices, report, compiled(project, slices)))]
+    except ProjectError as error:
+        if 'single-script' not in str(error) or len(parts) < 2:
+            raise
+
+    def text_size(nodes):
+        return sum(len(node.text or '') for node in nodes)
+    sizes = [text_size(convert(mirror, art, number, title, [part])[0].nodes) for part in parts]
+    order = sorted(range(1, len(parts)), key=lambda k: abs(sum(sizes[:k]) - sum(sizes[k:])))
+    for k in order:
+        try:
+            halves = []
+            for half, chosen, before in ((1, parts[:k], ()), (2, parts[k:], parts[:k])):
+                project, slices, report = convert(mirror, art, number, title, chosen, half=half, before=before,
+                                                  case_parts=len(parts))
+                halves.append((f'CH2_{number:03d}_{half}.exp', (project, slices, report, compiled(project, slices))))
+            return halves
+        except ProjectError as error:
+            if 'single-script' not in str(error):
+                raise
+    raise ProjectError(f'case {number} fits in no two halves')
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest='command', required=True)
@@ -1163,12 +1208,11 @@ def main(argv=None):
         for number, title, parts in mirror.cases():
             if wanted is not None and number not in wanted:
                 continue
-            project, slices, report = convert(mirror, art, number, title, parts)
-            for key in reviews:
-                reviews[key] += report.reviews[key]
-            name = f'CH2_{number:03d}.exp'
-            (args.out / name).write_bytes(compiled(project, slices))
-            print(f'{name}: {project.title!r}, {len(project.nodes)} nodes, {dict(report)}')
+            for name, (project, slices, report, data) in case_episodes(mirror, art, number, title, parts):
+                for key in reviews:
+                    reviews[key] += report.reviews[key]
+                (args.out / name).write_bytes(data)
+                print(f'{name}: {project.title!r}, episode {project.episode_id}, {len(project.nodes)} nodes, {dict(report)}')
         write_reviews(args.out, reviews)
     elif args.patch:
         # (a revision 2 build given the title, the rest streamed as it is)
