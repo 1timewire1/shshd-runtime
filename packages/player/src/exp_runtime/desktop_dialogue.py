@@ -7,7 +7,8 @@ from .graphics import faded
 from . import graphics as pygame
 
 from .content import ContentError
-from .dialogue import BODY_FONT, DUET_RING_SCALE, NOTE_CODE, SKIN_NARRATION_RING
+from .dialogue import (BODY_FONT, DUET_RING_SCALE, NOTE_CODE, SKIN_NARRATION_RING, STORY_PHOTO_PICTURE,
+                       STORY_PHOTO_PICTURE_TOP)
 from .dialogue_animation import BOX_TRAVEL_MS
 
 REUSE_AT_REST = False                       # a phone keeps a settled line's layer (platforms/android.py): `_at_rest`
@@ -24,6 +25,10 @@ from .ui_assets import ImagePack, Raster, Rect, UIAssetError, read_ui
 STORY_OBJECT_FILL = (246, 244, 232)
 STORY_OBJECT_EDGE = (170, 165, 145)
 STORY_OBJECT_INSET = 3
+# Secret in the Shadows' photo (storyobject.js): it slides in from the right over 0.5 s as it fades in, 300 of its design's
+# units (256 of the frame's), and fades out over 0.3 s as the next line starts; its white frame and edge.
+STORY_PHOTO_IN_MS, STORY_PHOTO_OUT_MS, STORY_PHOTO_SLIDE = 500, 300, 256
+STORY_PHOTO_FILL, STORY_PHOTO_EDGE = (250, 248, 242), (150, 140, 120)
 
 
 def _decoded_size(data: bytes) -> tuple[int, int]:
@@ -1201,6 +1206,70 @@ class DialogueRenderer:
             cache[key] = image
         return cache[key]
 
+    @staticmethod
+    def story_photo_states(page, age):
+        """The sequel's photos to draw `age` ms into the line, as (picture, Rect, x offset in units, alpha 0-1): the one
+        leaving fades out where it is over STORY_PHOTO_OUT_MS; the line's own slides in from the right as it fades in over
+        STORY_PHOTO_IN_MS. On the line's own clock (DialogueAnimation.age_ms), so a page turn, a save or a reused frame
+        never restarts or loses them."""
+        states = []
+        leaving = getattr(page, 'story_photo_leaving', ())
+        if leaving and age < STORY_PHOTO_OUT_MS:
+            states.append((leaving[0], leaving[1], 0., 1 - age / STORY_PHOTO_OUT_MS))
+        shown = getattr(page, 'story_photo', ())
+        if shown:
+            t = min(1., age / STORY_PHOTO_IN_MS)
+            states.append((shown[0], shown[1], STORY_PHOTO_SLIDE * (1 - t) ** 3, t))
+        return states
+
+    def story_photo_moving(self, page, motion):
+        """Whether the sequel's photo is still sliding in or fading out on this line (so the line isn't at rest)."""
+        age = getattr(motion, 'age_ms', STORY_PHOTO_IN_MS)
+        return page is not None and ((bool(getattr(page, 'story_photo', ())) and age < STORY_PHOTO_IN_MS)
+                                     or (bool(getattr(page, 'story_photo_leaving', ())) and age < STORY_PHOTO_OUT_MS))
+
+    def draw_story_photo(self, page, age):
+        """shshd-runtime (service 225, the sequel's way: DialoguePage.story_photo): its one photo, in a white frame above the
+        box at its right (owner's pick B, 2026-11-24), and the last one fading out as this line starts."""
+        for state in self.story_photo_states(page, age):
+            self.draw_story_photo_frame(*state)
+
+    def draw_story_photo_frame(self, picture, frame, shift, alpha):
+        if alpha <= 0:
+            return
+        k = self.scale
+        rect = pygame.Rect(round((frame.x + shift) * k), round(frame.y * k), round(frame.width * k), round(frame.height * k))
+        layer = pygame.Surface((rect.width + round(8 * k), rect.height + round(8 * k)), pygame.SRCALPHA).convert_alpha()
+        layer.fill((0, 0, 0, 0))
+        shadow = pygame.Rect(round(3 * k), round(5 * k), rect.width, rect.height)
+        pygame.draw.rect(layer, (0, 0, 0, 90), shadow, border_radius=max(1, round(2 * k)))
+        body = pygame.Rect(0, 0, rect.width, rect.height)
+        pygame.draw.rect(layer, STORY_PHOTO_FILL, body)
+        pygame.draw.rect(layer, STORY_PHOTO_EDGE, body, max(1, round(k)))
+        box_w, box_h = STORY_PHOTO_PICTURE
+        box = pygame.Rect(round((frame.width - box_w) / 2 * k), round(STORY_PHOTO_PICTURE_TOP * k), round(box_w * k), round(box_h * k))
+        image = self.story_photo_image(picture, box.size)
+        if image is not None:
+            layer.blit(image, box.topleft)
+        self.canvas.blit(faded(layer, round(255 * alpha)) if alpha < 1 else layer, rect.topleft)
+
+    def story_photo_image(self, picture, size):
+        """The photo filling its picture box (cut to it, its shape kept), as the sequel's box shows it; None without it."""
+        key = 'photo', picture, size
+        cache = self._story_objects
+        if key not in cache:
+            image = self.image(picture)
+            if image is not None:
+                width, height = image.get_size()
+                factor = max(size[0] / max(width, 1), size[1] / max(height, 1))
+                scaled = pygame.transform.smoothscale(image, (max(1, round(width * factor)), max(1, round(height * factor))))
+                cut = pygame.Rect((scaled.get_width() - size[0]) // 2, (scaled.get_height() - size[1]) // 2, *size)
+                image = scaled.subsurface(cut).copy()
+            if len(cache) > 32:
+                cache.clear()
+            cache[key] = image
+        return cache[key]
+
     def draw_story_objects(self, page, alpha):
         """shshd-runtime (service 225, Claire Hart plan P): the line's story-object pictures, each in a framed square along
         the box's bottom (DialoguePage.story_objects), coming in with the title as Classic's come in with the box."""
@@ -1506,6 +1575,7 @@ class DialogueRenderer:
         # shshd-runtime: `still` says so whether or not the layer is kept (Desktop._prime_games works in still frames).
         self.still = not (target is not None or not motion.at_rest or session.engine.notice_ms
                           or (hasattr(session, 'portrait_effect') and session.portrait_effect() is not None)
+                          or self.story_photo_moving(getattr(self, 'cached_page', None), motion)
                           or (not self.autoplay and self.has_hd_bundle() and self.continue_progress(session) < 1))  # the pill's own clock
         if not REUSE_AT_REST or not self.still:
             return None
@@ -1594,6 +1664,8 @@ class DialogueRenderer:
         # a full-width strip, to its final height (setupAnimationsForTextLayer, `box_rect`).
         angle, zoom = motion.box_rotation, motion.box_scale
         k = self.scale
+        # The sequel's photo: drawn from the line's first frame, so it fades out while the next box comes in.
+        self.draw_story_photo(page, motion.age_ms)
         previous = self.previous_box(motion, page)
         if motion.box_alpha == 0:
             pass                                   # the shake keeps the box hidden until it starts

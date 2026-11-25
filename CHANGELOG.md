@@ -16,6 +16,14 @@
 
 ### Added
 
+- **Secret in the Shadows, Stage 0** (Claire Hart's sequel; `CLAIRE_HART_PLAN.md` S0, owner 2026-11-24): what its
+  translated cases (pack 31900, " (CH2)") will need in the player. Its own tag and category ("Claire Hart: Secret in the
+  Shadows"); its backdrops dimmed to 102/255 under Dim Backdrops; narration with the narrator's portrait; and its story
+  photo (service 225's `STORY_OBJECT_PHOTO` mode). That is one framed photo at a time, above the dialogue box at its right
+  (the owner's pick, since the sequel's own spot lands on CoD's text). It slides in from the right with a 0.5 s fade,
+  lasts one line, and fades out over 0.3 s as the next starts, as the sequel's does. Saves are version 47 (the photo's
+  state); older ones load with none. No sequel episodes exist yet: the translator is Stage 1.
+
 - **Claire Hart Classic in the Creator** (Claire Hart plan Stage 6, owner 2026-11-24; `claire-hart` branch). A Cause of Death
   project can take `chc` as its primary add-on (Add-ons and settings…, now open to CoD projects, which also reaches CoD's
   **Narration shows the narrator's portrait**). It then has a case's look: the skin with Claire Hart Cases, narrator

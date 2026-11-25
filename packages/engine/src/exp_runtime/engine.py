@@ -406,9 +406,11 @@ class EngineState:
         if narration:
             extra['narration'] = True
         if self.story_photo_mode:
-            photo = self.story_photo_for_line()
+            photo, leaving = self.story_photo_for_line()
             if photo >= 0:
                 extra['story_photo'] = photo
+            if leaving >= 0:
+                extra['story_photo_leaving'] = leaving          # (fading out as this line starts)
         else:
             row = self.story_object_row([character, self.panel.speaker, presentation])
             if row:
@@ -429,16 +431,19 @@ class EngineState:
         return self.dt_view.add_node(node_type, label, exw, uid, pc, state=read_state(self))
 
     def story_photo_for_line(self):
-        """shshd-runtime (service 225 in the sequel's way, the profile's STORY_OBJECT_PHOTO): the photo shown with this line,
-        or -1. One at a time: a picture due shows with the next line, replacing any other, and goes as the line after that
-        starts (Secret in the Shadows' storyobjectmanager hides it at every line but ignores the first)."""
+        """shshd-runtime (service 225 in the sequel's way, the profile's STORY_OBJECT_PHOTO): (the photo shown with this line,
+        the one fading out as it starts), -1 for none. One at a time: a picture due shows with the next line, replacing any
+        other, and goes as the line after that starts (Secret in the Shadows' storyobjectmanager hides it at every line but
+        ignores the first, and fades it out over 0.3 s)."""
+        leaving = -1
         if self.story_photo_due >= 0:
+            leaving = self.story_photo if self.story_photo != self.story_photo_due else -1
             self.story_photo, self.story_photo_due, self.story_photo_lines = self.story_photo_due, -1, 0
         elif self.story_photo >= 0:
             self.story_photo_lines += 1
             if self.story_photo_lines >= 1:
-                self.story_photo = -1
-        return self.story_photo
+                leaving, self.story_photo = self.story_photo, -1
+        return self.story_photo, leaving
 
     def story_object_row(self, speaker):
         """shshd-runtime (service 225, Claire Hart plan P): the story-object pictures shown with this line. As Classic's

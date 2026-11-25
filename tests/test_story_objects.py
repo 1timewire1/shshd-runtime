@@ -162,3 +162,39 @@ class StoryPhotoTests(unittest.TestCase):
         for key in ('story_photo_due', 'story_photo', 'story_photo_lines'):
             old['engine'].pop(key)
         self.assertEqual(Session.from_snapshot(story_resources(), old).engine.story_photo, -1)
+
+
+class StoryPhotoLayoutTests(unittest.TestCase):
+    def test_the_line_after_names_the_photo_leaving(self):
+        session = Session(story_resources())
+        session.engine.story_photo_mode = True
+        leaving = []
+        for _ in range(5):
+            while session.pending is None or session.pending.name != 'dialogue':
+                session.advance()
+            line = session.pending
+            leaving.append(line.details.get('story_photo_leaving', -1))
+            for _ in range(4):
+                if session.pending is not line:
+                    break
+                session.tick(3000)
+                session.answer()
+        # (the broom shows; the key replaces it; the key goes as Bo speaks; the clear leaves nothing; 27004 shows)
+        self.assertEqual(leaving, [-1, 27001, 27002, -1, -1])
+
+    def test_it_slides_in_and_the_last_one_fades_out_on_the_lines_clock(self):
+        from exp_runtime.desktop_dialogue import (DialogueRenderer, STORY_PHOTO_IN_MS, STORY_PHOTO_OUT_MS,
+                                                  STORY_PHOTO_SLIDE)
+        place = Rect(175, 180, 105, 106)
+        page = SimpleNamespace(story_photo=(27002, place), story_photo_leaving=(27001, place))
+        states = DialogueRenderer.story_photo_states
+        (gone, _, _, gone_alpha), (new, _, shift, alpha) = states(page, 0)
+        self.assertEqual((gone, gone_alpha, new, shift, alpha), (27001, 1, 27002, STORY_PHOTO_SLIDE, 0))
+        middle = states(page, STORY_PHOTO_OUT_MS // 2)
+        self.assertAlmostEqual(middle[0][3], .5)
+        self.assertEqual([s[0] for s in states(page, STORY_PHOTO_OUT_MS)], [27002])        # (the old one is gone)
+        self.assertEqual(states(page, STORY_PHOTO_IN_MS)[0][2:], (0., 1.))                 # (in place, opaque)
+        renderer = SimpleNamespace()
+        moving = lambda age: DialogueRenderer.story_photo_moving(renderer, page, SimpleNamespace(age_ms=age))
+        self.assertTrue(moving(100))
+        self.assertFalse(moving(STORY_PHOTO_IN_MS))                                         # (the line can rest)

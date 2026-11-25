@@ -73,6 +73,11 @@ STORY_OBJECT_SLOT = 36                  # a square's side, in units, when the ro
 STORY_OBJECT_GAP = 3                    # between squares
 STORY_OBJECT_MARGIN = 6                 # from the box's right and bottom edges, and above the row
 STORY_OBJECT_ROOM = 270                 # the widest a narrator's box grows to hold its row
+# Secret in the Shadows' one photo (the profile's STORY_OBJECT_PHOTO): its 123 x 124 frame and 93 x 74 picture box, 12 below the
+# frame's top, in its 800 x 600 design, at the frame's 512 units for the scene's 600 (0.853), right-aligned with the box and
+# STORY_PHOTO_GAP above it (owner's pick B, 2026-11-24: the sequel's own place, low right of centre, lands on CoD's text).
+STORY_PHOTO_SIZE, STORY_PHOTO_PICTURE, STORY_PHOTO_PICTURE_TOP = (105, 106), (79, 63), 10
+STORY_PHOTO_GAP = 6
 # shshd-runtime: Add-Ons' Claire Hart Dialogue (content.EpisodeResources.dialogue_skin; owner, 2026-11-19): Claire Hart's Romic
 # (vector_text.skin_font: the add-on's own faces) for the text, its bold for emphasis and the name, which goes in the tab.
 # Claire Hart's text is Romic Bold, as its names are (its Romic lacks '/', '&', '#' and most accented letters); CoD's emphasis
@@ -220,6 +225,10 @@ class DialoguePage:
     lift: float = 0
     # shshd-runtime: the story-object pictures shown with the line, (picture, its square) each (story_object_slots).
     story_objects: tuple = ()
+    # ...or the sequel's one photo: (picture, its frame's Rect), right-aligned above the box; () for none. And the one fading out
+    # as this line starts, in the same place.
+    story_photo: tuple = ()
+    story_photo_leaving: tuple = ()
     # shshd-runtime (Claire Hart Dialogue): the skin's spec with `box` ('speaker' or 'narrator'), and the name's tab, or None.
     skin: dict | None = None
     tab: Rect | None = None
@@ -673,10 +682,15 @@ class DialogueLayout:
             name_bounds = None if name_bounds is None else replace(name_bounds, y=name_bounds.y - lift)
             story_objects = tuple((picture, replace(r, y=r.y - lift)) for picture, r in story_objects)
             tab = None if tab is None else replace(tab, y=tab.y - lift)
+        # Above the box at its right (the narrator's too), kept inside the column's canvas.
+        width, height = STORY_PHOTO_SIZE
+        place = Rect(box.x + box.width - width, max(2, box.y - STORY_PHOTO_GAP - height), width, height)
+        story_photo = (details['story_photo'], place) if details.get('story_photo', -1) >= 0 else ()
+        leaving = (details['story_photo_leaving'], place) if details.get('story_photo_leaving', -1) >= 0 else ()
         return DialoguePage(box, drawn_origin, body_font, body, portrait, name_font,
                             name, name_origin, name_scale, start, start + end, name_bounds, note_frame, note_tint,
                             note_pack=note_pack, theme=details['theme'] if duet is not None or narration_theme else None, lift=lift,
-                            story_objects=story_objects,
+                            story_objects=story_objects, story_photo=story_photo, story_photo_leaving=leaving,
                             skin=dict(skin, box='narrator' if mode == 4 or narration else 'speaker') if skin else None, tab=tab,
                             body_width=body_width)
 
