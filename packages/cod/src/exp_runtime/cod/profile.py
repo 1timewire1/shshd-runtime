@@ -43,13 +43,16 @@ PAID_PROFILE = 'cod-ios-assets-v1'
 FREE_PROFILE = 'cod-ios-free-assets-v1'
 LOCALIZED_FREE_PROFILE = 'cod-ios-free-localized-assets-v1'
 # shshd-runtime: Claire Hart, as a tag for its switches for now (owner, 2026-11-02); its translated episodes will take it too.
-LEGACY_GAMES = {'CHC': dict(badge='CH', color=(12, 84, 48), category='Claire Hart')}
+# The sequel, Secret in the Shadows (pack 31900, " (CH2)"; CLAIRE_HART_PLAN.md "Packs"), its own category and badge, in a
+# deep violet for its night-time look beside Classic's green.
+LEGACY_GAMES = {'CHC': dict(badge='CH', color=(12, 84, 48), category='Claire Hart'),
+                'CH2': dict(badge='CH2', color=(78, 40, 120), category='Claire Hart: Secret in the Shadows')}
 # shshd-runtime: the optional addon of Claire Hart's sharper originals of CoD's portraits, and the resource holding its map
 # and the rest of its contents (tools/translate/chslim.py). A complete Claire Hart addon will supersede it.
 PORTRAIT_ADDON = ('chslim', 28000)
 # shshd-runtime: translated packs whose narration shows the narrator's portrait (presentation narration_portrait): Claire
 # Hart Classic draws Claire (or an `_Event` alias's face) beside its narration (CLAIRE_HART_PLAN.md, decision E).
-TRANSLATED_NARRATION_PORTRAITS = {31500: True}
+TRANSLATED_NARRATION_PORTRAITS = {31500: True, 31900: True}     # (the sequel: its `narrator` field, junk folded to Claire)
 # shshd-runtime: the presentation members (resource 3, presentation.MEMBERS) a CoD episode may declare for itself: the
 # narrator's portrait, a Creator setting (owner, 2026-11-19); and its primary add-on, its extras' aliases and its asking for the
 # translated mini-games, as an SHS episode made in the Creator declares them (Claire Hart plan Stage 6, owner 2026-11-24).
@@ -63,7 +66,11 @@ ADDON_FEATURE_PACKS = {('chc', ''): 31500}
 # shshd-runtime: translated packs whose backdrops the player darkens as it draws them, to n/255, while the shared Dim
 # Backdrops switch is on: Claire Hart Classic's 110 (its backdrop node's colour; the sequel's 102 comes with pack 31900).
 # The add-on keeps them at full brightness (CLAIRE_HART_PLAN.md, decision F).
-TRANSLATED_BACKDROP_DIM = {31500: 110}
+TRANSLATED_BACKDROP_DIM = {31500: 110, 31900: 102}
+# shshd-runtime: translated packs whose story-object pictures (service 225) are Secret in the Shadows' one photo, shown with
+# the next line and gone as the line after starts, a new one replacing it (CLAIRE_HART_PLAN.md P; engine.story_photo_for_line),
+# not Classic's row along the dialogue box.
+STORY_OBJECT_PHOTO = (31900,)
 # shshd-runtime: where the "Use Translated Mini-Games" switch changes something (pack -> its episodes, or None for all):
 # Claire Hart Classic's cases, whose rounds are played for real with chcrounds, else told as a line (Stage 3).
 TRANSLATED_MINIGAMES = {31500: None}

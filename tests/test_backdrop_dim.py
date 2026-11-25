@@ -35,7 +35,7 @@ class BackdropDimTests(unittest.TestCase):
 
     def test_claire_hart_classic_dims_to_110(self):
         from exp_runtime.cod import profile
-        self.assertEqual(profile.TRANSLATED_BACKDROP_DIM, {31500: 110})
+        self.assertEqual(profile.TRANSLATED_BACKDROP_DIM, {31500: 110, 31900: 102})     # (and the sequel's 102)
         game = desktop(31500)
         self.assertTrue(game.dim_switch())
         picture = self.picture()

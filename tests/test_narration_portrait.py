@@ -54,9 +54,9 @@ class NarrationPortraitTests(unittest.TestCase):
             with self.assertRaises(SaveError):
                 Session.from_snapshot(resources, bad)
 
-    def test_cod_turns_it_on_for_claire_hart_classic_only(self):
+    def test_cod_turns_it_on_for_claire_harts_two_games(self):
         from exp_runtime.cod import profile
-        self.assertEqual(profile.TRANSLATED_NARRATION_PORTRAITS, {31500: True})
+        self.assertEqual(profile.TRANSLATED_NARRATION_PORTRAITS, {31500: True, 31900: True})     # (Classic, the sequel)
 
 
 

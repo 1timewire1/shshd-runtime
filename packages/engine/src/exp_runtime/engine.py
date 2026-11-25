@@ -159,6 +159,7 @@ class EngineState:
     claire_round_source = None
     claire_powerups = 'once'
     claire_rounds_ready = False             # (chcrounds is in the library)
+    story_photo_mode = False                # service 225 as Secret in the Shadows' one photo (the profile's STORY_OBJECT_PHOTO)
     badge_sounds = None            # Not saved: a translated pack's own (for, against) (TRANSLATED_BADGE_SOUNDS; Session sets it)
     # Not saved: whether service 22 makes "a(n) word" "a word" or "an word", and "1 Win(s)" "1 Win" (choose_plurals) (a pack in
     # TRANSLATED_ARTICLE_PACKS; Session sets it).
@@ -246,6 +247,12 @@ class EngineState:
     story_objects_due: list[int] = field(default_factory=list)
     story_objects: list[int] = field(default_factory=list)
     story_objects_speaker: list | None = None
+    # ...and Secret in the Shadows' one photo (the profile's STORY_OBJECT_PHOTO; plan P, the sequel): the picture due with
+    # the next line (-1 none), the one shown (-1 none), and how many lines have started since it showed: it lasts one line
+    # (storyobjectmanager: every line hides it, the first hide ignored), a new one replacing it.
+    story_photo_due: int = -1
+    story_photo: int = -1
+    story_photo_lines: int = 0
     next_dialogue_notice: str = ''
     notice: str = ''
     notice_ms: int = 0
@@ -398,9 +405,14 @@ class EngineState:
         extra = dict(status_icons=True) if status_icons is not None else {}
         if narration:
             extra['narration'] = True
-        row = self.story_object_row([character, self.panel.speaker, presentation])
-        if row:
-            extra['story_objects'] = row
+        if self.story_photo_mode:
+            photo = self.story_photo_for_line()
+            if photo >= 0:
+                extra['story_photo'] = photo
+        else:
+            row = self.story_object_row([character, self.panel.speaker, presentation])
+            if row:
+                extra['story_objects'] = row
         return dict(**extra, text=text, raw_text=raw_text, character_id=character,
                     visible_character_id=visible, speaker=speaker, expression=expression,
                     initial_expression=initial_expression,
@@ -415,6 +427,18 @@ class EngineState:
         ids of the first join there and merges into it."""
         uid = self.numbers.get(self.number_key(0, 2000), 0) * 1000 + self.numbers.get(self.number_key(0, 0x3e9), 0)
         return self.dt_view.add_node(node_type, label, exw, uid, pc, state=read_state(self))
+
+    def story_photo_for_line(self):
+        """shshd-runtime (service 225 in the sequel's way, the profile's STORY_OBJECT_PHOTO): the photo shown with this line,
+        or -1. One at a time: a picture due shows with the next line, replacing any other, and goes as the line after that
+        starts (Secret in the Shadows' storyobjectmanager hides it at every line but ignores the first)."""
+        if self.story_photo_due >= 0:
+            self.story_photo, self.story_photo_due, self.story_photo_lines = self.story_photo_due, -1, 0
+        elif self.story_photo >= 0:
+            self.story_photo_lines += 1
+            if self.story_photo_lines >= 1:
+                self.story_photo = -1
+        return self.story_photo
 
     def story_object_row(self, speaker):
         """shshd-runtime (service 225, Claire Hart plan P): the story-object pictures shown with this line. As Classic's
@@ -1290,6 +1314,9 @@ class EngineState:
             picture = signed16(args[0])
             if picture < 0:                     # STORY_OBJECT_CLEAR: the row goes now, and nothing waits for the next line
                 self.story_objects, self.story_objects_due = [], []
+                self.story_photo, self.story_photo_due = -1, -1
+            elif self.story_photo_mode:         # (the sequel's: one photo, the latest)
+                self.story_photo_due = picture
             elif len(self.story_objects_due) < STORY_OBJECT_ROW:
                 self.story_objects_due.append(picture)
             return complete('story_object')

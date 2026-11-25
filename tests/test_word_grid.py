@@ -114,7 +114,7 @@ class GridTests(unittest.TestCase):
         self.assertEqual(restored.engine.random, s.engine.random)
         self.assertEqual(restored.engine.word_grid.selection, [0])
         current = restored.snapshot()
-        self.assertEqual(current['version'], 46)
+        self.assertEqual(current['version'], 47)
         for key, value in (('pop_ms', {}), ('explosions', []), ('glint_ms', 100_000_000)):
             self.assertEqual(current['engine']['word_grid'].pop(key), value)
         self.assertEqual(json.loads(json.dumps(current['engine']['word_grid'])), old['engine']['word_grid'])
@@ -325,7 +325,7 @@ class GridPartScoreTests(unittest.TestCase):
         del old['engine']['grid_part_score']; del old['engine']['word_grid']['part_score']
         restored = Session.from_snapshot(s.resources, old)
         self.assertEqual((restored.engine.grid_part_score, restored.engine.word_grid.part_score), (0, 0))
-        self.assertEqual(restored.snapshot()['version'], 46)
+        self.assertEqual(restored.snapshot()['version'], 47)
 
 
 if __name__ == '__main__':

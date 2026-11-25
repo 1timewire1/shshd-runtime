@@ -297,6 +297,8 @@ class Session:
         self.engine.claire_round_source = claire_round_source(self.resources)
         self.engine.claire_rounds_ready = any(a.get('addon') == 'chcrounds' for a in getattr(library, 'addons', None) or ())
         self.engine.claire_powerups = getattr(getattr(self.resources, 'library', None), 'claire_powerups', 'once')
+        from .content import pack_setting
+        self.engine.story_photo_mode = bool(pack_setting(self.resources, 'STORY_OBJECT_PHOTO', False))
 
     @staticmethod
     def original_tree(resources) -> bool:
@@ -1564,7 +1566,7 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=46,
+        return dict(format='shs-runtime-save', version=47,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
@@ -1621,11 +1623,17 @@ class Session:
             # Version 46 joins the two lines that branched from 42: the Claire Hart branch's 43 (story-object pictures)
             # and 44 (hidden-object rounds), and v1.1.1's 45 (Text Animation). Each step below fills in what its own
             # line left out, so a 43 / 44 save gains the Text Animation and a 45 save the Claire Hart parts.
-            if (state['format'] == 'shs-runtime-save' and type(state['version']) is int and state['version'] > 46):
+            if (state['format'] == 'shs-runtime-save' and type(state['version']) is int and state['version'] > 47):
                 raise NewerSaveError('This save was made by a newer version of SHSHD Runtime')
-            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 47):
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 48):
                 raise SaveError('Unsupported save format or version')
             version = state['version']
+            # Version 47 adds Secret in the Shadows' story photo (service 225's one-photo mode); an older save showed none.
+            if version < 47 and isinstance(state.get('engine'), dict):
+                state = deepcopy(state)
+                state['engine'].setdefault('story_photo_due', -1)
+                state['engine'].setdefault('story_photo', -1)
+                state['engine'].setdefault('story_photo_lines', 0)
             # Version 45 gives a dialogue page its Text Animation (General's, dialogue_animation.TEXT_ANIMATIONS): an older
             # save's page types letter by letter, as it did.
             if version < 45 and isinstance((state.get('engine') or {}).get('dialogue_animation'), dict):

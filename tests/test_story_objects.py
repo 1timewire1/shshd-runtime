@@ -59,7 +59,7 @@ class StoryObjectTests(unittest.TestCase):
         rows(session, 1)                                    # Ann's second line is up, with the broom and the key
         state = json.loads(json.dumps(session.snapshot()))
         self.assertEqual((state['version'], state['engine']['story_objects'], state['engine']['story_objects_due']),
-                         (46, [27001, 27002], []))
+                         (47, [27001, 27002], []))
         restored = Session.from_snapshot(story_resources(), state)
         self.assertEqual(rows(restored, 2), [[27001, 27002], []])
         old = json.loads(json.dumps(state))
@@ -106,3 +106,59 @@ class StoryObjectLayoutTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def photos(session, lines):
+    """The sequel's photo shown with each of `lines` lines (-1: none)."""
+    shown = []
+    for _ in range(lines):
+        while session.pending is None or session.pending.name != 'dialogue':
+            session.advance()
+        line = session.pending
+        shown.append(line.details.get('story_photo', -1))
+        for _ in range(4):
+            if session.pending is not line:
+                break
+            session.tick(3000)
+            session.answer()
+    return shown
+
+
+class StoryPhotoTests(unittest.TestCase):
+    """Secret in the Shadows' way (the profile's STORY_OBJECT_PHOTO, pack 31900; CLAIRE_HART_PLAN.md P): one photo at a time,
+    shown with the next line and gone as the line after starts, a new one replacing it, whoever speaks."""
+
+    def sequel(self):
+        session = Session(story_resources())
+        session.engine.story_photo_mode = True
+        return session
+
+    def test_a_photo_lasts_one_line_and_a_new_one_replaces_it(self):
+        # (the story: the broom, Ann; the key, Ann; Bo; a mug then a clear, Bo; a picture 27004, Bo)
+        self.assertEqual(photos(self.sequel(), 5), [27001, 27002, -1, -1, 27004])
+
+    def test_it_never_draws_classics_row(self):
+        session = self.sequel()
+        while session.pending is None or session.pending.name != 'dialogue':
+            session.advance()
+        self.assertNotIn('story_objects', session.pending.details)
+
+    def test_the_pack_turns_it_on(self):
+        from exp_runtime.cod import profile
+        self.assertEqual(profile.STORY_OBJECT_PHOTO, (31900,))
+        self.assertFalse(Session(story_resources()).engine.story_photo_mode)      # (any other episode: Classic's row)
+
+    def test_a_save_keeps_the_photo_and_an_older_save_shows_none(self):
+        session = self.sequel()
+        photos(session, 1)                                  # Ann's second line is up, with the key
+        state = json.loads(json.dumps(session.snapshot()))
+        self.assertEqual((state['version'], state['engine']['story_photo'], state['engine']['story_photo_due']),
+                         (47, 27002, -1))
+        restored = Session.from_snapshot(story_resources(), state)
+        restored.engine.story_photo_mode = True
+        self.assertEqual(photos(restored, 1), [27002])
+        old = json.loads(json.dumps(session.snapshot()))
+        old['version'] = 46
+        for key in ('story_photo_due', 'story_photo', 'story_photo_lines'):
+            old['engine'].pop(key)
+        self.assertEqual(Session.from_snapshot(story_resources(), old).engine.story_photo, -1)
