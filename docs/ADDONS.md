@@ -492,19 +492,32 @@ under their scenes (the cod profile's `TRANSLATED_FRAME_BACKDROP`), and name the
 the picture its spec at 26998 (`looks`: 185 looks, a face a look lacks given as its Normal) names there
 (`EpisodeResources._look_bank`). An episode's own resource at such an ID wins.
 
-**Claire Hart UI** (Add-Ons, CH tag; owner, 2026-11-19 as Claire Hart Dialogue, renamed 2026-11-22): CoD's dialogue in Claire
-Hart's speech bubbles with CoD's attached portrait ring, for **Off**, **Claire Hart Cases** (the default: pack 31500) or
-**Everywhere** (every episode, and the main menu's screens). The text and names are
+**Claire Hart UI** (Add-Ons, CH tag; owner, 2026-11-19 as Claire Hart Dialogue, renamed 2026-11-22; four choices
+2026-11-24): CoD's dialogue and screens in a Claire Hart game's dress. **Auto** (the default) gives each game's cases its own
+(Classic's pack 31500 Classic's, the sequel's 31900 the sequel's) and leaves CoD's episodes and menus CoD's; **Claire Hart
+Classic** or **Secret in the Shadows** puts that one on every episode and the main menu's screens; **Off** is CoD's look.
+Saved choices from before carry over: Off as Off, Claire Hart Cases as Auto, Everywhere as Claire Hart Classic. The CoD
+profile's `DIALOGUE_SKINS` (add-on, spec, packs, font prefix); `content.skin_entry` chooses.
+
+Classic's (`chc`) has Claire Hart's speech bubbles with CoD's attached portrait ring. The text and names are
 Romic Bold (28005; Romic, 28004, lacks `/`, `&` and most accented letters) in Claire Hart's dark red, emphasis in its gold;
 narration is Romic Bold slanted by the player (Classic ships no italic, and Romic is a commercial ITC face);
 the name sits in the bubble's tab beside the ring; no tail; Continue is the Play Now button. Narration takes the narrator box,
-with the ring when the narrator has a portrait. The CoD profile's `DIALOGUE_SKIN`; `content.EpisodeResources.dialogue_skin`.
+with the ring when the narrator has a portrait. `content.EpisodeResources.dialogue_skin`.
 With chc revision 2 (29109 on: Classic's panel, popup, rows, capsule, combo bar; the spec's `ui`) CoD's other screens follow
 (`desktop_ch_ui.ChUi`; CLAIRE_HART_SKIN_PLAN.md): choices and the rounds' skip prompt, the word quiz, text entry, the portrait
-picker, message panels, the pause menu and the story's windows; with Everywhere also the main menu's (its buttons, Options,
+picker, message panels, the pause menu and the story's windows; with a skin by name also the main menu's (its buttons, Options,
 Help & About, Data Management with its lists and file browser, Now Airing and Episodes On Demand's list with its cards, the
 prompts and busy card: `ContentLibrary.menu_skin`), but not the episode grid or the game chooser. Their places and taps stay
 CoD's. Title cards keep CoD's look.
+
+The sequel's (`ch2` revision 2, 29100 on; `tools/translate/ch2_dialogue_skin.py`; CLAIRE_HART_PLAN.md S2b) has the same
+pieces in Secret in the Shadows' own dress, redrawn from its art's colours and shapes at four pixels a unit (the game's own
+art is for an 800 x 600 screen): its dark teal frame with a mint rim around a cream paper, the name in capitals in teal
+Roboto Slab Bold on the frame's slanted tab, the text #212121 Roboto Condensed (its own italic for narration), a ring in
+the frame's style around a disc of its photo backing, its purple button as CONTINUE, and its glass panels with a centred
+title tab, dark rows with the selector's orange edge on the picked one, and teal accents for the other screens. The spec's
+`font_names`, `name_colour`, `name_upper`, `pill_label` and `pill_text` say what differs from Classic's.
 
 Its backdrops stay at full brightness, as the rounds need them. The player darkens them as it draws a case's story, to 110/255 as
 Classic did (its backdrop node's colour; the cod profile's `TRANSLATED_BACKDROP_DIM`), while the shared **Dim Backdrops** switch is
@@ -518,7 +531,7 @@ rather than its 3:4 slice (the spec's `scenes`, which keep both), the dialogue 1
 
 **In the Creator** (Claire Hart plan Stage 6, owner 2026-11-24), a Cause of Death episode can take `chc` as its **primary
 add-on** (Add-ons and settings…): it then has pack 31500's settings (the CoD profile's `ADDON_FEATURE_PACKS`: the skin with
-Claire Hart Cases, the narrator's portrait, Dim Backdrops, the green backdrop, its scenes' slices and Claire Hart 4:3, its title
+Auto, the narrator's portrait, Dim Backdrops, the green backdrop, its scenes' slices and Claire Hart 4:3, its title
 look and tune on Auto), and draws chc's scenes and portraits by reference. Its Claire Hart round node plays from `chcrounds`.
 See [CREATOR.md](CREATOR.md#the-primary-add-on-and-extras).
 

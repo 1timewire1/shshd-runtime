@@ -190,7 +190,7 @@ add-on: the translated game it's built on. The episode then takes that game's se
 | `shsnr` | New Rules' frame; the Hi-Res Portraits switch; its right/wrong music |
 | `shsx360` | The X360 frame; the MS3 Characters switch |
 | `shshw` | Surviving Hollywood's panel behind the scene; the catch game in Hollywood's own look (nothing from BREW's: a catch node then needs only `shshw`, with picture numbers from its catch art); its title tune and title screen where Title Screen Music and Look are on Auto |
-| `chc` (CoD) | Claire Hart Classic's look, as its cases have it: Claire Hart UI's bubbles and screens with **Claire Hart Cases**; narration with the narrator's portrait; backdrops darkened as Claire Hart drew them (**Dim Backdrops**); Claire Hart's green beside the scene; its scenes as a 3:4 slice that fills the frame, and whole with **Claire Hart 4:3**; its title tune and title screen where Title Screen Music and Look are on Auto |
+| `chc` (CoD) | Claire Hart Classic's look, as its cases have it: Claire Hart UI's bubbles and screens with **Auto**; narration with the narrator's portrait; backdrops darkened as Claire Hart drew them (**Dim Backdrops**); Claire Hart's green beside the scene; its scenes as a 3:4 slice that fills the frame, and whole with **Claire Hart 4:3**; its title tune and title screen where Title Screen Music and Look are on Auto |
 
 The primary is listed first, so its pictures win where add-ons share a number. Every other add-on the project uses is an
 **extra**: its pictures and sounds keep their numbers, aliased to it in the export, and its mini-games play from it. Adding a
@@ -227,7 +227,7 @@ A short case of your own in Claire Hart's dress, as made and played while this w
 5. **Real minigames?** asking about Claire Hart's rounds: 1 to a **Hidden-object round (Claire Hart)** node (round 11, Case 1's first, in
    Claire's Office), 0 to a line such as "Claire searches her office."
 6. Export. The `.exp` is a few kilobytes and requires `chc` (and `chcrounds`, an extra). On a player with both, the lines take
-   Claire Hart's bubbles (with Claire Hart UI on Claire Hart Cases), the office is dimmed and fills a 3:4 frame (whole in a 4:3
+   Claire Hart's bubbles (with Claire Hart UI on Auto), the office is dimmed and fills a 3:4 frame (whole in a 4:3
    window with Claire Hart 4:3 on), and the round plays with its skip prompt, Power-Ups and Level Summary; its pause menu
    offers the Claire Hart switches.
 

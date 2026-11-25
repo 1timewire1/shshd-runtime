@@ -424,9 +424,8 @@ class SyncFlow:
             else:
                 # The chooser: the shared copy (settings.json), as its Options sets them; the next game opened takes it.
                 from .languages import with_preferred
-                from .menu import shared_preference
-                app.settings.set_preferences({key: value for key, value in with_preferred(options).items()
-                                              if shared_preference(key, value)})
+                from .menu import accepted_preferences
+                app.settings.set_preferences(accepted_preferences(with_preferred(options)))
 
     def stop(self):
         """Leave sync: the ear, the waiting room and any session closed, the receiver's stage removed."""
@@ -496,7 +495,7 @@ class SendProvider:
         Options shows (settings.json, over the defaults)."""
         from .languages import with_language_settings, with_preferred
         app = self.app
-        from .menu import preference_defaults, shared_preference
+        from .menu import accepted_preferences, preference_defaults
         if app.state is not None:
             # (with the four languages Preferred Language replaced, which a device from before it takes; a preference newer
             # than the state's copy goes at its default)
@@ -504,7 +503,7 @@ class SendProvider:
             return with_language_settings({key: getattr(app.state, key, defaults[key]) for key in SHARED_PREFERENCES
                                            if key not in DEVICE_OPTIONS})
         saved = with_preferred(app.settings.preferences)
-        values = dict(preference_defaults(), **{key: value for key, value in saved.items() if shared_preference(key, value)})
+        values = dict(preference_defaults(), **accepted_preferences(saved))
         return with_language_settings({key: value for key, value in values.items()
                                        if key in SHARED_PREFERENCES and key not in DEVICE_OPTIONS})
 

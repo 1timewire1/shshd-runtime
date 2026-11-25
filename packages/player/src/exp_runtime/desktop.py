@@ -395,7 +395,7 @@ class Desktop:
     ch_backdrop = True              # ...and its "Backdrop", in place of SHS HD's collage (_window_backdrop)
     dim_backdrops = True            # Claire Hart's translations: the "Dim Backdrops" switch (backdrop_dim)
     ch_43 = True                    # ...and "Claire Hart 4:3": their cases in their own 4:3 where there's room (wide_frame)
-    _ch_dialogue = 'cases'          # Claire Hart UI: Off, Claire Hart Cases or Everywhere (set_ch_dialogue)
+    _ch_dialogue = 'auto'           # Claire Hart UI: Auto, Off, Claire Hart Classic or Secret in the Shadows (content.skin_entry)
     _claire_powerups = 'once'       # Claire Hart's rounds' Power-Ups: Once Each Round, Unlimited or Off
     _arena_minigames = True         # translated episodes: the "Use Translated Mini-Games" switch (arena_minigames)
     x360_tutorial = None            # a tutorial taken in the X360 look: the game's music request it began under
@@ -2695,7 +2695,8 @@ class Desktop:
     def ch_dialogue(self, value):
         """Claire Hart Dialogue's choice, kept by the library too (content.EpisodeResources.dialogue_skin); the line on screen
         takes it at once (its page is laid out again)."""
-        self._ch_dialogue = value if value in CH_DIALOGUE_NAMES else 'cases'
+        from .content import skin_choice
+        self._ch_dialogue = skin_choice(value)
         library = getattr(getattr(self.__dict__.get('_session'), 'resources', None), 'library', None)
         if library is not None:
             library.ch_dialogue = self._ch_dialogue
@@ -2732,10 +2733,10 @@ class Desktop:
                 and any(a.get('addon') == 'chcrounds' for a in getattr(library, 'addons', None) or ()))
 
     def ch_dialogue_switch(self):
-        """Whether the game's add-on carries Claire Hart Dialogue (the profile's DIALOGUE_SKIN) in this library."""
-        entry = getattr(GAMES.get(game_id(self.session.resources)), 'DIALOGUE_SKIN', None)
+        """Whether a Claire Hart game's add-on carries its UI skin (the profile's DIALOGUE_SKINS) in this library."""
+        skins = getattr(GAMES.get(game_id(self.session.resources)), 'DIALOGUE_SKINS', None) or {}
         library = getattr(self.session.resources, 'library', None)
-        return entry is not None and hasattr(library, 'addon_has') and library.addon_has(entry[0], entry[1])
+        return hasattr(library, 'addon_has') and any(library.addon_has(entry[0], entry[1]) for entry in skins.values())
 
     def dim_switch(self):
         """shshd-runtime: whether this episode's backdrops are darkened by the "Dim Backdrops" switch (the game profile's

@@ -28,18 +28,31 @@ def episode(pack, choice='cases', spec=True):
 class SkinChoiceTests(unittest.TestCase):
     def test_off_claire_hart_cases_or_all_episodes(self):
         from exp_runtime.cod import profile
-        self.assertEqual(profile.DIALOGUE_SKIN, ('chc', 29100, (31500,)))
+        self.assertEqual(profile.DIALOGUE_SKINS['classic'], ('chc', 29100, (31500,), 'CHRomic'))
         self.assertEqual(episode(31500).dialogue_skin()['addon'], 'chc')
         self.assertIsNone(episode(30000).dialogue_skin())                    # CoD's own: only with Everywhere
         self.assertEqual(episode(30000, 'all').dialogue_skin()['tab']['base'], 104)
         self.assertIsNone(episode(31500, 'off').dialogue_skin())
         self.assertIsNone(episode(31500, spec=False).dialogue_skin())        # an older chc: CoD's own look
 
+    def test_each_choice_picks_its_skin(self):
+        """Owner, 2026-11-24: Auto gives each game's cases its own skin and CoD's episodes and menus none; a game by name is
+        everyone's; Off is no one's. The old Off / Cases / Everywhere carry over as Off / Auto / Claire Hart Classic."""
+        from exp_runtime.content import skin_choice, skin_entry
+        addon = lambda choice, pack: (skin_entry('cod', choice, pack) or (None,))[0]     # noqa: E731
+        self.assertEqual([addon('auto', pack) for pack in (31500, 31900, 1, None)], ['chc', 'ch2', None, None])
+        self.assertEqual([addon('classic', pack) for pack in (31500, 31900, 1, None)], ['chc'] * 4)
+        self.assertEqual([addon('shadows', pack) for pack in (31500, 31900, 1, None)], ['ch2'] * 4)
+        self.assertEqual([addon('off', pack) for pack in (31500, 31900)], [None, None])
+        self.assertEqual([skin_choice(v) for v in ('off', 'cases', 'all', 'shadows', 'nonsense')],
+                         ['off', 'auto', 'classic', 'shadows', 'auto'])
+        self.assertIsNone(skin_entry('shs', 'classic', 31500))          # (SHS has no Claire Hart skin)
+
     def test_the_setting_is_kept_and_named(self):
         from exp_runtime.desktop_pause_hd import CH_DIALOGUE_NAMES, PER_GAME_CHOICES
         from exp_runtime.menu import SHARED_PREFERENCES
-        self.assertEqual(SHARED_PREFERENCES['ch_dialogue'], ('off', 'cases', 'all'))
-        self.assertEqual(list(CH_DIALOGUE_NAMES.values()), ['Off', 'Claire Hart Cases', 'Everywhere'])
+        self.assertEqual(SHARED_PREFERENCES['ch_dialogue'], ('auto', 'off', 'classic', 'shadows'))
+        self.assertEqual(list(CH_DIALOGUE_NAMES.values()), ['Auto', 'Off', 'Claire Hart Classic', 'Secret in the Shadows'])
         self.assertIn('ch_dialogue', PER_GAME_CHOICES)
 
 
@@ -134,6 +147,34 @@ class CoveredGlyphTests(unittest.TestCase):
         covered = ttf_covered(path.read_bytes())
         self.assertTrue({ord('A'), ord('/'), ord('&')} <= covered)
         self.assertIsNone(ttf_covered(b'not a font'))
+
+
+
+class SequelSkinTests(unittest.TestCase):
+    def test_the_sequels_spec_has_what_the_renderer_reads(self):
+        """Secret in the Shadows UI (owner, 2026-11-24; tools/translate/ch2_dialogue_skin.py): the pieces Classic's skin
+        has, its Roboto under its own prefix, the name in capitals in teal, its purple CONTINUE."""
+        import importlib.util
+        import sys
+        from pathlib import Path
+        if importlib.util.find_spec('PIL') is None:
+            self.skipTest('Pillow is needed')
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools' / 'translate'))
+        import ch2_dialogue_skin as skin
+        from exp_runtime.cod.profile import DIALOGUE_SKINS
+        from exp_runtime.vector_text import SKIN_FONTS
+        spec = skin.spec()
+        for key in ('speaker', 'narrator', 'tab', 'ring', 'disc', 'pill', 'slot', 'fonts', 'text', 'density', 'ui'):
+            self.assertIn(key, spec)
+        prefix = DIALOGUE_SKINS['shadows'][3]
+        self.assertIn(prefix, SKIN_FONTS)
+        self.assertTrue(all(name.startswith(prefix) for name in spec['font_names'].values()))
+        self.assertEqual((spec['name_upper'], spec['name_colour'], spec['pill_label']), (True, [27, 245, 208], 'CONTINUE'))
+        for key in ('panel', 'popup', 'row', 'row_lit', 'capsule', 'timer', 'close', 'colours'):
+            self.assertIn(key, spec['ui'])
+        box = skin.box_picture()
+        self.assertEqual(box.width, skin.px(2 * skin.CAP + 2))           # (its caps, and a little middle to stretch)
+        self.assertGreater(box.getpixel((box.width // 2, box.height // 2))[0], 200)     # (the cream paper in the middle)
 
 
 if __name__ == '__main__':

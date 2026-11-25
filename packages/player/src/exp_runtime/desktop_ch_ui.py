@@ -18,6 +18,7 @@ class ChUi:
 
     def __init__(self, library, spec):
         self.library, self.spec, self.ui = library, spec, spec['ui']
+        self.addon = spec.get('addon', ADDON)          # (the skin's own add-on: chc's, or the sequel's ch2)
         self._pictures, self._made, self._fonts = {}, {}, {}
         colours = self.ui.get('colours', {})
         self.TITLE = tuple(colours.get('title', (125, 66, 14)))
@@ -52,9 +53,9 @@ class ChUi:
     def picture(self, resource):
         found = self._pictures.get(resource)
         if found is None:
-            data = self.library.addon_resource(ADDON, resource)
+            data = self.library.addon_resource(self.addon, resource)
             if data is None:
-                raise ValueError(f'chc is missing resource {resource}: import its latest build')
+                raise ValueError(f'{self.addon} is missing resource {resource}: import its latest build')
             found = self._pictures[resource] = pygame.image.load(BytesIO(data), 'piece.png').convert_alpha()
         return found
 
@@ -63,7 +64,8 @@ class ChUi:
         px = max(6, round(px))
         found = self._fonts.get(px)
         if found is None:
-            found = self._fonts[px] = pygame.font.Font(BytesIO(self.library.addon_resource(ADDON, self.spec['fonts']['bold'])), px)
+            found = self._fonts[px] = pygame.font.Font(
+                BytesIO(self.library.addon_resource(self.addon, self.spec['fonts'].get('ui', self.spec['fonts']['bold']))), px)
         return found
 
     def _sliced(self, picture, size, cols, rows, s):

@@ -362,7 +362,7 @@ class ChMenuTests(unittest.TestCase):
         pygame.init()
         pygame.display.set_mode((1, 1))
 
-    def library(self, choice='all', ui=True):
+    def library(self, choice='classic', ui=True):
         from exp_runtime.content import ContentLibrary
         resources, spec = a_chc(ui=ui)
         library = ContentLibrary.__new__(ContentLibrary)
@@ -371,17 +371,21 @@ class ChMenuTests(unittest.TestCase):
         library.addon_resource = resources.library.addon_resource
         return library
 
-    def test_only_everywhere_gives_the_menus_the_skin(self):
+    def test_only_a_skin_by_name_gives_the_menus_the_skin(self):
+        """Owner, 2026-11-24: a game's skin by name dresses the menus too; Auto and Off leave them CoD's. A saved
+        Everywhere is Claire Hart Classic, Cases Auto."""
         from exp_runtime.desktop_ch_ui import ChUi
         from exp_runtime.desktop_pause_hd import CH_DIALOGUE_LABEL, CH_DIALOGUE_NAMES
-        self.assertEqual((CH_DIALOGUE_LABEL, CH_DIALOGUE_NAMES['all']), ('Claire Hart UI', 'Everywhere'))
+        self.assertEqual((CH_DIALOGUE_LABEL, CH_DIALOGUE_NAMES['classic']), ('Claire Hart UI', 'Claire Hart Classic'))
         library = self.library()
         self.assertIs(library.menu_skin(), library.menu_skin())         # (the same dict: what is kept for it stays)
         self.assertEqual(library.menu_skin()['addon'], 'chc')
         self.assertIsNotNone(ChUi.of(library))                          # (the main menu's art: the library itself)
         self.assertIsNotNone(ChUi.of(SimpleNamespace(library=library)))     # (the main menu's pause card)
-        for choice in ('cases', 'off'):
+        for choice in ('auto', 'off', 'cases'):
             self.assertIsNone(self.library(choice).menu_skin())
+        self.assertEqual(self.library('all').menu_skin()['addon'], 'chc')
+        self.assertIsNone(self.library('shadows').menu_skin())          # (no ch2 in this library: CoD's menus)
         self.assertIsNone(ChUi.of(self.library(ui=False)))              # (chc revision 1: CoD's menus)
 
     def test_the_window_lays_out_its_pills_and_returns_their_taps(self):

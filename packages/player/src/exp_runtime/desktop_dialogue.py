@@ -1402,8 +1402,10 @@ class DialogueRenderer:
         piece = self._skin_art.get(key)
         if piece is None:
             piece = self.skin_art(self.skin['pill'][0], key[1:]).copy()
-            font = self.SKIN_PILL_FONT
-            label = self.text.layout(font, 'Continue', 1000, TextStyle(11, 0, self.SKIN_PILL_TEXT))
+            # (a skin's own: the sequel's purple button reads CONTINUE in white Roboto Slab, as its round summary's)
+            font = (self.skin.get('font_names') or {}).get('pill', self.SKIN_PILL_FONT)
+            label = self.text.layout(font, self.skin.get('pill_label', 'Continue'), 1000,
+                                     TextStyle(11, 0, tuple(self.skin.get('pill_text', self.SKIN_PILL_TEXT))))
             left, top, right, bottom = label.ink_bounds
             self.text.draw_layout(piece, font, label, ((width - (right - left)) / 2 - left) * k,
                                   ((height - (bottom - top)) / 2 - top) * k, scale=k)

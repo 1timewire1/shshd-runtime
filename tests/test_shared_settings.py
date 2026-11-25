@@ -88,15 +88,19 @@ class SharedSettingsTests(unittest.TestCase):
         self.assertEqual((cod.warp_unlocked, cod.names), (False, {}))       # the other game's progress and names
         self.assertEqual(json.loads((shs.library.directory / 'player.json').read_text())['autoplay'], True)
 
-    def test_claire_hart_dialogue_starts_on_its_cases_and_is_kept(self):
+    def test_claire_hart_ui_starts_on_auto_and_is_kept(self):
         settings = AppSettings(self.root / 'settings.json')
         cod = MenuState(library(self.root, 'cod'), shared=settings)
-        self.assertEqual(cod.ch_dialogue, 'cases')
-        cod.ch_dialogue = 'all'
+        self.assertEqual(cod.ch_dialogue, 'auto')
+        cod.ch_dialogue = 'shadows'
         cod.persist()
-        self.assertEqual(MenuState(library(self.root / 'again', 'cod'), shared=settings).ch_dialogue, 'all')   # (shared)
+        self.assertEqual(MenuState(library(self.root / 'again', 'cod'), shared=settings).ch_dialogue, 'shadows')   # (shared)
         settings.preferences['ch_dialogue'] = 'sometimes'                   # not one of its values: the default
-        self.assertEqual(MenuState(library(self.root / 'other', 'cod'), shared=settings).ch_dialogue, 'cases')
+        self.assertEqual(MenuState(library(self.root / 'other', 'cod'), shared=settings).ch_dialogue, 'auto')
+        # (the first three choices, saved before 2026-11-24: Off, Claire Hart Cases, Everywhere)
+        for old, now in (('off', 'off'), ('cases', 'auto'), ('all', 'classic')):
+            settings.preferences['ch_dialogue'] = old
+            self.assertEqual(MenuState(library(self.root / old, 'cod'), shared=settings).ch_dialogue, now)
 
     def test_a_damaged_shared_value_is_ignored(self):
         settings = AppSettings(self.root / 'settings.json')

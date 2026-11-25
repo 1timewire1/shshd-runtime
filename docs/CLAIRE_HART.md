@@ -27,10 +27,11 @@ carry them: the cases with `chc` inside, and the rounds add-on on its own. Large
 
 ## How a case plays
 
-- **CoD's dialogue, in Claire Hart's dress** with **Claire Hart UI** on Claire Hart Cases (the default): Claire Hart's speech
+- **CoD's dialogue, in Claire Hart's dress** with **Claire Hart UI** on Auto (the default): Claire Hart's speech
   bubbles, Romic Bold in its dark red, the name on the bubble's tab, CoD's portrait ring, Continue as Classic's Play Now
-  button. Its choices, prompts, windows, pause menu, text entry and portrait picker take Classic's panel and rows. With
-  **Everywhere**, every CoD episode and the main menu's screens do too. Off is CoD's own look.
+  button. Its choices, prompts, windows, pause menu, text entry and portrait picker take Classic's panel and rows. The
+  sequel's cases take Secret in the Shadows' own look on Auto. Choosing **Claire Hart Classic** or **Secret in the
+  Shadows** puts that look on every CoD episode and the main menu's screens. Off is CoD's own look.
 - **Narration** shows Claire's portrait (or the chapter's narrator's) beside a narrator box, as Classic does.
 - **Scenes** are cut to a 3:4 slice that fills CoD's frame, panning with the speaker as CoD's scenes do. The slice of each scene
   is set in `chc`'s spec, and an episode may move it in its own resource 7 (`backdrop_slices.py`). Beside the frame on wide
@@ -56,7 +57,7 @@ All carry the CH tag; on the main menu they're on Add-Ons › Per-Game Settings,
 
 | Setting | Does | Default |
 | --- | --- | --- |
-| Claire Hart UI | Off, Claire Hart Cases, Everywhere (above) | Claire Hart Cases |
+| Claire Hart UI | Auto, Off, Claire Hart Classic, Secret in the Shadows (above) | Auto |
 | Power-Ups | Once Each Round, Unlimited, Off | Once Each Round |
 | Dim Backdrops | The scenes darkened to 110/255, as Classic drew them | On |
 | Claire Hart 4:3 | A 4:3 frame where the window has room (above) | On |
@@ -69,7 +70,7 @@ behind CoD's buttons. Auto takes them after a case.
 ## In the Creator
 
 A Cause of Death project can take `chc` as its **primary add-on** (**Add-ons and settings…**). It then looks as a case does:
-Claire Hart UI with Claire Hart Cases, the narrator's portrait, dimmed scenes, the green backdrop, the scenes' slices and
+Claire Hart UI on Auto, the narrator's portrait, dimmed scenes, the green backdrop, the scenes' slices and
 Claire Hart 4:3, and the title look and tune on Auto. **Browse library images** names `chc`'s pictures: each portrait by its
 character and face, each scene, track and story object by name, and lists its 185 looks ("look Claire"), which a character
 takes as its portrait by reference: the player reads its five faces from `chc` as a case's are. The **Hidden-object round (Claire Hart)** node plays one of

@@ -382,7 +382,9 @@ class DialogueLayout:
         # text and without a name plate (owner, 2026-11-19).
         narration = bool(details.get('narration')) and mode in (1, 2)
         skin = self.skin() if duet is None else None
-        skin_body = SKIN_NARRATION if mode == 4 or narration else SKIN_BODY
+        skin_fonts = (skin or {}).get('font_names') or {}      # (a skin's own faces: the sequel's Roboto; else Romic's)
+        skin_body = (skin_fonts.get('narration', SKIN_NARRATION) if mode == 4 or narration
+                     else skin_fonts.get('body', SKIN_BODY))
         font = self.font(skin_body if skin else NARRATOR_FONT if mode == 4 or narration else BODY_FONT)
         cap_height = getattr(font, 'cap_height', None)
         name_font, name_style, body_font, body_style = dialogue_styles(
@@ -391,7 +393,8 @@ class DialogueLayout:
         if skin:
             # Claire Hart's one colour for the text and every name (CoD has none per character), emphasis in Romic Bold.
             colour = tuple(skin['text'])
-            name_font, name_style = SKIN_NAME, TextStyle(18, 0, colour)
+            # (the sequel's name is teal on its dark tab, its text dark on the paper: `name_colour`)
+            name_font, name_style = skin_fonts.get('name', SKIN_NAME), TextStyle(18, 0, tuple(skin.get('name_colour', colour)))
             body_font, body_style = skin_body, TextStyle(14, 7, colour, (('`', tuple(skin.get('emphasis', colour))),))
         switch_fonts = note_frame = None
         text = details['text'][start:]
@@ -482,8 +485,10 @@ class DialogueLayout:
             if narration:
                 name, name_origin, name_scale, extra = layout_text(self.font(name_font), '', 1, name_style), (0, 0), .9, 0
             elif skin:
-                # The name goes in the skin's tab (skin_tab, below), on one line, at its own size.
-                name = layout_text(self.font(name_font), details['speaker'], 10000, name_style)
+                # The name goes in the skin's tab (skin_tab, below), on one line, at its own size; the sequel's in capitals
+                # (its header.toUpperCase(), ENGINE 4.4).
+                spoken = details['speaker'].upper() if skin.get('name_upper') else details['speaker']
+                name = layout_text(self.font(name_font), spoken, 10000, name_style)
                 name_origin, name_scale, extra = (0, 0), 1, 8
             else:
                 hd_label = self.hd_label(details, between_rings=duet is not None)

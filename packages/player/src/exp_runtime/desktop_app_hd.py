@@ -218,10 +218,10 @@ class AppOptions:
         self.ask, self.next_screen, self.next_ask = self.next_ask, None, None
 
     def values(self):
-        from .menu import preference_defaults, shared_preference
+        from .menu import accepted_preferences, preference_defaults
         from .languages import preferred_from
         preferences = self.app.settings.preferences
-        saved = {key: value for key, value in preferences.items() if shared_preference(key, value)}
+        saved = accepted_preferences(preferences)
         if 'preferred_language' not in saved:           # (settings from before Preferred Language: its four)
             saved['preferred_language'] = preferred_from(preferences)
         return dict(preference_defaults(), **saved)
@@ -674,9 +674,9 @@ class AppOptions:
             return results, options
 
         def done(result):
-            from .menu import shared_preference
+            from .menu import accepted_preferences
             results, options = result
-            accepted = {key: value for key, value in options.items() if shared_preference(key, value)}
+            accepted = accepted_preferences(options)
             if accepted:
                 app.settings.set_preferences(accepted)
             lines = [f'{GAMES[game].TITLE}: {restored} saved game{"s" if restored != 1 else ""} restored'
@@ -828,7 +828,7 @@ class ChooserList:
         self.app, self.kind, self.game = app, kind, game
         self.library = ContentLibrary(app.library_path(game), remember_checks=True)
         # (Claire Hart UI reaches this copy too: its list takes the skin with Everywhere, as the open library's menus do)
-        self.library.ch_dialogue = getattr(getattr(app, 'state', None), 'ch_dialogue', 'cases')
+        self.library.ch_dialogue = getattr(getattr(app, 'state', None), 'ch_dialogue', 'auto')
         try:
             state = MenuState(self.library, shared=app.settings)
             self.allowed = app.choice_allowed(kind, self.library)

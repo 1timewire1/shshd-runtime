@@ -494,6 +494,9 @@ HD_ONLY_FONTS = {'PajamaHip24': 'PajamaHip26'}
 
 
 SKIN_FONT = 'CHRomic'           # Claire Hart Dialogue's faces: CHRomic16, CHRomicBold18... (dialogue.SKIN_BODY and its kin)
+# ...and each Claire Hart skin's by its prefix (the profile's DIALOGUE_SKINS: CHRomic for Classic's, CH2Roboto for the
+# sequel's Roboto Condensed and Roboto Slab Bold)
+SKIN_FONTS = ('CH2Roboto', 'CHRomic')
 SKIN_SLANT = 0.2                # ...CHRomicBoldItalic16, Romic Bold slanted for narration (Romic has no italic)
 
 
@@ -552,14 +555,16 @@ def skin_font(library, name: str) -> BitmapFont:
     add-on's face, that body font as it is."""
     cache = library.__dict__.setdefault('_text_fonts', {}) if hasattr(library, '__dict__') else {}
     if name not in cache:
-        bold = name.startswith(SKIN_FONT + 'Bold')
-        style = SKIN_FONT + ('Bold' if bold else '')
+        prefix = next(p for p in SKIN_FONTS if name.startswith(p))
+        bold = name.startswith(prefix + 'Bold')
+        style = prefix + ('Bold' if bold else '')
         italic = name[len(style):].startswith('Italic')
         size = float(name[len(style) + (6 if italic else 0):])
         base = load_font(library, 'ArialRoundedMTBold16')
-        data = None
+        data, slant = None, False
         from .games import GAMES
-        entry = getattr(GAMES.get(getattr(library, 'game_id', None)), 'DIALOGUE_SKIN', None)
+        skins = getattr(GAMES.get(getattr(library, 'game_id', None)), 'DIALOGUE_SKINS', None) or {}
+        entry = next((e for e in skins.values() if e[3] == prefix), None)
         if entry is not None and hasattr(library, 'addon_resource'):
             import json
             spec = library.addon_resource(entry[0], entry[1])
@@ -567,12 +572,15 @@ def skin_font(library, name: str) -> BitmapFont:
                 fonts = json.loads(spec).get('fonts', {}) if spec else {}
             except ValueError:
                 fonts = {}
-            resource = fonts.get('bold' if bold else 'body')
+            # (a skin with an italic face of its own uses it; Romic has none and is slanted)
+            key = 'italic' if italic and not bold and 'italic' in fonts else 'bold' if bold else 'body'
+            slant = italic and key != 'italic'
+            resource = fonts.get(key)
             data = library.addon_resource(entry[0], resource) if resource is not None else None
         try:
-            cache[name] = (vector_font(base, FaceSource(data=data, label='Romic'), size, covered=ttf_covered(data))
+            cache[name] = (vector_font(base, FaceSource(data=data, label=prefix), size, covered=ttf_covered(data))
                            if data else base)
-            if italic and data:
+            if slant and data:
                 cache[name] = replace(cache[name], slant=SKIN_SLANT)
         except (pygame.error, OSError):
             cache[name] = base
@@ -585,7 +593,7 @@ def load_font(library, name: str) -> BitmapFont:
     IPA library has no Android .fnt sets (and can't carry the HD iPad bundle,
     which only supplements an APK), so it keeps the shared font loader's own
     installed-face rendering (fonts.load_font / ios_fonts.py)."""
-    if name.startswith(SKIN_FONT):
+    if name.startswith(SKIN_FONTS):
         return skin_font(library, name)
     if getattr(library, 'kind', 'apk') == 'ipa':
         from .fonts import load_font as base_load_font

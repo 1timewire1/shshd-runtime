@@ -1252,11 +1252,12 @@ class ContentLibrary:
         return cache[key]
 
     def menu_skin(self):
-        """shshd-runtime (Add-Ons' Claire Hart UI set to Everywhere, `ch_dialogue` 'all'; owner, 2026-11-22): the skin's spec
-        (EpisodeResources.dialogue_skin's) for the screens with no episode, the main menu's; else None. The same dict while
-        the add-on stays, so what is kept for it (desktop_ch_ui.ChUi.of) is kept."""
-        entry = getattr(GAMES.get(self.game_id), 'DIALOGUE_SKIN', None)
-        if entry is None or getattr(self, 'ch_dialogue', 'cases') != 'all':
+        """shshd-runtime (Add-Ons' Claire Hart UI set to a skin by name, Claire Hart Classic or Secret in the Shadows; owner,
+        2026-11-22 and 2026-11-24): the skin's spec (EpisodeResources.dialogue_skin's) for the screens with no episode, the
+        main menu's; else None (Auto and Off leave them CoD's). The same dict while the add-on stays, so what is kept for it
+        (desktop_ch_ui.ChUi.of) is kept."""
+        entry = skin_entry(self.game_id, getattr(self, 'ch_dialogue', 'auto'), None)
+        if entry is None:
             return None
         try:
             spec = self.addon_json(entry[0], entry[1])
@@ -1266,7 +1267,7 @@ class ContentLibrary:
         if not isinstance(spec, dict) or spec.get('version') != 1:
             return None
         kept = self.__dict__.get('_menu_skin')
-        if kept is None or kept[0] is not spec:
+        if kept is None or kept[0] is not spec or kept[1].get('addon') != entry[0]:
             kept = self._menu_skin = spec, dict(spec, addon=entry[0])
         return kept[1]
 
@@ -2017,6 +2018,30 @@ def library_has_optional_art(library, switch):
     return addon is not None and hasattr(library, 'addon') and library.addon(addon) is not None
 
 
+SKIN_CHOICES = ('auto', 'off', 'classic', 'shadows')       # Claire Hart UI (owner, 2026-11-24)
+OLD_SKIN_CHOICES = {'cases': 'auto', 'all': 'classic'}      # (its first three choices: Off, Claire Hart Cases, Everywhere)
+
+
+def skin_choice(value):
+    """A saved Claire Hart UI choice as it is now: Off, Cases and Everywhere carry over as Off, Auto and Claire Hart
+    Classic; anything else is Auto."""
+    value = OLD_SKIN_CHOICES.get(value, value)
+    return value if value in SKIN_CHOICES else 'auto'
+
+
+def skin_entry(game, choice, pack):
+    """shshd-runtime: the dialogue skin (the game profile's DIALOGUE_SKINS entry: add-on, spec, packs, font prefix) Claire
+    Hart UI's `choice` gives an episode of translated pack `pack` (None: a screen with no episode, the main menu's): Off none;
+    Auto the skin whose game the pack is, none for any other pack or a menu; a skin by name always that one."""
+    skins = getattr(GAMES.get(game), 'DIALOGUE_SKINS', None) or {}
+    choice = skin_choice(choice)
+    if choice == 'off':
+        return None
+    if choice == 'auto':
+        return next((entry for entry in skins.values() if pack is not None and pack in entry[2]), None)
+    return skins.get(choice)
+
+
 def feature_pack(resources):
     """shshd-runtime: the pack whose settings that need an add-on's pictures and sounds an episode has (the profile's tables
     of translated packs: frame backdrop, relationship icons, answer-feedback music, the add-ons' switches): an episode made
@@ -2148,14 +2173,14 @@ class EpisodeResources:
         return found[1], picture
 
     def dialogue_skin(self):
-        """shshd-runtime (Add-Ons' Claire Hart Dialogue, the game profile's DIALOGUE_SKIN): the skin's spec (its art's numbers
-        in its add-on, `addon`, its text colour and fonts) when the player's choice (`library.ch_dialogue`: 'off', 'cases' for
-        the profile's packs, 'all') puts this episode in it and the library has the add-on with its spec; else None."""
-        entry = getattr(GAMES.get(game_id(self)), 'DIALOGUE_SKIN', None)
-        choice = getattr(self.library, 'ch_dialogue', 'cases')
-        if entry is None or choice == 'off' or choice != 'all' and feature_pack(self) not in entry[2]:
+        """shshd-runtime (Add-Ons' Claire Hart UI, the game profile's DIALOGUE_SKINS): the skin's spec (its art's numbers in its
+        add-on, `addon`, its text colour and fonts) when the player's choice (`library.ch_dialogue`: skin_entry) gives this
+        episode one and the library has the add-on with its spec; else None."""
+        entry = skin_entry(game_id(self), getattr(self.library, 'ch_dialogue', 'auto'), feature_pack(self))
+        if entry is None:
             return None
-        kept = self.__dict__.get('_skin')
+        held = self.__dict__.get('_skin')
+        kept = held[1] if held is not None and held[0] == entry[0] else None     # (a choice moved to the other skin)
         if kept is None:
             data = self.library.addon_resource(entry[0], entry[1]) if hasattr(self.library, 'addon_resource') else None
             spec = {}
@@ -2166,7 +2191,8 @@ class EpisodeResources:
                     logging.warning('The dialogue skin in %s %s is unreadable: %s', entry[0], entry[1], error)
                 if not isinstance(spec, dict) or spec.get('version') != 1:
                     spec = {}
-            kept = self._skin = dict(spec, addon=entry[0]) if spec else {}
+            kept = dict(spec, addon=entry[0]) if spec else {}
+            self._skin = entry[0], kept
         return kept or None
 
     def _look_banks(self, archive, spec):

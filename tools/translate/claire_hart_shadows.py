@@ -47,6 +47,8 @@ scaled to CoD's portrait at twice its size (220 x 240), as chslim.whole gives Cl
     26999        the frame backdrop beside CoD's frame (the episode selector's own backdrop)
     27000-27257  the story-object photos, their original PNGs: the 253 pictures, then the 5 round sprites photos show
     28000-28417  the portraits, cropped (above), at 28000 + their place in the sorted list (a duplicate takes the first's)
+    29100-29108  revision 2: Secret in the Shadows UI, the dialogue skin's spec and pieces (ch2_dialogue_skin.py), and
+    29190-29192  its faces, Roboto Condensed, Roboto Slab Bold and Roboto Condensed Italic
 """
 import argparse
 import collections
@@ -64,7 +66,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from claire_hart import markdown_table, mp3, norm, story_text      # noqa: E402
 
 PACK_ID = 31900
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'ch2', 'Claire Hart: Secret in the Shadows', 1
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'ch2', 'Claire Hart: Secret in the Shadows', 2     # (2: S2b's skin, 29100 on)
+# The ch2 revision the cases need: 1. Revision 2 adds only the skin, which the player draws when it finds it (as chc's 2).
+CASES_NEED_CH2 = 1
 TITLE_TAG = ' (CH2)'
 SLOTS = ('Normal', 'Angry', 'Happy', 'Sad', 'Surprised')
 FACE_SLOTS = {'normal': 0, 'neutral': 0, 'angry': 1, 'happy': 2, 'sad': 3, 'surprised': 4}
@@ -803,7 +807,7 @@ def convert(mirror, art, number, title, parts):
     builder.add('end')
     project = Project(title=title + TITLE_TAG, game='cod', pack_id=PACK_ID, episode_id=number * 10,
                       episode_version=STORY_VERSION, nodes=builder.nodes)
-    project.addons = [dict(id=ADDON_ID, revision=ADDON_REVISION)]
+    project.addons = [dict(id=ADDON_ID, revision=CASES_NEED_CH2)]
     project.assets = [builder.assets[ident] for ident in sorted(builder.assets)]
     project.characters = list(builder.characters.values())
     project.start = builder.nodes[0].id
@@ -856,6 +860,8 @@ def addon(mirror, progress=print):
         resources[FRAME_BACKDROP] = png(image.convert('RGB'))
     art = mirror.look_banks(ids)
     resources[SPEC] = json.dumps(spec(mirror, art), separators=(',', ':')).encode('utf-8')
+    import ch2_dialogue_skin
+    resources.update(ch2_dialogue_skin.build(mirror.root))          # (revision 2: Secret in the Shadows UI)
     resources[ADDON_RECORD] = provides_bytes(ADDON_ID, ADDON_TITLE, ADDON_REVISION)
     report = dict(portraits=len(ids), pictures=len(set(ids.values())), looks=len(art[0]), backdrops=len(scenes),
                   tracks=len(tracks), story_objects=len(mirror.story_object_ids()), resources=len(resources))

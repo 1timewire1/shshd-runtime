@@ -97,10 +97,12 @@ TITLE_LOOK_PACKS = {31500: 'chc'}
 # (playsoundonload.js: `Main_Jingle`, loop false), as an MP3 at chc's 26990, played once in place of MENU_MUSIC.
 TITLE_MUSIC = {'chc': ('chc', 26990)}
 TITLE_MUSIC_PACKS = {31500: 'chc'}
-# shshd-runtime: Add-Ons' Claire Hart Dialogue (owner, 2026-11-19; CLAIRE_HART_PLAN.md Stage 0): CoD's dialogue in Claire Hart's
-# speech bubbles and Romic with CoD's attached ring: (the add-on, its skin spec, the packs it's on for with "Claire Hart Cases").
-# The spec and its art: tools/translate/ch_dialogue_skin.py.
-DIALOGUE_SKIN = ('chc', 29100, (31500,))
+# shshd-runtime: Add-Ons' Claire Hart UI (owner, 2026-11-19 as Claire Hart Dialogue; CLAIRE_HART_PLAN.md Stage 0 and S2b): CoD's
+# dialogue, choices, windows and pause menu in a Claire Hart game's dress, each game's own (owner, 2026-11-24): the choice ->
+# (the add-on, its skin spec, the packs it is that game's for, its fonts' name prefix: vector_text.skin_font). Auto gives each
+# pack its own game's skin, CoD's own episodes and menus CoD's look; a skin chosen by name is every episode's and the menus'
+# (content.skin_entry). The specs and art: tools/translate/ch_dialogue_skin.py (Classic's), ch2_dialogue_skin.py (the sequel's).
+DIALOGUE_SKINS = {'classic': ('chc', 29100, (31500,), 'CHRomic'), 'shadows': ('ch2', 29100, (31900,), 'CH2Roboto')}
 UI_SHIFTS = {PAID_PROFILE: 0, FREE_PROFILE: 1, LOCALIZED_FREE_PROFILE: 5}
 PROFILES = dict.fromkeys(UI_SHIFTS, 'ipa')
 # Reference UI members. Character/background/audio banks retain their IDs.

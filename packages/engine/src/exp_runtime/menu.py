@@ -75,7 +75,7 @@ MAX_NAMES = 4096               # player.json `names`: far more keys than the who
 SHARED_PREFERENCES = dict(
     music=bool, sound=bool, vibration=bool, device_vibration=bool, logging_disabled=bool, choice_hints=bool,
     skip_minigames=bool, skip_ad_intros=bool, skip_upsell_intros=bool, autoplay=bool, disable_choice_timer=bool,
-    side_panels=bool, hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, brew_08_backgrounds=bool, hollywood_art=bool, dsi_backgrounds=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, undo=bool, ch_portraits=bool, ch_backdrop=bool, dim_backdrops=bool, ch_43=bool, ch_dialogue=('off', 'cases', 'all'), claire_powerups=('once', 'unlimited', 'off'), arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
+    side_panels=bool, hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, brew_08_backgrounds=bool, hollywood_art=bool, dsi_backgrounds=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, undo=bool, ch_portraits=bool, ch_backdrop=bool, dim_backdrops=bool, ch_43=bool, ch_dialogue=('auto', 'off', 'classic', 'shadows'), claire_powerups=('once', 'unlimited', 'off'), arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
     controller_confirm=('south', 'east'), grid_controls=('tap', 'hold'), dsi_pixels=('sharp', 'smooth'),
     text_animation=TEXT_ANIMATIONS,
     preferred_language=PREFERRED_LANGUAGES,
@@ -92,6 +92,20 @@ def shared_preference(key, value):
     if isinstance(check, range):
         return type(value) is int and value in check
     return check is not None and value in check
+
+
+def accepted_preferences(values):
+    """The shared preferences among `values` (another device's, a backup's, an older player.json's) as this app keeps
+    them: an older form carried over (Claire Hart UI's Off / Cases / Everywhere: content.skin_choice), then each key this
+    app knows with a value it accepts (shared_preference)."""
+    out = {}
+    for key, value in values.items():
+        if key == 'ch_dialogue' and isinstance(value, str):
+            from .content import skin_choice
+            value = skin_choice(value)
+        if shared_preference(key, value):
+            out[key] = value
+    return out
 
 
 def preference_defaults():
@@ -201,8 +215,9 @@ class MenuState:
                     self.dim_backdrops = data['dim_backdrops']
                 if type(data.get('ch_43')) is bool:
                     self.ch_43 = data['ch_43']
-                if data.get('ch_dialogue') in ('off', 'cases', 'all'):
-                    self.ch_dialogue = data['ch_dialogue']
+                if isinstance(data.get('ch_dialogue'), str):
+                    from .content import skin_choice
+                    self.ch_dialogue = skin_choice(data['ch_dialogue'])     # (Off / Cases / Everywhere carry over)
                 if data.get('claire_powerups') in ('once', 'unlimited', 'off'):
                     self.claire_powerups = data['claire_powerups']
                 if type(data.get('arena_minigames')) is bool:
@@ -247,9 +262,8 @@ class MenuState:
             if 'preferred_language' not in shared.preferences and any(
                     key in shared.preferences for key in ('title_language', 'dsi_language', 'shs11_language', 'story_language')):
                 self.preferred_language = preferred_from(shared.preferences)
-            for key, value in shared.preferences.items():
-                if shared_preference(key, value):
-                    setattr(self, key, value)
+            for key, value in accepted_preferences(shared.preferences).items():
+                setattr(self, key, value)
         ids = {e['id'] for e in library.episodes}
         if self.selected not in ids:
             saved = [(self.resume_path(e['id']), e['id']) for e in library.episodes]
@@ -308,8 +322,8 @@ class MenuState:
         self.ch_backdrop = True
         self.dim_backdrops = True      # Claire Hart's translations: their backdrops darkened as the game drew them
         self.ch_43 = True              # Claire Hart's cases in their own 4:3 where the window has room (CLAIRE_HART_43_PLAN.md)
-        # Claire Hart Dialogue: CoD's dialogue in Claire Hart's bubbles, for its cases ('cases'), every episode ('all') or none
-        self.ch_dialogue = 'cases'
+        # Claire Hart UI: each game's own skin ('auto'), none ('off'), or one by name everywhere ('classic', 'shadows')
+        self.ch_dialogue = 'auto'
         self.claire_powerups = 'once'           # Claire Hart's rounds' power-ups (R2): once each a round, unlimited, off
         # translated New Rules episodes: their minigames in New Rules' own arena (desktop_nr_arena.py); off, the timed
         # choices the translations carry for players without it (owner, 2026-10-31: the arena by default)

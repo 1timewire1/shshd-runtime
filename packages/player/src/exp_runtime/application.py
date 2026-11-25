@@ -39,8 +39,8 @@ from .games import GAMES, has_translated_minigames
 from .ui_sound import UiSounds
 from .music_stream import FADE_MS
 from .menu import (EPISODE_HEADER_HEIGHT, EPISODE_ROW_HEIGHT, MenuState,
-                   SHARED_PREFERENCES, default_library, group_episodes, preference_defaults, remember_library,
-                   shared_preference)
+                   SHARED_PREFERENCES, accepted_preferences, default_library, group_episodes, preference_defaults,
+                   remember_library, shared_preference)
 from .minigames import MINIGAMES
 from .runtime import NewerSaveError, SaveError, Session
 from .settings import AppSettings
@@ -1100,9 +1100,8 @@ class Application:
         (menu.shared_preference); the rest are left. Persisted, and the options with effects of their own applied. From
         before Preferred Language, its four languages give it (languages.with_preferred)."""
         from .languages import with_preferred
-        for key, value in with_preferred(options).items():
-            if shared_preference(key, value):
-                setattr(self.state, key, value)
+        for key, value in accepted_preferences(with_preferred(options)).items():
+            setattr(self.state, key, value)
         self.state.persist()
         self.apply_hires_portraits()
         self.apply_ms3_characters()
@@ -1185,7 +1184,7 @@ class Application:
             return
         try:
             data = json.loads(newest[1].read_text(encoding='utf-8'))
-            values = {key: value for key, value in data.items() if shared_preference(key, value)}
+            values = accepted_preferences(data)
             if values:
                 self.settings.set_preferences(values)
         except (OSError, ValueError, AttributeError) as error:
@@ -1294,9 +1293,9 @@ class Application:
 
     @library_answer
     def ch_dialogue_offered(self):
-        """Whether the library's add-on carries Claire Hart Dialogue's skin (the game profile's DIALOGUE_SKIN)."""
-        entry = getattr(GAMES.get(self.library.game_id), 'DIALOGUE_SKIN', None) if self.library else None
-        return entry is not None and hasattr(self.library, 'addon_has') and self.library.addon_has(entry[0], entry[1])
+        """Whether a Claire Hart game's add-on in the library carries its UI skin (the game profile's DIALOGUE_SKINS)."""
+        skins = (getattr(GAMES.get(self.library.game_id), 'DIALOGUE_SKINS', None) or {}) if self.library else {}
+        return hasattr(self.library, 'addon_has') and any(self.library.addon_has(e[0], e[1]) for e in skins.values())
 
     @library_answer
     def claire_powerups_offered(self):
@@ -1689,7 +1688,7 @@ class Application:
             library.hd_art_mode = state.hd_art          # the player's choice (player.json), unless the environment sets it
         library.hires_portraits = state.hires_portraits
         library.ms3_characters = state.ms3_characters
-        library.ch_dialogue = getattr(state, 'ch_dialogue', 'cases')
+        library.ch_dialogue = getattr(state, 'ch_dialogue', 'auto')
         library.claire_powerups = getattr(state, 'claire_powerups', 'once')
         library.java_look = state.java_look
         library.brew_08_backgrounds = state.brew_08_backgrounds
