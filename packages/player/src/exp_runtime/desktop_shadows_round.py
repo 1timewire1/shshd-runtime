@@ -199,7 +199,9 @@ class ShadowsRoundRenderer(ClaireRoundRenderer):
                     if sw <= 0 or sh <= 0 or dw <= 0 or dh <= 0:
                         continue
                     part = art.subsurface((xs[i], ys[j], sw, sh))
-                    found.blit(pygame.transform.smoothscale(part, (dw, dh)), (dxs[i], dys[j]))
+                    # (one that changes every frame scales plainly: nine smooth scalings a frame were the banner's cost)
+                    scale = pygame.transform.smoothscale if cache else pygame.transform.scale
+                    found.blit(scale(part, (dw, dh)), (dxs[i], dys[j]))
             if alpha != 255:
                 found.set_alpha(alpha)
             if cache:
@@ -208,8 +210,9 @@ class ShadowsRoundRenderer(ClaireRoundRenderer):
 
     def say(self, text, font, size, colour, centre, scale, anchor='center', alpha=255):
         """Text in `font` at `size` design units (`scale` canvas pixels a unit)."""
-        surface = self.font(font, round(size * scale)).render(str(text), True, colour)
+        surface = self.rendered(self.font(font, round(size * scale)), text, colour)
         if alpha != 255:
+            surface = surface.copy()
             surface.set_alpha(alpha)
         rect = surface.get_rect(**{anchor: (round(centre[0]), round(centre[1]))})
         self.canvas.blit(surface, rect)
@@ -538,21 +541,31 @@ class ShadowsRoundRenderer(ClaireRoundRenderer):
 
     def draw_pip(self, game):
         """The open close-up: the vignette over the scene, its backing, its objects not yet found, the close button."""
-        shade = pygame.Surface(self.canvas.get_size(), pygame.SRCALPHA)
-        shade.fill((0, 0, 0, VIGNETTE_ALPHA))
-        self.canvas.blit(shade, (0, 0))
+        self.darken(VIGNETTE_ALPHA)
         number = self.close_up(game)['backing'][0]
         rect = self.pip_rect(game)
-        self.canvas.blit(pygame.transform.smoothscale(self.sprite(game, number), rect.size), rect)
+        self.canvas.blit(self.pip_scaled(game, number, rect.size), rect)
         objects = self.objects(game)
         for index, kind in enumerate(game.kinds):
             if kind != sr.CLOSE_UP or index in game.found or objects[index][0] is None:
                 continue
             spot = self.pip_spot(game, objects[index][0])
-            self.canvas.blit(pygame.transform.smoothscale(self.sprite(game, objects[index][0][0]), spot.size), spot)
+            self.canvas.blit(self.pip_scaled(game, objects[index][0][0], spot.size), spot)
         button = self.close_rect(game)
         self.piece('btn_secondary_round', button.center, button.size, tint=(172, 172, 172))
         self.piece('icn_close', button.center, (button.width * 15 / 28, button.height * 15 / 28), tint=BUTTON_TINT)
+
+    def pip_scaled(self, game, number, size):
+        """Sprite `number` at `size`, kept while the close-up shows at that size (a dozen at most: its opening zoom makes
+        a size a frame). Scaling the backing and its objects each frame cost about 10 ms on the g54."""
+        cache = self.__dict__.setdefault('_pip_scaled', {})
+        key = (game.scene, number, tuple(size))
+        found = cache.get(key)
+        if found is None:
+            if len(cache) >= 12:
+                cache.clear()
+            found = cache[key] = pygame.transform.smoothscale(self.sprite(game, number), size)
+        return found
 
     def draw_key(self, game, in_scene):
         """The Gold Key's find: it grows to 1.33 and settles where it was, waits, then flies into its slot (drawn over the
@@ -897,10 +910,13 @@ class ShadowsRoundRenderer(ClaireRoundRenderer):
             line = NAME_LINE * kb
             top = y - line * len(lines) / 2
             for n, text in enumerate(lines[:2]):
-                surface = font.render(text, True, colour)
+                surface = self.rendered(font, text, colour)
                 if surface.get_width() > NAME_WIDTH * self.k * 1.5:
                     surface = pygame.transform.smoothscale(surface, (round(NAME_WIDTH * self.k * 1.5), surface.get_height()))
-                surface.set_alpha(alpha)
+                elif alpha != 255:
+                    surface = surface.copy()
+                if alpha != 255:
+                    surface.set_alpha(alpha)
                 self.canvas.blit(surface, surface.get_rect(center=(round(x), round(top + line * (n + 0.5)))))
 
     def draw_sensor(self, game):
@@ -924,11 +940,16 @@ class ShadowsRoundRenderer(ClaireRoundRenderer):
         self.piece('icn_HotCold_idle' if ready else 'icn_HotCold_empty', rect.center, (60 * scale, 67 * scale))
 
     # -- pop-ups -----------------------------------------------------------------------------------------------------------
+    def darken(self, alpha):
+        """The canvas under black at `alpha`, as a multiply in place (a full-frame shade picture made and blended each
+        frame cost about 4 ms on the g54)."""
+        if alpha > 0:
+            keep = 255 - min(255, round(alpha))
+            self.canvas.fill((keep, keep, keep), special_flags=pygame.BLEND_RGB_MULT)
+
     def draw_spam_popup(self):
         width, height = self.canvas.get_size()
-        shade = pygame.Surface((width, height), pygame.SRCALPHA)
-        shade.fill((0, 0, 0, 166))
-        self.canvas.blit(shade, (0, 0))
+        self.darken(166)
         u = self.k * self.grown(1.2)
         centre = (width / 2, height / 2)
         rect = self.button_rect((centre[0], centre[1] + 4 * u), (422 * u, 209 * u))
@@ -966,9 +987,7 @@ class ShadowsRoundRenderer(ClaireRoundRenderer):
         age = self.clock - self._summary_at
         u = self.summary_unit()
         width, height = self.canvas.get_size()
-        shade = pygame.Surface((width, height), pygame.SRCALPHA)
-        shade.fill((0, 0, 0, round(SUMMARY_SHADE * clamp(age / 400))))
-        self.canvas.blit(shade, (0, 0))
+        self.darken(SUMMARY_SHADE * clamp(age / 400))
         if age < CLEARED_MS:
             self.draw_cleared(age, u)
             return
@@ -985,8 +1004,10 @@ class ShadowsRoundRenderer(ClaireRoundRenderer):
         for i, x in enumerate(STARS_X):
             centre = self.summary_point(x, STARS_Y)
             star = self.hud_scaled('icn_chapterresult_Star', (31 * u, 30 * u))
-            dim = star.copy()
-            dim.fill((40, 60, 55, 200), special_flags=pygame.BLEND_RGBA_MULT)
+            dim = self._images.get(('dim star', star.get_size()))
+            if dim is None:
+                dim = self._images[('dim star', star.get_size())] = star.copy()
+                dim.fill((40, 60, 55, 200), special_flags=pygame.BLEND_RGBA_MULT)
             rect = star.get_rect(center=(round(centre[0]), round(centre[1])))
             self.canvas.blit(dim, rect)
             filled = clamp(s['half_stars'] / 2 - i)

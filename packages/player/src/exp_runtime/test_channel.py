@@ -1913,9 +1913,11 @@ class Commands:
         number, w, h, left, top = normal
         sprite = renderer.sprite(game, number)
         step = max(1, min(w, h) // 12)
+        # The object's own opaque pixels first, then those the hit test's 9 x 9 window still reaches: a point at that
+        # window's edge (the g54, 2026-11-25: a necklace's beads) can round to a window pixel just outside it.
         points = sorted(((px, py) for py in range(0, h, step) for px in range(0, w, step)
                          if pixel_hit(lambda ax, ay: sprite.get_at((ax, ay))[3], w, h, px, py)),
-                        key=lambda p: (p[0] - w / 2) ** 2 + (p[1] - h / 2) ** 2)
+                        key=lambda p: (sprite.get_at(p)[3] < 128, (p[0] - w / 2) ** 2 + (p[1] - h / 2) ** 2))
         wanted = [o for o in game.listed if o not in game.found] + [obj]     # (the sequel's parts and Gold Key too)
         top_bar, bar_top = renderer.top_bar_bottom(), renderer.bar_top()
         for recentred in (False, True):
@@ -2044,11 +2046,16 @@ class Commands:
                 return dict(ok=False, error='no closed close-up in this scene')
             number, w, h, left, top = close_up['cutout']
             renderer.view.centre_on(left + w / 2, top + h / 2)
-            for dy in range(0, h, max(1, h // 10)):
-                for dx in range(0, w, max(1, w // 10)):
-                    x, y = renderer.view.to_canvas(left + dx, top + dy)
-                    if renderer.hit(round_, x, y) == ('open_pip',):
-                        return self._claire_tap(x, y)
+            # The hotspot's own opaque pixels nearest its middle first (a point at the hit test's edge can round to a
+            # window pixel just outside it: the g54, 2026-11-25, a chair's edge over the desk drawer)
+            sprite = renderer.sprite(round_, number)
+            step_x, step_y = max(1, w // 16), max(1, h // 16)
+            points = sorted(((dx, dy) for dy in range(0, h, step_y) for dx in range(0, w, step_x)),
+                            key=lambda p: (sprite.get_at(p)[3] < 128, (p[0] - w / 2) ** 2 + (p[1] - h / 2) ** 2))
+            for dx, dy in points:
+                x, y = renderer.view.to_canvas(left + dx, top + dy)
+                if renderer.hit(round_, x, y) == ('open_pip',):
+                    return self._claire_tap(x, y)
             return dict(ok=False, error='no spot on the close-up a tap reaches')
         if verb == 'close':
             if not round_.pip_open:

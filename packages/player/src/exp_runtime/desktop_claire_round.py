@@ -438,7 +438,9 @@ class ClaireRoundRenderer:
             cutout = self.hotspot_cutout(game)
             if cutout is not None:
                 base.blit(self.sprite(game, cutout[0]), (cutout[3], cutout[4]))
-            self._scene, self._composed, self._scaled = key, base, None
+            # Opaque, once a composition (a find): each view scaled from it is then opaque too, and blits without
+            # blending (converting each scaled view instead cost 5 ms a pan frame on the g54).
+            self._scene, self._composed, self._scaled = key, base.convert(), None
         return self._composed
 
     def scene_state(self, game):
@@ -480,8 +482,9 @@ class ClaireRoundRenderer:
         gaps = [pygame.Rect(0, 0, width, top)] if top > 0 else []
         if top + scaled.get_height() < height:
             gaps.append(pygame.Rect(0, top + scaled.get_height(), width, height - top - scaled.get_height()))
-        if left > 0 or left + scaled.get_width() < width or not gaps:
-            self.canvas.fill((0, 0, 0))
+        if left > 0 or left + scaled.get_width() < width:
+            self.canvas.fill((0, 0, 0))                     # (only where the scene leaves the sides: a fill a frame cost
+                                                            # 3.4 ms on the g54)
         backdrop = self.backdrop(size) if gaps else None
         for gap in gaps:
             if backdrop is not None:
@@ -561,13 +564,25 @@ class ClaireRoundRenderer:
         if game.over:
             self.draw_summary(game)
 
+    def rendered(self, font, text, colour):
+        """`font`'s rendering of `text` in `colour`, kept (a round's timer, score and names repeat frame after frame; on
+        the g54 rendering them each frame cost 2.6 ms). Callers that change it (set_alpha) take a copy."""
+        cache = self.__dict__.setdefault('_texts', {})
+        key = (id(font), str(text), tuple(colour))
+        found = cache.get(key)
+        if found is None:
+            if len(cache) > 400:
+                cache.clear()
+            found = cache[key] = font.render(str(text), True, colour)
+        return found
+
     def text(self, text, bold, size, colour, centre, outline=None, scale=None):
         """`size` in design units, at `scale` canvas pixels a unit (the width's, `k`, unless given: kb, kt, a panel's)."""
         font = self.font(bold, round(size * (self.k if scale is None else scale)))
-        surface = font.render(text, True, colour)
+        surface = self.rendered(font, text, colour)
         rect = surface.get_rect(center=(round(centre[0]), round(centre[1])))
         if outline is not None:
-            shade = font.render(text, True, outline)
+            shade = self.rendered(font, text, outline)
             for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
                 self.canvas.blit(shade, rect.move(dx, dy))
         self.canvas.blit(surface, rect)
@@ -636,12 +651,15 @@ class ClaireRoundRenderer:
             if game.focus_target == obj and (self.clock // 300) % 2:
                 colour = VALUE_TEXT                                                 # (Focus: its name blinks)
             font = self.font(False, round(LABEL_PX * kt))
-            surface = font.render(name, True, colour)
+            surface = self.rendered(font, name, colour)
             room = self.label_room(slot)
             if surface.get_width() > room:          # (a tall frame's grown text in its narrowed middle: fit, owner 2026-11-25)
                 surface = pygame.transform.smoothscale(
                     surface, (round(room), max(1, round(surface.get_height() * room / surface.get_width()))))
-            surface.set_alpha(alpha)
+            elif alpha != 255:
+                surface = surface.copy()            # (the kept rendering stays as it is)
+            if alpha != 255:
+                surface.set_alpha(alpha)
             x, y = self.label_point(slot)
             self.canvas.blit(surface, surface.get_rect(center=(round(x), round(y))))
         menu = self.scaled(self.hud('icn_menu'), MENU_SCALE * kb)
