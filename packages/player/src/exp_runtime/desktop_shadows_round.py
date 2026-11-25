@@ -863,9 +863,28 @@ class ShadowsRoundRenderer(ClaireRoundRenderer):
         self.say(' Gold Key ', 'RobotoCondensed-Bold', 15, CREAM if found else KEY_TEXT,
                  self.bottom(KEY_SLOT[0] + KEY_TEXT_AT[0], KEY_SLOT[1] + KEY_TEXT_AT[1]), kb)
 
+    def name_lines(self, name):
+        """(font, lines) for a listed name: at most two lines; one that would take three (a tall frame's grown text in the
+        slot's fixed width: "Static electricity generator" at 9:20) is set smaller until it takes two (owner's audit,
+        2026-11-25)."""
+        key = ('name lines', name, round(self.kb * 1000), self.canvas.get_width())
+        found = self._images.get(key)
+        if found is None:
+            width = NAME_WIDTH * self.k * 1.45
+            size = round(NAME_PX * self.kb)
+            while True:
+                font = self.font('RobotoCondensed-Bold', size)
+                lines = self.wrapped(name, font, NAME_PX, width)
+                if len(lines) <= 2 or size <= round(NAME_PX * self.k * 0.7):
+                    break
+                size -= 1
+            if len(lines) > 2:
+                lines = [lines[0], ' '.join(lines[1:])]
+            found = self._images[key] = (font, lines)
+        return found
+
     def draw_names(self, game):
         kb = self.kb
-        font = self.font('RobotoCondensed-Bold', round(NAME_PX * kb))
         for slot, obj in enumerate(game.slots):
             if obj == NO_OBJECT:
                 continue
@@ -873,7 +892,7 @@ class ShadowsRoundRenderer(ClaireRoundRenderer):
             alpha = 255 if leaving is None else FOUND_NAME_ALPHA if leaving >= sr.NAME_GAP_MS else round(
                 FOUND_NAME_ALPHA * leaving / sr.NAME_GAP_MS)
             colour = TEAL if game.extra[slot] else CREAM
-            lines = self.wrapped(game.names[obj], font, NAME_PX, NAME_WIDTH * self.k * 1.45)
+            font, lines = self.name_lines(game.names[obj])
             x, y = self.label_point(slot)
             line = NAME_LINE * kb
             top = y - line * len(lines) / 2
@@ -1182,8 +1201,8 @@ class ShadowsRoundRenderer(ClaireRoundRenderer):
                 return ('scene', hits)
             return ('backing',) if self.pip_rect(game).collidepoint(x, y) else ('close_pip',)
         hits = self.objects_at(game, x, y)
-        if not hits and self.hotspot_hit(game, x, y):
-            return ('open_pip',)
+        if self.hotspot_hit(game, x, y) and not any(game.accepts(o) for o in hits):
+            return ('open_pip',)            # (the game's: objects not wanted pass the tap on to the hotspot below them)
         return ('scene', hits)
 
     def indicator(self):

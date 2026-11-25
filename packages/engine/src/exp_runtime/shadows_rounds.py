@@ -254,6 +254,20 @@ class ShadowsRound:
         if not self.over:
             self._spam(count=False)
 
+    def accepts(self, obj):
+        """Whether a tap on `obj` would take (as _try, changing nothing): touchdetector gives a tap to the first object under
+        it whose callback takes it; one not listed has none, so the tap falls through to the close-up's hotspot below
+        (hogscene.setupTracking; owner's audit of every round, 2026-11-25: 18 scenes' hotspots lay under objects)."""
+        kind = self.kinds[obj] if 0 <= obj < len(self.kinds) else None
+        if kind == GOLD_KEY:
+            return self.key_found_ms < 0
+        if kind == PART:
+            whole = next((w for w, ps in self.parts.items() if obj in ps), None)
+            return whole is not None and whole in self.slots and whole not in self.found and obj not in self.collecting
+        if kind in (ORDINARY, CLOSE_UP):
+            return obj in self.slots and obj not in self.found and (kind != CLOSE_UP or self.pip_open)
+        return False
+
     def _try(self, obj):
         kind = self.kinds[obj] if 0 <= obj < len(self.kinds) else None
         if kind == GOLD_KEY:

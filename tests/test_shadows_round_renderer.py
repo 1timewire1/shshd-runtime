@@ -95,6 +95,31 @@ class ShadowsRendererTests(unittest.TestCase):
         self.assertEqual(r.hit(game, *r.view.to_canvas(920, 620)), ('open_pip',))
         self.assertEqual(r.hit(game, *r.view.to_canvas(650, 160)), ('scene', []))       # (closed: its objects hidden)
 
+    def test_the_hotspot_takes_a_tap_through_an_object_not_wanted(self):
+        """(owner's audit, 2026-11-25: 18 scenes' hotspots lay under objects, so their close-ups never opened) as the
+        game's touchdetector: an object under the tap that doesn't take it passes it on to the hotspot below."""
+        r, game = self.renderer, self.game
+        objects = r._specs['ch2rounds']['scenes']['Bedroom']['objects']
+        spare = next(i for i, kind in enumerate(KINDS) if kind == sr.ORDINARY and i not in game.slots)
+        listed = next(i for i in game.slots if i >= 0 and KINDS[i] == sr.ORDINARY)
+        for index, expected in ((spare, ('open_pip',)), (listed, ('scene', [listed]))):
+            for i in (spare, listed):
+                objects[i][2] = objects[i][2][:3] + ([40 + 60 * i, 400] if i != index else [905, 605])
+            r._images.clear()
+            r.draw_game(game)
+            r.view.centre_on(900, 600)
+            r.draw_game(game)
+            self.assertEqual(r.hit(game, *r.view.to_canvas(915, 615)), expected)
+
+    def test_a_long_name_takes_two_lines_in_a_tall_frame(self):
+        """(owner's audit) at 9:20 "Static electricity generator" took three lines and lost its third: set smaller."""
+        r, game = self.renderer, self.game
+        r.frame_units = (384, 853)
+        r.draw_game(game, 16)
+        font, lines = r.name_lines('Static electricity generator')
+        self.assertEqual(len(lines), 2)
+        self.assertEqual(' '.join(lines), 'Static electricity generator')
+
     def test_the_open_close_up_fits_the_frame_and_takes_its_own_taps(self):
         r, game = self.renderer, self.game
         game.open_pip()
