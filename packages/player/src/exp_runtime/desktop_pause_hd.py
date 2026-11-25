@@ -188,11 +188,12 @@ TITLE_MUSIC_LABEL = 'Title Screen Music'
 # The games are listed in the episode lists' order ('07, Surviving Hollywood, '08, New Rules, X360, '11; owner, 2026-11-19);
 # BREW's one tune stands for '07 and '08 together, before Surviving Hollywood.
 TITLE_MUSIC_NAMES = {'default': 'Default', 'auto': 'Auto', 'brew': "'07 / '08", 'shw': 'Surviving Hollywood', 'nr': 'New Rules',
-                     'x360': 'X360', 'shs11': "'11", 'chc': 'Claire Hart'}
+                     'x360': 'X360', 'shs11': "'11", 'chc': 'Claire Hart Classic', 'ch2': 'Secret in the Shadows'}
 # Add-Ons' Title Screen Look (main menu only; owner, 2026-11-16): the main menu's art, the same way; BREW's editions are two.
 TITLE_LOOK_LABEL = 'Title Screen Look'
 TITLE_LOOK_NAMES = {'default': 'Default', 'auto': 'Auto', 'brew07': "'07", 'shw': 'Surviving Hollywood', 'brew08': "'08",
-                    'nr': 'New Rules', 'x360': 'X360', 'shs11': "'11", 'chc': 'Claire Hart'}
+                    'nr': 'New Rules', 'x360': 'X360', 'shs11': "'11", 'chc': 'Claire Hart Classic',
+                    'ch2': 'Secret in the Shadows'}
 # On the main menu, Add-Ons keeps Use Translated Mini-Games, Title Screen Music and Title Screen Look, and the other add-on switches go one page
 # further in, Per-Game Settings (owner, 2026-11-09); the pause menu lists them all on Add-Ons, as before.
 PER_GAME_LABEL = 'Per-Game Settings'

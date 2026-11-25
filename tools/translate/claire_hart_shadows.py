@@ -44,6 +44,8 @@ scaled to CoD's portrait at twice its size (220 x 240), as chslim.whole gives Cl
                  here), full brightness (dimmed at draw time to 102), in the folders' sorted order
     26900-26936  the tracks, MP3 128 kb/s (FFmpeg)
     26940        the journal's cue, DS_Call_Attention (MP3)
+    26960-26961  revision 3: the Title Screen Look's spec and its title picture (TITLE_LOOK)
+    26990        revision 3: the Title Screen Music, the main jingle (MP3)
     26998        the spec, JSON: looks, look names, pictures, scenes and slices, tracks, story objects (as chc's)
     26999        the frame backdrop beside CoD's frame (the episode selector's own backdrop)
     27000-27257  the story-object photos, their original PNGs: the 253 pictures, then the 5 round sprites photos show
@@ -68,7 +70,7 @@ from claire_hart import markdown_table, mp3, norm, story_text      # noqa: E402
 from exp_runtime.claire_round_services import shadows_key  # noqa: E402
 
 PACK_ID = 31900
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'ch2', 'Claire Hart: Secret in the Shadows', 2     # (2: S2b's skin, 29100 on)
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'ch2', 'Claire Hart: Secret in the Shadows', 3     # (2: S2b's skin; 3: the title)
 # The ch2 revision the cases need: 1. Revision 2 adds only the skin, which the player draws when it finds it (as chc's 2).
 CASES_NEED_CH2 = 1
 TITLE_TAG = ' (CH2)'
@@ -81,6 +83,21 @@ STORY_VERSION = 1                            # the cases' version (episode_versi
 LOOK_BANK_BASE = 30000                       # cod/profile.py LOOK_BANKS[31900]: look n is 30000 + 5n on
 FRAME_ART = 'textures/SD/episodeSelector/episodeselector_bg'
 JOURNAL_CUE = 'references/gamesfx/ogg/Claire_Hart_2_DS_Call_Attention'
+# Revision 3 (owner, 2026-11-25): the Title Screen Look and Music (cod/profile.py TITLE_LOOKS, TITLE_MUSIC), as chc's. The
+# look: the episode select's violet backdrop (26999, already here) covering the frame, and the game's loading picture's
+# cast and logo (Troy, Claire, Paul and Harper over the "Claire Hart: Secret in the Shadows" banner), cut from its dark
+# nebula with soft edges (it has no cut-out of its own), where chc's logo goes. The music: the main jingle, which the
+# sequel ships byte for byte as Classic does, here too for a library with the sequel alone.
+TITLE_SPEC, TITLE_ART, TITLE_MUSIC = 26960, 26961, 26990
+TITLE_SOURCE = 'textures/SD/gameLoading/main_loading'           # 1066 x 600; the group spans x 199-870, y 37-520
+TITLE_CROP = (90, 0, 980, 600)
+TITLE_FADE = (160, 75, 85)                                     # source pixels faded at the sides, the top and the foot
+JINGLE = 'references/gamesfx/ogg/Claire_Hart_Main_Jingle'
+TITLE_LOOK = {'version': 1,
+              'background': {'cover': {'id': FRAME_BACKDROP, 'scale': 1}},
+              # 0.9 points a pixel: 801 points wide in the 768-wide frame (its faded sides past the edges), its foot
+              # about 30 points above Play/Resume; in a taller frame halfway between the top and the buttons, as chc's.
+              'title': {'picture': {'id': TITLE_ART, 'scale': 0.9}, 'centre': [384, 440], 'follow': 0.5}}
 CROP_HEIGHT, CROP_MARGIN, HEAD_BAND = 380, 14, 140
 CROP_HEIGHTS = {'Avatar_BrowdyBrothers': 540}     # a look's own window: both brothers (module doc)
 PORTRAIT_SIZE = (220, 240)                   # CoD's 110 x 120 at twice its size (chslim.SCALE)
@@ -899,10 +916,71 @@ def addon(mirror, progress=print):
     resources[SPEC] = json.dumps(spec(mirror, art), separators=(',', ':')).encode('utf-8')
     import ch2_dialogue_skin
     resources.update(ch2_dialogue_skin.build(mirror.root))          # (revision 2: Secret in the Shadows UI)
+    resources.update(title_resources(mirror))                       # (revision 3)
     resources[ADDON_RECORD] = provides_bytes(ADDON_ID, ADDON_TITLE, ADDON_REVISION)
     report = dict(portraits=len(ids), pictures=len(set(ids.values())), looks=len(art[0]), backdrops=len(scenes),
                   tracks=len(tracks), story_objects=len(mirror.story_object_ids()), resources=len(resources))
     return resources, report
+
+
+def title_picture(image):
+    """TITLE_SOURCE's cast and logo (TITLE_CROP) with soft edges (TITLE_FADE, smoothstep), as an RGBA PNG."""
+    from PIL import Image
+    crop = image.convert('RGBA').crop(TITLE_CROP)
+    width, height = crop.size
+    side, top, foot = TITLE_FADE
+
+    def ramp(distance, over):
+        t = max(0.0, min(1.0, distance / over))
+        return t * t * (3 - 2 * t)
+    columns = [ramp(min(x, width - 1 - x), side) for x in range(width)]
+    rows = [ramp(y, top) * ramp(height - 1 - y, foot) for y in range(height)]
+    mask = Image.new('L', (width, height))
+    mask.putdata([round(255 * c * r) for r in rows for c in columns])
+    crop.putalpha(mask)
+    return png(crop)
+
+
+def title_resources(mirror):
+    """Revision 3's Title Screen Look and Music (TITLE_LOOK), {resource: bytes}."""
+    from PIL import Image
+    with Image.open(mirror.files[mirror.path(TITLE_SOURCE)]) as image:
+        picture = title_picture(image)
+    with tempfile.TemporaryDirectory() as folder:
+        jingle = mp3(mirror.files[mirror.path(JINGLE)], folder)
+    return {TITLE_SPEC: json.dumps(TITLE_LOOK).encode(), TITLE_ART: picture, TITLE_MUSIC: jingle}
+
+
+def patch_addon(built, added, out_path):
+    """A built ch2 given `added` ({resource: bytes}) and this revision's record, the rest streamed as it is (no rebuild)."""
+    import claire_rounds_addon as cra
+    from exp_runtime.addons import RESOURCE as ADDON_RECORD, provides_bytes
+    added = dict(added)
+    added[ADDON_RECORD] = provides_bytes(ADDON_ID, ADDON_TITLE, ADDON_REVISION)
+    index = cra.archive_index(built)
+    out_path = Path(out_path)
+    work = Path(tempfile.mkdtemp(prefix='.ch2-patch-', dir=out_path.parent))
+    try:
+        parts = {}
+        for resource, data in added.items():
+            parts[resource] = work / f'{resource}.bin'
+            parts[resource].write_bytes(data)
+        with open(built, 'rb') as source:
+            for resource, (offset, size) in index.items():
+                if resource in parts:
+                    continue
+                path = parts[resource] = work / f'{resource}.bin'
+                source.seek(offset)
+                with open(path, 'wb') as target:
+                    left = size
+                    while left:
+                        block = source.read(min(left, 1 << 20))
+                        target.write(block)
+                        left -= len(block)
+        cra.write_exp(out_path, parts)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return out_path.stat().st_size
 
 
 # --- review sheets ----------------------------------------------------------------------------------------------------
@@ -1007,6 +1085,8 @@ def main(argv=None):
         if name == 'build':
             command.add_argument('--cases', help='only these case numbers (1,2,31)')
             command.add_argument('--cache', type=Path, help='the store pictures matched (made on first use)')
+        if name == 'addon':
+            command.add_argument('--patch', type=Path, help='a built ch2 .exp (revision 2) to give the title (revision 3)')
         if name in ('portraits', 'names'):
             command.add_argument('--sheet', type=Path, required=name == 'portraits')
         if name == 'portraits':
@@ -1090,6 +1170,14 @@ def main(argv=None):
             (args.out / name).write_bytes(compiled(project, slices))
             print(f'{name}: {project.title!r}, {len(project.nodes)} nodes, {dict(report)}')
         write_reviews(args.out, reviews)
+    elif args.patch:
+        # (a revision 2 build given the title, the rest streamed as it is)
+        args.out.mkdir(parents=True, exist_ok=True)
+        out = args.out / 'CH_Shadows.exp'
+        made = out.with_suffix('.new.exp')
+        size = patch_addon(args.patch, title_resources(mirror), made)
+        made.replace(out)                           # (the patched build may be the one it replaces)
+        print(f'addon: {ADDON_TITLE!r} revision {ADDON_REVISION} -> {out} ({size // 2 ** 20} MB)')
     else:
         from exp_runtime.exp import encode_exp
         resources, report = addon(mirror)

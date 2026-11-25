@@ -638,7 +638,8 @@ title tune from its addon, offered when the library holds that addon (`TITLE_MUS
 | X360 | `shsx360` (revision 15) | 26996 | `music/main_menu` |
 | '11 | `shs11` | 26981 | Track 1, the main menu's one full tune; started 0.9 s in, past its silence (`audio.mp3_from`) |
 | Surviving Hollywood | `shshw` | 26907 | Cue 3007, the main menu's tune |
-| Claire Hart (CoD; `claire-hart` branch) | `chc` | 26990 | `Claire_Hart_Main_Jingle` (13 s), which Classic's episode select plays once after Play Now (`playsoundonload.js`), as an MP3 |
+| Claire Hart Classic (CoD) | `chc` | 26990 | `Claire_Hart_Main_Jingle` (13 s), which Classic's episode select plays once after Play Now (`playsoundonload.js`), as an MP3 |
+| Secret in the Shadows (CoD) | `ch2` (revision 3) | 26990 | The same jingle: the sequel ships the file byte for byte, so `ch2` carries its own copy for a library without `chc` |
 
 **Title Screen Look** (the HD main menus, under Add-Ons; owner, 2026-11-16) chooses its art the same way: Default, Auto,
 or a translated game's own title art from its addon, offered when the addon carries it (`TITLE_LOOKS` in the SHS profile). The
@@ -648,10 +649,14 @@ where the look has them. BREW's editions are two looks: Auto takes '08's after a
 Classic story or Fall '06 (31100, 31200). The looks are built by `tools/translate/title_looks.py`; which addon revisions carry
 them is listed with each addon above as they land. The plan: `reference/TITLE_SCREENS_PLAN.md` beside the repository.
 
-Cause of Death has one look so far, **Claire Hart** (`claire-hart` branch, Stage 0; the CoD profile's `TITLE_LOOKS` and
-`TITLE_LOOK_PACKS`): Classic's Play Now screen, its misty forest and Claire and Paul over the gem banner, from `chc`'s spec at
-26960. Chosen, it replaces CoD's painting behind the same buttons, laid out as SHS HD's menu lays a look out (the logo is the
-look's title, fading in), and the episode lists' backdrop follows; Auto takes it after a Claire Hart case.
+Cause of Death has two (the CoD profile's `TITLE_LOOKS` and `TITLE_LOOK_PACKS`). **Claire Hart Classic**: Classic's Play
+Now screen, its misty forest and Claire and Paul over the gem banner, from `chc`'s spec at 26960. **Secret in the Shadows**
+(`ch2` revision 3, 26960–26961; owner, 2026-11-25): the episode select's violet backdrop (26999) under the cast and logo of
+the game's loading picture (`gameLoading/main_loading`: Troy, Claire, Paul and Harper over the banner), cut from its dark
+nebula with soft edges, as the game has no cut-out of them; `claire_hart_shadows.py addon --patch` gives a revision 2 build
+both, with the jingle, without a rebuild. Chosen, a look replaces CoD's painting behind the same buttons, laid out as SHS HD's
+menu lays a look out (its picture is the look's title, fading in), and the episode lists' backdrop follows; Auto takes the
+game of the case last played.
 
 ## Data Management
 

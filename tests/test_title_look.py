@@ -176,19 +176,24 @@ class CodTitleLookTests(unittest.TestCase):
         from exp_runtime.cod import profile
         from exp_runtime.desktop_pause_hd import TITLE_LOOK_NAMES
         from exp_runtime.menu import TITLE_LOOK_GAMES
-        self.assertEqual((profile.TITLE_LOOKS, profile.TITLE_LOOK_PACKS), ({'chc': ('chc', 26960)}, {31500: 'chc'}))
-        self.assertIn('chc', TITLE_LOOK_GAMES)
-        self.assertEqual(TITLE_LOOK_NAMES['chc'], 'Claire Hart')
-        app = TitleLookChoiceTests.app(self, 'auto', addons=('chc',))
-        app.library.game_id = 'cod'
-        app.remember_title_game(SimpleNamespace(record=dict(pack_id=31500, episode_id=10), library=app.library,
-                                                presentation={}))
-        self.assertEqual(app.state.last_title_look, 'chc')
-        self.assertEqual(app.title_look().addon, 'chc')
-        self.assertEqual((profile.TITLE_MUSIC, profile.TITLE_MUSIC_PACKS), ({'chc': ('chc', 26990)}, {31500: 'chc'}))
-        self.assertEqual(app.state.last_title_game, 'chc')                  # Auto's tune follows the case too
+        self.assertEqual((profile.TITLE_LOOKS, profile.TITLE_LOOK_PACKS),
+                         ({'chc': ('chc', 26960), 'ch2': ('ch2', 26960)}, {31500: 'chc', 31900: 'ch2'}))
+        self.assertTrue({'chc', 'ch2'} <= set(TITLE_LOOK_GAMES))
+        self.assertEqual((TITLE_LOOK_NAMES['chc'], TITLE_LOOK_NAMES['ch2']), ('Claire Hart Classic', 'Secret in the Shadows'))
+        self.assertEqual((profile.TITLE_MUSIC, profile.TITLE_MUSIC_PACKS),
+                         ({'chc': ('chc', 26990), 'ch2': ('ch2', 26990)}, {31500: 'chc', 31900: 'ch2'}))
         from exp_runtime.desktop_pause_hd import TITLE_MUSIC_NAMES
-        self.assertEqual(TITLE_MUSIC_NAMES['chc'], 'Claire Hart')
+        self.assertEqual(TITLE_MUSIC_NAMES['ch2'], 'Secret in the Shadows')
+        from exp_runtime.menu import shared_preference
+        app = TitleLookChoiceTests.app(self, 'auto', addons=('chc', 'ch2'))
+        app.library.game_id = 'cod'
+        for pack, game in ((31500, 'chc'), (31900, 'ch2')):       # (the sequel alone has its own copy of the jingle)
+            app.remember_title_game(SimpleNamespace(record=dict(pack_id=pack, episode_id=10), library=app.library,
+                                                    presentation={}))
+            self.assertEqual(app.state.last_title_look, game)
+            self.assertEqual(app.title_look().addon, game)
+            self.assertEqual(app.state.last_title_game, game)                # Auto's tune follows the case too
+            self.assertTrue(shared_preference('last_title_game', game))     # (and is kept app-wide)
 
     def test_cods_menu_takes_the_look_or_keeps_its_painting(self):
         from exp_runtime import desktop_cod_main

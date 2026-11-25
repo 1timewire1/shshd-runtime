@@ -90,13 +90,15 @@ PREVIEW_CASE_TITLE = (31500, 31900)
 TRANSLATED_FRAME_BACKDROP = {31500: 28001, 31900: 26999}       # (31900: the sequel's violet episode-select backdrop)
 # shshd-runtime: Add-Ons' Title Screen Look for CoD (as shs/profile.py's; owner, 2026-11-19): Claire Hart's Play Now screen
 # (its forest, and Claire and Paul over the gem banner) from chc's spec at 26960 (title_look.py), drawn in place of CoD's
-# painting behind the same buttons (desktop_cod_main). Auto follows the case last played.
-TITLE_LOOKS = {'chc': ('chc', 26960)}
-TITLE_LOOK_PACKS = {31500: 'chc'}
+# painting behind the same buttons (desktop_cod_main). Auto follows the case last played. Secret in the Shadows' (owner,
+# 2026-11-25) from ch2's revision 3: its episode select's violet backdrop, and its loading picture's cast and logo.
+TITLE_LOOKS = {'chc': ('chc', 26960), 'ch2': ('ch2', 26960)}
+TITLE_LOOK_PACKS = {31500: 'chc', 31900: 'ch2'}
 # ...and its Title Screen Music: the 13 s Claire_Hart_Main_Jingle, which Classic's episode select plays once
-# (playsoundonload.js: `Main_Jingle`, loop false), as an MP3 at chc's 26990, played once in place of MENU_MUSIC.
-TITLE_MUSIC = {'chc': ('chc', 26990)}
-TITLE_MUSIC_PACKS = {31500: 'chc'}
+# (playsoundonload.js: `Main_Jingle`, loop false), as an MP3 at chc's 26990, played once in place of MENU_MUSIC. The sequel
+# ships the same file byte for byte; ch2 carries its own copy at 26990, for a library with the sequel alone.
+TITLE_MUSIC = {'chc': ('chc', 26990), 'ch2': ('ch2', 26990)}
+TITLE_MUSIC_PACKS = {31500: 'chc', 31900: 'ch2'}
 # shshd-runtime: Add-Ons' Claire Hart UI (owner, 2026-11-19 as Claire Hart Dialogue; CLAIRE_HART_PLAN.md Stage 0 and S2b): CoD's
 # dialogue, choices, windows and pause menu in a Claire Hart game's dress, each game's own (owner, 2026-11-24): the choice ->
 # (the add-on, its skin spec, the packs it is that game's for, its fonts' name prefix: vector_text.skin_font). Auto gives each

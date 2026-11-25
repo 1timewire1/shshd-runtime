@@ -64,7 +64,7 @@ def group_episodes(records, catalog, *, mega_label, novel_label, saved_label, sa
 
 # shshd-runtime: Add-Ons' Title Screen Look (owner, 2026-11-16): the main menu's art from a translated game's addon (the
 # game profile's TITLE_LOOKS); BREW's two editions are two looks.
-TITLE_LOOK_GAMES = ('nr', 'brew07', 'brew08', 'shw', 'shs11', 'x360', 'chc')     # (chc: CoD's Claire Hart look)
+TITLE_LOOK_GAMES = ('nr', 'brew07', 'brew08', 'shw', 'shs11', 'x360', 'chc', 'ch2')     # (chc, ch2: CoD's Claire Hart looks)
 
 MAX_NAMES = 4096               # player.json `names`: far more keys than the whole library writes
 
@@ -79,8 +79,8 @@ SHARED_PREFERENCES = dict(
     controller_confirm=('south', 'east'), grid_controls=('tap', 'hold'), dsi_pixels=('sharp', 'smooth'),
     text_animation=TEXT_ANIMATIONS,
     preferred_language=PREFERRED_LANGUAGES,
-    order=('episode', 'title'), title_music=('default', 'auto', 'brew', 'nr', 'x360', 'shs11', 'shw', 'chc'),
-    last_title_game=('default', 'brew', 'nr', 'x360', 'shs11', 'shw'),
+    order=('episode', 'title'), title_music=('default', 'auto', 'brew', 'nr', 'x360', 'shs11', 'shw', 'chc', 'ch2'),
+    last_title_game=('default', 'brew', 'nr', 'x360', 'shs11', 'shw', 'chc', 'ch2'),
     title_look=('default', 'auto') + TITLE_LOOK_GAMES, last_title_look=('default',) + TITLE_LOOK_GAMES)
 
 

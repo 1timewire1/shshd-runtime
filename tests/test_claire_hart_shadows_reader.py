@@ -291,5 +291,23 @@ class Pack31900Tests(unittest.TestCase):
         self.assertIn('ch2', ADDON_FEATURES)
 
 
+@unittest.skipUnless(HAS_PIL, 'Pillow and NumPy are needed')
+class TitleLookTests(unittest.TestCase):
+    def test_the_cast_and_logo_are_cut_out_with_soft_edges(self):
+        """Revision 3's title (owner, 2026-11-25): the loading picture's group, faded to nothing at its edges, solid inside;
+        the look's background is the episode select's backdrop ch2 already holds, the jingle at chc's number."""
+        import io
+        from PIL import Image
+        import claire_hart_shadows as s2
+        picture = Image.open(io.BytesIO(s2.title_picture(Image.new('RGB', (1066, 600), (90, 40, 120))))).convert('RGBA')
+        width, height = picture.size
+        self.assertEqual((width, height), (s2.TITLE_CROP[2] - s2.TITLE_CROP[0], s2.TITLE_CROP[3] - s2.TITLE_CROP[1]))
+        for corner in ((0, 0), (width - 1, 0), (0, height - 1), (width - 1, height - 1), (width // 2, height - 1)):
+            self.assertEqual(picture.getpixel(corner)[3], 0, corner)
+        self.assertEqual(picture.getpixel((width // 2, height // 2)), (90, 40, 120, 255))
+        self.assertEqual(s2.TITLE_LOOK['background']['cover']['id'], s2.FRAME_BACKDROP)
+        self.assertEqual((s2.TITLE_SPEC, s2.TITLE_MUSIC, s2.ADDON_REVISION), (26960, 26990, 3))
+
+
 if __name__ == '__main__':
     unittest.main()

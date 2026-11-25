@@ -595,8 +595,8 @@ class CodPauseTests(unittest.TestCase):
                                       'hollywood_art',
                                       'arena_skin'))
         self.assertEqual((SWITCH_LABELS['hollywood_art'], LABEL_TINTS['hollywood_art']), ('Use SHW Art in Preview', 'SHW'))
-        self.assertEqual(list(TITLE_MUSIC_NAMES)[2:], ['brew', 'shw', 'nr', 'x360', 'shs11', 'chc'])
-        self.assertEqual(list(TITLE_LOOK_NAMES)[2:], ['brew07', 'shw', 'brew08', 'nr', 'x360', 'shs11', 'chc'])
+        self.assertEqual(list(TITLE_MUSIC_NAMES)[2:], ['brew', 'shw', 'nr', 'x360', 'shs11', 'chc', 'ch2'])
+        self.assertEqual(list(TITLE_LOOK_NAMES)[2:], ['brew07', 'shw', 'brew08', 'nr', 'x360', 'shs11', 'chc', 'ch2'])
         self.assertFalse(set(ADDON_KEYS) & (set(GENERAL_KEYS) | set(EXTRAS_KEYS)))
         self.assertEqual(self.menu.option_rows('addons', self.settings, self.menu.strings()), [])   # CoD: no such rows
         self.settings.update(ms3_characters=False, arena_minigames=True)

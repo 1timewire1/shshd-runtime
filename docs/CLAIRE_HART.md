@@ -65,8 +65,10 @@ All carry the CH tag; on the main menu they're on Add-Ons › Per-Game Settings,
 | HD Portraits in CoD, Backdrop | Claire Hart's sharper originals of CoD's own portraits; its green beside CoD's frame | On |
 | Use Translated Mini-Games | The real rounds (with `chcrounds`), else the narrated line | On |
 
-Title Screen Music and Look (Add-Ons) offer Claire Hart's: its 13-second main jingle, played once, and its Play Now screen
-behind CoD's buttons. Auto takes them after a case.
+Title Screen Music and Look (Add-Ons) offer each game's: Claire Hart Classic's 13-second main jingle, played once, and its
+Play Now screen behind CoD's buttons; Secret in the Shadows' (`ch2` revision 3) the same jingle (the sequel ships the same
+file, so it plays with the sequel alone too) and its episode select's violet backdrop under its loading picture's cast and
+logo. Auto takes the game of the case last played.
 
 ## In the Creator
 
