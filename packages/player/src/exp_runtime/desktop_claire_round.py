@@ -388,6 +388,26 @@ class ClaireRoundRenderer:
         dx, dy = LABELS[slot]
         return self.design(LIST_CENTRE[0] + dx, LIST_CENTRE[1] - dy, bottom=True)
 
+    def label_room(self, slot):
+        """How wide a name may be drawn in `slot`: short of its neighbouring column's middle by half the gap's margin
+        either way, and clear of the wheel (the right column) and the menu button (the left). In a tall frame the text
+        grows (TALL_TEXT) as the bar's middle narrows (its sockets grow by TALL_BAR), and two long names met; a name
+        wider than its room is drawn smaller to fit (owner's audit of every round, 2026-11-25)."""
+        key = (self.canvas.get_size(), slot)
+        rooms = self.__dict__.setdefault('_rooms', {})
+        if key not in rooms:
+            xs = sorted({self.label_point(s)[0] for s in range(len(LABELS))})
+            x = self.label_point(slot)[0]
+            room = min(b - a for a, b in zip(xs, xs[1:])) - 12 * self.k
+            if x == xs[-1]:
+                wheel = min([self.orb_rect().left] + [rect.left for rect in self.segment_rects().values()])
+                room = min(room, 2 * (wheel - 6 * self.k - x))
+            if x == xs[0]:
+                menu = self.design(*MENU_AT, bottom=True)[0] + self.hud('icn_menu').get_width() * MENU_SCALE * self.kb / 2
+                room = min(room, 2 * (x - menu - 6 * self.k))
+            rooms[key] = max(40.0, room)
+        return rooms[key]
+
     def label_rect(self, slot):
         x, y = self.label_point(slot)
         half = 80 * self.k * self.bar_slices()[1] / ((DESIGN_WIDTH - BAR_LEFT - BAR_RIGHT) * self.k)   # (its column's)
@@ -593,6 +613,10 @@ class ClaireRoundRenderer:
                 colour = VALUE_TEXT                                                 # (Focus: its name blinks)
             font = self.font(False, round(LABEL_PX * kt))
             surface = font.render(name, True, colour)
+            room = self.label_room(slot)
+            if surface.get_width() > room:          # (a tall frame's grown text in its narrowed middle: fit, owner 2026-11-25)
+                surface = pygame.transform.smoothscale(
+                    surface, (round(room), max(1, round(surface.get_height() * room / surface.get_width()))))
             surface.set_alpha(alpha)
             x, y = self.label_point(slot)
             self.canvas.blit(surface, surface.get_rect(center=(round(x), round(y))))

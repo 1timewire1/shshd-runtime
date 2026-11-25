@@ -183,6 +183,21 @@ class RendererTests(unittest.TestCase):
         self.assertEqual(r.hit(game, *r.design(25, 91, bottom=True)), ('menu',))
         self.assertTrue(all(rect.right <= r.canvas.get_width() for rect in r.segment_rects().values()))
 
+    def test_names_fit_their_columns_in_a_tall_frame(self):
+        """(owner's audit, 2026-11-25) at 9:20 the grown text met in the narrowed bar: each name's room stops short of its
+        neighbours' and of the wheel; at 3:4 the rooms hold every name Classic has (its widest is 156 px)."""
+        r, game = self.renderer, self.game
+        for units, least in (((384, 512), 156), ((384, 853), 100)):
+            r.frame_units = units
+            r.draw_game(game, 16)
+            columns = sorted({(round(r.label_point(s)[0]), round(r.label_room(s))) for s in range(len(game.slots))})
+            self.assertEqual(len(columns), 3)
+            for (x1, room1), (x2, room2) in zip(columns, columns[1:]):
+                self.assertLessEqual(x1 + room1 / 2, x2 - room2 / 2)
+            wheel = min([r.orb_rect().left] + [rect.left for rect in r.segment_rects().values()])
+            self.assertLessEqual(columns[-1][0] + columns[-1][1] / 2, wheel)
+            self.assertGreaterEqual(min(room for _, room in columns), least)
+
     def test_the_score_shows_the_bar_arts_star_only(self):
         """R7, seen in passing: the top bar's art has the score's star, and the renderer drew a second beside it."""
         r, game = self.renderer, self.game
