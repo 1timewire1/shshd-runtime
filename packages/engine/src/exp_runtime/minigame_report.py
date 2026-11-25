@@ -84,6 +84,9 @@ def claire_round(game, *, skippable=False):
     """A Claire Hart round (claire_rounds.ClaireRound): the list as shown (each name with its object, found or not), the
     count, score, clock, the hint and the Power-Ups left, and what it waits for."""
     from .claire_rounds import NO_OBJECT, POWERUPS
+    from .shadows_rounds import ShadowsRound
+    if isinstance(game, ShadowsRound):
+        return shadows_round(game, skippable=skippable)
     listed = [dict(slot=slot, name=game.names[obj], object=obj, found=obj in game.found, extra=bool(game.extra[slot]))
               for slot, obj in enumerate(game.slots) if obj != NO_OBJECT]
     waits = ('skip prompt or go-ahead' if skippable and not game.started else 'continue' if game.over
@@ -95,3 +98,24 @@ def claire_round(game, *, skippable=False):
                 powerups={p: dict(left=game.uses_left(p), usable=game.can_use(p)) for p in POWERUPS},
                 marker=dict(hint=game.hint_target, focus=game.focus_target, locator=game.locator_target),
                 time_warp=game.time_warp, over=game.over, waits_for=waits)
+
+
+def shadows_round(game, *, skippable=False):
+    """A round under Secret in the Shadows' rules (shadows_rounds.ShadowsRound): the list (each name with its object and
+    kind), the count, score, clock, the close-up, the Gold Key, a multi-part object's parts collected, the Psychic Sensor,
+    the Power-Ups left, the Hint's markers, and what it waits for."""
+    from .shadows_rounds import NO_OBJECT, POWERUPS
+    listed = [dict(slot=slot, name=game.names[obj], object=obj, kind=game.kinds[obj], found=obj in game.found,
+                   extra=bool(game.extra[slot])) for slot, obj in enumerate(game.slots) if obj != NO_OBJECT]
+    waits = ('skip prompt or go-ahead' if skippable and not game.started else 'continue' if game.over
+             else 'taps on the listed objects')
+    return dict(kind='claire_round', rules='shadows', source=game.source, scene=game.scene, title=game.title,
+                started=game.started, listed=listed, found=game.found_count, to_find=game.to_find,
+                score=game.find_points, multiplier=game.multiplier, seconds=game.seconds, misclicks=game.misclicks,
+                locked_ms=game.lock_ms, close_up=dict(open=game.pip_open, glow=game.pip_glow), key=game.key,
+                key_found_ms=game.key_found_ms, collecting=list(game.collecting),
+                sensor=dict(on=game.sensor_on, ready=game.sensor_ready, target=game.sensor_target, uses=game.sensor_uses,
+                            cooldown_ms=game.sensor_cooldown_ms),
+                powerups={p: dict(left=game.uses_left(p), usable=game.can_use(p)) for p in POWERUPS},
+                markers=list(game.markers), time_warp=game.time_warp, spotlight=game.spotlight, over=game.over,
+                waits_for=waits)

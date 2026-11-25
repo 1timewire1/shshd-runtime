@@ -6,6 +6,8 @@ into its `.exp`, and one using this runtime's own mechanics can't go at all.
 """
 from copy import deepcopy
 
+from exp_runtime.claire_round_services import SHADOWS_KEY_BASE
+
 from .model import Asset, ProjectError, is_audio, is_image
 
 # The add-on whose mini-game a node plays: the episode needs it, as the primary or an extra (owner, 2026-11-09). Not
@@ -38,6 +40,7 @@ ADDON_FEATURES = {
              "Its scenes as a 3:4 slice that fills the frame, whole with Claire Hart 4:3",
              "Its title tune and title screen, where Title Screen Music and Look are on Auto"), ()),
     'chcrounds': ((), ("Claire Hart's hidden-object rounds",)),
+    'ch2rounds': ((), ("Secret in the Shadows' hidden-object rounds",)),
     # ...and Secret in the Shadows' pack 31900 (sequel Stage S1): its skin and title look come in later revisions.
     'ch2': (("Narration with the narrator's portrait", 'Backdrops darkened as the sequel drew them (Dim Backdrops)',
              "The sequel's violet beside the scene", "Its scenes as a 3:4 slice that fills the frame, whole with Claire Hart 4:3",
@@ -156,7 +159,9 @@ def drop_unused_addons(project):
     if not project.native:
         used = ({asset.addon for asset in project.assets if asset.addon}
                 | {node_addon(project, node.kind) for node in project.nodes if node.kind in NODE_ADDONS}
-                | {OPTIONAL_NODE_ADDONS[node.kind] for node in project.nodes if node.kind in OPTIONAL_NODE_ADDONS})
+                | {OPTIONAL_NODE_ADDONS[node.kind] for node in project.nodes if node.kind in OPTIONAL_NODE_ADDONS}
+                | {'ch2rounds' for node in project.nodes if node.kind == 'claire_round'
+                   and node.params.get('round', 0) >= SHADOWS_KEY_BASE})
         project.addons = [entry for entry in project.addons if entry['id'] in used or entry.get('primary')]
 
 

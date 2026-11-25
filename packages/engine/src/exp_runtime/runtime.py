@@ -35,6 +35,7 @@ from .shs11_games import GRID_SOUNDS, SOUND_RIGHT_PICK
 from .cutscene import Cutscene
 from .x360_diss import PASS_SCORE
 from .x360_games import SLOTS
+from .shadows_rounds import ShadowsRound
 from .text_input import input_fonts, validate_name
 from .randomness import NativeRandom, RAND48_INITIAL, RAND48_MASK
 from .vm import KiwiVM, StopKind, VMError, VMStop, linked_layout, signed16
@@ -151,28 +152,43 @@ NESTED_SCRIPT_SERVICE, NESTED_SCRIPT_DEPTH = 223, 16
 
 
 def claire_round_source(resources):
-    """shshd-runtime: Claire Hart's rounds from the chcrounds add-on, for the engine (EngineState.claire_round_source): a
-    round's key (claire_round_services.round_key) -> (scene, its objects' names, the story objects, the plate's name), or None
-    for a round it hasn't; None without the add-on."""
+    """shshd-runtime: Claire Hart's rounds for the engine (EngineState.claire_round_source): a round's key -> its
+    claire_round_style.RoundData, from the chcrounds add-on (Classic's keys, claire_round_services.round_key) or ch2rounds
+    (Secret in the Shadows', from SHADOWS_KEY_BASE), or None for a round neither has."""
     library = getattr(resources, 'library', None)
     read = getattr(library, 'addon_resource', None)
     if read is None:
         return None
     cache = {}
 
-    def source(key):
-        if 'spec' not in cache:
+    def spec_of(addon):
+        if addon not in cache:
             shared = getattr(library, 'addon_json', None)          # (parsed once for the library: the renderer's too)
             if shared is not None:
-                cache['spec'] = shared('chcrounds', 26000)
+                cache[addon] = shared(addon, 26000)
             else:
                 import json
-                data = read('chcrounds', 26000)
-                cache['spec'] = json.loads(data) if data else None
-        spec = cache['spec']
+                data = read(addon, 26000)
+                cache[addon] = json.loads(data) if data else None
+        return cache[addon]
+
+    def source(key):
+        from .claire_round_services import is_shadows_key, round_of
+        from .claire_round_style import RoundData
+        if is_shadows_key(key):
+            spec = spec_of('ch2rounds')
+            found = (spec or {}).get('rounds', {}).get(str(key))
+            entry = spec['scenes'].get(found[0]) if found else None
+            if entry is None:
+                return None
+            scene, story, location, spotlight = found
+            objects = entry['objects']
+            return RoundData('ch2rounds', scene, [o[0] for o in objects], list(story), location or scene,
+                             [o[1] for o in objects], {int(w): list(p) for w, p in entry.get('parts', {}).items()},
+                             bool(spotlight))
+        spec = spec_of('chcrounds')
         if spec is None:
             return None
-        from .claire_round_services import round_of
         epid, number = round_of(key)
         rounds = spec.get('rounds', {}).get(epid)
         if not rounds or not 1 <= number <= len(rounds):
@@ -181,7 +197,7 @@ def claire_round_source(resources):
         entry = spec['scenes'].get(scene)
         if entry is None:
             return None
-        return scene, [o[0] for o in entry['objects']], list(story), title[0] if title else scene
+        return RoundData('chcrounds', scene, [o[0] for o in entry['objects']], list(story), title[0] if title else scene)
     return source
 
 
@@ -296,7 +312,9 @@ class Session:
         self.engine.translation_source = source
         self.engine.claire_round_source = claire_round_source(self.resources)
         self.engine.claire_rounds_ready = any(a.get('addon') == 'chcrounds' for a in getattr(library, 'addons', None) or ())
+        self.engine.claire2_rounds_ready = any(a.get('addon') == 'ch2rounds' for a in getattr(library, 'addons', None) or ())
         self.engine.claire_powerups = getattr(getattr(self.resources, 'library', None), 'claire_powerups', 'once')
+        self.engine.claire_round_style = getattr(getattr(self.resources, 'library', None), 'claire_round_style', 'own')
         from .content import pack_setting
         self.engine.story_photo_mode = bool(pack_setting(self.resources, 'STORY_OBJECT_PHOTO', False))
 
@@ -583,20 +601,35 @@ class Session:
         return self._claire().tap(list(objects))
 
     def claire_use(self, what: str):
-        """The hint or a power-up ('hint', 'focus', 'locator', 'clairvoyance', 'time_warp'): whether it was used."""
+        """The hint or a power-up: Classic's ('hint', 'focus', 'locator', 'clairvoyance', 'time_warp') or, under the sequel's
+        rules (shadows_rounds.ShadowsRound), 'sensor', 'hint', 'time_warp', 'clairvoyance' and the close-up's 'open_pip' /
+        'close_pip': whether it was used."""
         game = self._claire()
         random = self.engine.random
-        moves = {'hint': lambda: game.hint(random) is not None, 'focus': lambda: game.focus(random) is not None,
-                 'locator': game.locate, 'clairvoyance': game.clairvoyance, 'time_warp': game.warp_time}
+        if isinstance(game, ShadowsRound):
+            moves = {'sensor': lambda: game.use_sensor() is not None, 'hint': lambda: bool(game.hint()),
+                     'time_warp': game.warp_time, 'clairvoyance': game.clairvoyance,
+                     'open_pip': lambda: game.open_pip() or game.pip_open,
+                     'close_pip': lambda: game.close_pip() or not game.pip_open}
+        else:
+            moves = {'hint': lambda: game.hint(random) is not None, 'focus': lambda: game.focus(random) is not None,
+                     'locator': game.locate, 'clairvoyance': game.clairvoyance, 'time_warp': game.warp_time}
         if what not in moves:
             raise ValueError(f'No such hint or power-up: {what}')
         return moves[what]()
 
+    def claire_backing(self):
+        """A tap on the open close-up's empty backing (the sequel's rules): it feeds the spam check, no misclick."""
+        game = self._claire()
+        if isinstance(game, ShadowsRound):
+            game.backing_tap()
+
     def claire_pick(self, slot: int):
-        """A name picked for the Psychic Locator."""
+        """A name picked for the Psychic Locator (Classic's rules)."""
         if type(slot) is not int:
             raise ValueError('A slot is a number')
-        return self._claire().pick_located(slot)
+        game = self._claire()
+        return game.pick_located(slot) if not isinstance(game, ShadowsRound) else False
 
     def claire_continue(self):
         """The Level Summary's Continue: the story goes on."""
@@ -1566,7 +1599,7 @@ class Session:
         return state
 
     def snapshot(self) -> dict:
-        return dict(format='shs-runtime-save', version=47,
+        return dict(format='shs-runtime-save', version=48,
                     content=self.resources.identity, scene=self.scene,
                     script_sha256=digest(self.vm.program.to_bytes()),
                     vm=self.vm.snapshot(), engine=self._engine_state(),
@@ -1623,11 +1656,16 @@ class Session:
             # Version 46 joins the two lines that branched from 42: the Claire Hart branch's 43 (story-object pictures)
             # and 44 (hidden-object rounds), and v1.1.1's 45 (Text Animation). Each step below fills in what its own
             # line left out, so a 43 / 44 save gains the Text Animation and a 45 save the Claire Hart parts.
-            if (state['format'] == 'shs-runtime-save' and type(state['version']) is int and state['version'] > 47):
+            if (state['format'] == 'shs-runtime-save' and type(state['version']) is int and state['version'] > 48):
                 raise NewerSaveError('This save was made by a newer version of SHSHD Runtime')
-            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 48):
+            if state['format'] != 'shs-runtime-save' or state['version'] not in range(1, 49):
                 raise SaveError('Unsupported save format or version')
             version = state['version']
+            # Version 48 lets the round be Secret in the Shadows' (shadows_rounds.py) and gives a round the add-on its scene
+            # is from (Round Style); an older save's round is Classic's, from chcrounds.
+            if version < 48 and isinstance((state.get('engine') or {}).get('claire_round'), dict):
+                state = deepcopy(state)
+                state['engine']['claire_round'].setdefault('source', 'chcrounds')
             # Version 47 adds Secret in the Shadows' story photo (service 225's one-photo mode); an older save showed none.
             if version < 47 and isinstance(state.get('engine'), dict):
                 state = deepcopy(state)

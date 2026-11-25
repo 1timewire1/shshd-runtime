@@ -129,13 +129,14 @@ class RoundView:
 
 
 class ClaireRoundRenderer:
+    ADDON = ADDON                          # the add-on whose HUD this screen draws (a scene may be another's: scene_addon)
     fills_frame = True                     # the whole frame, whatever its shape (R1)
     frame_units = (384, 512)               # (the player sets this to the frame's shape)
 
     def __init__(self, resources):
         self.resources = resources
         self.canvas = None
-        self._spec = None
+        self._specs = {}
         self._images = {}
         self._packs = {}
         self._fonts = {}
@@ -162,33 +163,58 @@ class ClaireRoundRenderer:
             raise ValueError(f'The {addon} add-on is missing resource {resource}: import its latest build')
         return data
 
-    def base_picture(self, entry):
+    def base_picture(self, entry, addon=None):
         """A scene's base: the rounds add-on's own resource, or (chcrounds revision 2, ch2rounds) [add-on, resource] in the
         story add-on that holds the same picture as a backdrop (the cases need it, so it is always there; 2026-11-25:
         319 MB of chcrounds and 282 MB of ch2rounds were copies)."""
         base = entry['base']
-        return self.addon(*base) if isinstance(base, list) else self.addon(ADDON, base)
+        return self.addon(*base) if isinstance(base, list) else self.addon(addon or self.ADDON, base)
 
-    def spec(self):
-        if self._spec is None:
+    def spec(self, addon=None):
+        """An add-on's rounds spec: by default this screen's own (its HUD), else the one a round's scene is from."""
+        addon = addon or self.ADDON
+        found = self._specs.get(addon)
+        if found is None:
             shared = getattr(self.resources.library, 'addon_json', None)     # (parsed once for the library, the engine's too)
-            self._spec = shared(ADDON, SPEC) if shared is not None else None
-            if self._spec is None:
-                self._spec = json.loads(self.addon(ADDON, SPEC))
-        return self._spec
+            found = shared(addon, SPEC) if shared is not None else None
+            if found is None:
+                found = json.loads(self.addon(addon, SPEC))
+            self._specs[addon] = found
+        return found
+
+    # -- the scene, from whichever add-on the round's is in (Round Style: a sequel scene under Classic's rules) ------------
+    def scene_addon(self, game):
+        return getattr(game, 'source', None) or self.ADDON
+
+    def scene_entry(self, game):
+        return self.spec(self.scene_addon(game))['scenes'][game.scene]
+
+    def objects(self, game):
+        """The scene's objects as (normal sprite, found sprite, hint offset): chcrounds' entries are [name, normal, found,
+        hint], ch2rounds' [name, kind, normal, found, hint] (a multi-part object's whole has no normal sprite)."""
+        key = ('objects', self.scene_addon(game), game.scene)
+        found = self._images.get(key)
+        if found is None:
+            found = self._images[key] = [(o[2], o[3], o[4]) if len(o) == 5 else (o[1], o[2], o[3])
+                                         for o in self.scene_entry(game)['objects']]
+        return found
+
+    def base_image(self, game):
+        addon = self.scene_addon(game)
+        return self.image(('base', addon, game.scene), lambda: self.base_picture(self.scene_entry(game), addon))
 
     def preload_steps(self, game):
         """What the round's first frame reads and draws, a piece at a time (a generator: one piece a step), so the player can
         spread it over the frames its skip prompt shows (owner, 2026-11-21: entering a round held a frame ~200 ms on the
         g54, 1.8 s the first time). The scene's base, each sprite still to find, the composed and scaled scene, then both
         bars once into the canvas (their pieces and text sizes cached). Nothing here changes the round."""
-        entry = self.spec()['scenes'][game.scene]
+        self.scene_entry(game)
         yield
-        self.image(('base', game.scene), lambda: self.base_picture(entry))
+        self.base_image(game)
         yield
-        for index, (_, normal, _, _) in enumerate(entry['objects']):
-            if index not in game.found:
-                self.sprite(game.scene, normal[0])
+        for index, (normal, _, _) in enumerate(self.objects(game)):
+            if index not in game.found and normal is not None:
+                self.sprite(game, normal[0])
                 yield
         self.scene_picture(game)
         yield
@@ -209,12 +235,13 @@ class ClaireRoundRenderer:
         return found
 
     def hud(self, name):
-        return self.image(('hud', name), lambda: self.addon(ADDON, self.spec()['hud'][name]))
+        return self.image(('hud', name), lambda: self.addon(self.ADDON, self.spec()['hud'][name]))
 
-    def pack(self, resource):
-        found = self._packs.get(resource)
+    def pack(self, resource, addon=None):
+        addon = addon or self.ADDON
+        found = self._packs.get((addon, resource))
         if found is None:
-            found = self._packs[resource] = self.addon(ADDON, resource)
+            found = self._packs[addon, resource] = self.addon(addon, resource)
         return found
 
     def frame(self, animation, number):
@@ -222,9 +249,11 @@ class ClaireRoundRenderer:
         number = max(0, min(count - 1, number))
         return self.image((animation, number), lambda: cr.sprite_from_pack(self.pack(resource), number))
 
-    def sprite(self, scene, number):
-        return self.image(('sprite', scene, number),
-                          lambda: cr.sprite_from_pack(self.pack(self.spec()['scenes'][scene]['sprites']), number))
+    def sprite(self, game, number):
+        """Sprite `number` of the round's scene, from the add-on the scene is in."""
+        addon = self.scene_addon(game)
+        return self.image(('sprite', addon, game.scene, number),
+                          lambda: cr.sprite_from_pack(self.pack(self.scene_entry(game)['sprites'], addon), number))
 
     def font(self, bold, size):
         key = (bold, size)
@@ -359,17 +388,24 @@ class ClaireRoundRenderer:
     # -- the scene --------------------------------------------------------------------------------------------------------------
     def scene_picture(self, game):
         """The scene's base with every unfound object's normal sprite on it, in the layout's order (remade on a find)."""
-        key = (game.scene, len(game.found))
+        key = (self.scene_addon(game), game.scene, self.scene_state(game))
         if self._scene != key:
-            entry = self.spec()['scenes'][game.scene]
-            base = self.image(('base', game.scene), lambda: self.base_picture(entry)).copy()
-            for index, (_, normal, _, _) in enumerate(entry['objects']):
-                if index in game.found:
+            base = self.base_image(game).copy()
+            for index, (normal, _, _) in enumerate(self.objects(game)):
+                if normal is None or not self.in_scene(game, index):
                     continue
                 number, _, _, left, top = normal
-                base.blit(self.sprite(game.scene, number), (left, top))
+                base.blit(self.sprite(game, number), (left, top))
             self._scene, self._composed, self._scaled = key, base, None
         return self._composed
+
+    def scene_state(self, game):
+        """What the composed scene depends on beyond its objects' places: here, how many are found."""
+        return len(game.found)
+
+    def in_scene(self, game, index):
+        """Whether object `index` is drawn in the scene (Classic's: every object not yet found)."""
+        return index not in game.found
 
     def draw_scene(self, game):
         picture = self.scene_picture(game)
@@ -430,6 +466,9 @@ class ClaireRoundRenderer:
 
     def sound_resource(self, name):
         return self.spec()['sounds'].get(name)
+
+    def sound_addon(self):
+        return self.ADDON
 
     def draw_game(self, game, elapsed_ms=0):
         self.clock += elapsed_ms
@@ -623,8 +662,9 @@ class ClaireRoundRenderer:
 
     def mark_centre(self, game, obj):
         """Where a mark on object `obj` goes, in the scene's pixels: its normal sprite's middle, moved by its hint offset."""
-        _, normal, _, hint = self.spec()['scenes'][game.scene]['objects'][obj]
-        return normal[3] + normal[1] / 2 + hint[0], normal[4] + normal[2] / 2 - hint[1]
+        normal, found, hint = self.objects(game)[obj]
+        sprite = normal or found
+        return sprite[3] + sprite[1] / 2 + hint[0], sprite[4] + sprite[2] / 2 - hint[1]
 
     # -- effects --------------------------------------------------------------------------------------------------------------
     def start_effects(self, game):
@@ -652,7 +692,7 @@ class ClaireRoundRenderer:
         return self.flight_ms(effect)
 
     def found_centre(self, game, obj):
-        _, _, found, _ = self.spec()['scenes'][game.scene]['objects'][obj]
+        _, found, _ = self.objects(game)[obj]
         return found[3] + found[1] / 2, found[4] + found[2] / 2
 
     def flight_ms(self, effect):
@@ -749,10 +789,8 @@ class ClaireRoundRenderer:
 
     def draw_marks(self, game):
         """The hint's star, Focus's spotlight and the Psychic Locator's marker on their objects."""
-        entry = self.spec()['scenes'][game.scene]['objects']
         if game.focus_target != cr.NO_OBJECT:
-            _, normal, _, hint = entry[game.focus_target]
-            centre = self.view.to_canvas(normal[3] + normal[1] / 2 + hint[0], normal[4] + normal[2] / 2 - hint[1])
+            centre = self.view.to_canvas(*self.mark_centre(game, game.focus_target))
             dark = pygame.Surface(self.canvas.get_size(), pygame.SRCALPHA)
             dark.fill((0, 0, 0, 150))
             pygame.draw.circle(dark, (0, 0, 0, 0), (round(centre[0]), round(centre[1])), round(110 * self.k))
@@ -760,8 +798,7 @@ class ClaireRoundRenderer:
         for target in (game.hint_target, game.locator_target):
             if target == cr.NO_OBJECT or (target == game.hint_target and self.flying(target)):
                 continue
-            _, normal, _, hint = entry[target]
-            centre = self.view.to_canvas(normal[3] + normal[1] / 2 + hint[0], normal[4] + normal[2] / 2 - hint[1])
+            centre = self.view.to_canvas(*self.mark_centre(game, target))
             count = self.spec()['hud']['vfx_hint_starburst'][1]
             star = self.frame('vfx_hint_starburst', (self.clock // 33) % count)
             star = self.scaled(star, 0.7 * self.k)
@@ -769,16 +806,16 @@ class ClaireRoundRenderer:
 
     def draw_found(self, game):
         """A found object's found sprite pops up where it was (objectClicked: 0.83 s), then is gone."""
-        entry = self.spec()['scenes'][game.scene]['objects']
+        objects = self.objects(game)
         for obj, left in game.leaving:
             age = cr.FOUND_MS + cr.NAME_HIDE_MS - left
             if age >= cr.FOUND_MS:
                 continue
-            _, _, found, _ = entry[obj]
+            _, found, _ = objects[obj]
             number, w, h, x, y = found
             t = age / cr.FOUND_MS
             grow = 1 + (FOUND_POP - 1) * math.sin(math.pi * min(1, t * 1.5))
-            picture = self.sprite(game.scene, number)
+            picture = self.sprite(game, number)
             size = (max(1, round(w * self.view.scale * grow)), max(1, round(h * self.view.scale * grow)))
             shown = pygame.transform.smoothscale(picture, size)
             shown.set_alpha(round(255 * clamp(2 - 2 * t)))
@@ -853,15 +890,15 @@ class ClaireRoundRenderer:
     def objects_at(self, game, x, y):
         """The objects whose normal sprites a tap at canvas (x, y) hits (claire_rounds.pixel_hit), topmost first."""
         sx, sy = self.view.to_scene(x, y)
-        entry = self.spec()['scenes'][game.scene]['objects']
+        objects = self.objects(game)
         hits = []
-        for index in reversed(range(len(entry))):
-            if index in game.found:
+        for index in reversed(range(len(objects))):
+            if objects[index][0] is None or not self.in_scene(game, index):
                 continue
-            number, w, h, left, top = entry[index][1]
+            number, w, h, left, top = objects[index][0]
             if not (left <= sx < left + w and top <= sy < top + h):
                 continue
-            sprite = self.sprite(game.scene, number)
+            sprite = self.sprite(game, number)
             if cr.pixel_hit(lambda px, py: sprite.get_at((px, py))[3], w, h, sx - left, sy - top):
                 hits.append(index)
         return hits

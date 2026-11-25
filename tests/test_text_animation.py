@@ -108,7 +108,7 @@ class TextModeSessionTests(unittest.TestCase):
         session.tick(motion.text_delay_ms + 1)
         self.assertTrue(motion.complete)
         state = session.snapshot()
-        self.assertEqual(state['version'], 47)
+        self.assertEqual(state['version'], 48)
         restored = Session.from_snapshot(session.resources, state)
         self.assertEqual(restored.engine.dialogue_animation.text_mode, 'instant')
 
@@ -135,7 +135,7 @@ class TextModeSessionTests(unittest.TestCase):
         self.assertEqual(restored.engine.dialogue_animation.text_mode, 'instant')
         self.assertIsNone(restored.engine.claire_round)
         self.assertEqual(restored.engine.story_objects, [])
-        for version in (48, 60):
+        for version in (49, 60):
             with self.assertRaises(SaveError):
                 Session.from_snapshot(session.resources, dict(state, version=version))
 

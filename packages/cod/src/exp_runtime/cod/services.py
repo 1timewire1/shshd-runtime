@@ -24,11 +24,14 @@ def dispatch(engine, vm, *, resource_exists=None):
         # zero-word call. Extra frame words are ignored, then popped normally.
         selector = args[0] if args else vm.read_word(vm.stack_base + vm.sp)
         from ..story_object_services import STORY_OBJECT_QUERY
-        from ..claire_round_services import CLAIRE_ROUNDS_QUERY
+        from ..claire_round_services import CLAIRE2_ROUNDS_QUERY, CLAIRE_ROUNDS_QUERY
         if selector == CLAIRE_ROUNDS_QUERY:
             # shshd-runtime: Claire Hart's rounds (service 226) can be played: chcrounds is in the library and Use Translated
             # Mini-Games is on; else the story's stand-in line (Claire Hart plan Stage 3).
             return complete('query_build', int(bool(engine.nr_arena_enabled and engine.claire_rounds_ready)), selector=selector)
+        if selector == CLAIRE2_ROUNDS_QUERY:
+            # ...and Secret in the Shadows' (ch2rounds; plan S3), whichever Round Style plays them.
+            return complete('query_build', int(bool(engine.nr_arena_enabled and engine.claire2_rounds_ready)), selector=selector)
         if selector == STORY_OBJECT_QUERY:
             # shshd-runtime: story-object pictures (service 225) are drawn here, in the dialogue box (Claire Hart plan P);
             # native CoD answers 0, and the story shows a message naming the item instead.

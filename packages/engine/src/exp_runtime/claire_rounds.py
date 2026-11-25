@@ -42,6 +42,7 @@ FOCUS, LOCATOR, CLAIRVOYANCE, TIME_WARP = 'focus', 'locator', 'clairvoyance', 't
 POWERUPS = (FOCUS, LOCATOR, CLAIRVOYANCE, TIME_WARP)
 
 NO_OBJECT = -1
+ROUND_SOURCES = ('chcrounds', 'ch2rounds')     # the add-ons a round's scene can come from (Round Style)
 
 # A scene's sprites in `chcrounds` (one resource a scene: the add-on's IDs are 16 bits, its sprites 78,577): their original
 # PNG files one after another, after an index. b'CHSP', a u32 count, then each sprite's u32 offset and length (big-endian).
@@ -125,6 +126,7 @@ class ClaireRound:
     finished: bool = False
     title: str = ''                     # the scene's name on its plate ("Claire's Office"), as Classic's round names it
     started: bool = False               # (the skip prompt is offered only before)
+    source: str = 'chcrounds'           # the add-on whose scene this is (Round Style: a sequel scene comes from ch2rounds)
 
     # --- opening ----------------------------------------------------------------------------------------------------------
     @classmethod
@@ -411,7 +413,8 @@ class ClaireRound:
     def validate(self):
         count = len(self.names)
         objects = set(range(count))
-        if (not self.scene or not 0 < len(self.picked) <= count or len(set(self.picked)) != len(self.picked)
+        if (not self.scene or self.source not in ROUND_SOURCES or not 0 < len(self.picked) <= count
+                or len(set(self.picked)) != len(self.picked)
                 or not set(self.picked) <= objects or not set(self.story) <= set(self.picked)
                 or self.powerups not in POWERUP_MODES or len(self.slots) != len(self.extra) or len(self.slots) > AOL_SIZE
                 or any(o != NO_OBJECT and o not in self.picked for o in self.slots)

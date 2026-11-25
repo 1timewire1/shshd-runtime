@@ -1299,8 +1299,17 @@ class Application:
 
     @library_answer
     def claire_powerups_offered(self):
-        """Whether the library holds Claire Hart's rounds (chcrounds), whose power-ups the Power-Ups setting rules."""
-        return self.library is not None and any(a.get('addon') == 'chcrounds' for a in getattr(self.library, 'addons', ()))
+        """Whether the library holds Claire Hart's rounds (chcrounds or ch2rounds), whose power-ups the Power-Ups setting
+        rules."""
+        return self.library is not None and any(a.get('addon') in ('chcrounds', 'ch2rounds')
+                                                for a in getattr(self.library, 'addons', ()))
+
+    @library_answer
+    def claire_round_style_offered(self):
+        """Whether the library holds both games' rounds (chcrounds and ch2rounds): Round Style plays either under the
+        other's rules (plan S2: beside Power-Ups, only with both)."""
+        held = {a.get('addon') for a in getattr(self.library, 'addons', ())} if self.library is not None else set()
+        return {'chcrounds', 'ch2rounds'} <= held
 
     def apply_claire_powerups(self):
         """The Power-Ups setting reaches the library (a round opened next) and a paused episode (its round now)."""
@@ -1308,6 +1317,14 @@ class Application:
             self.library.claire_powerups = self.state.claire_powerups
         if self.game:
             self.game.claire_powerups = self.state.claire_powerups
+
+    def apply_claire_round_style(self):
+        """Round Style reaches the library and a paused episode: the next round opened plays by it (one being played
+        keeps its own rules)."""
+        if self.library is not None:
+            self.library.claire_round_style = self.state.claire_round_style
+        if self.game:
+            self.game.claire_round_style = self.state.claire_round_style
 
     def apply_ch_dialogue(self):
         """Claire Hart Dialogue reaches the library (content.EpisodeResources.dialogue_skin) and a paused episode."""
@@ -1690,6 +1707,7 @@ class Application:
         library.ms3_characters = state.ms3_characters
         library.ch_dialogue = getattr(state, 'ch_dialogue', 'auto')
         library.claire_powerups = getattr(state, 'claire_powerups', 'once')
+        library.claire_round_style = getattr(state, 'claire_round_style', 'own')
         library.java_look = state.java_look
         library.brew_08_backgrounds = state.brew_08_backgrounds
         library.hollywood_art = state.hollywood_art
@@ -2494,6 +2512,7 @@ class Application:
         self.game.ch_43 = getattr(self.state, 'ch_43', True)
         self.game.ch_dialogue = self.state.ch_dialogue
         self.game.claire_powerups = getattr(self.state, 'claire_powerups', 'once')
+        self.game.claire_round_style = getattr(self.state, 'claire_round_style', 'own')
         self.game.arena_minigames = self.state.arena_minigames
         self.game.arena_skin = self.state.arena_skin
         # The app's lock (string 271: "complete Football Season") is Football Star's; another episode's own tree is never locked.
@@ -2619,6 +2638,7 @@ class Application:
         self.state.ch_43 = getattr(self.game, 'ch_43', True)
         self.state.ch_dialogue = self.game.ch_dialogue
         self.state.claire_powerups = getattr(self.game, 'claire_powerups', 'once')
+        self.state.claire_round_style = getattr(self.game, 'claire_round_style', 'own')
         self.state.arena_minigames = self.game.arena_minigames
         self.state.arena_skin = self.game.arena_skin
         self.state.music_volume = round(self.game.music_volume * 100)

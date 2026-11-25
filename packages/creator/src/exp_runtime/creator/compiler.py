@@ -15,7 +15,7 @@ from exp_runtime.cutscene_spec import CUTSCENE, CUTSCENE_QUERY
 from exp_runtime.story_object_services import STORY_OBJECT, STORY_OBJECT_CLEAR, STORY_OBJECT_QUERY
 from exp_runtime.shs11_services import SHS11_MINIGAMES_QUERY
 from exp_runtime.brew_services import BREW_MINIGAMES_QUERY
-from exp_runtime.claire_round_services import CLAIRE_ROUND, CLAIRE_ROUNDS_QUERY
+from exp_runtime.claire_round_services import CLAIRE2_ROUNDS_QUERY, CLAIRE_ROUND, CLAIRE_ROUNDS_QUERY, SHADOWS_KEY_BASE
 from exp_runtime.addons import RESOURCE as ADDON_RESOURCE, requires_bytes
 from exp_runtime.episode_version import RESOURCE as VERSION_RESOURCE, version_bytes
 from exp_runtime.episode_languages import RESOURCE as LANGUAGES_RESOURCE, languages_bytes
@@ -66,11 +66,13 @@ from exp_runtime.presentation import TRANSLATION_PACKS  # noqa: E402
 # where it plays that game (with Use Translated Mini-Games on). The X360 games ask 201; the Diss Battle came later (205),
 # and SHS '11's games (203) and the catch game (204) have their own, as their translations ask (owner, 2026-11-17).
 MINIGAME_QUERIES = {'': X360_MINIGAMES_QUERY, 'x360_battle': X360_BATTLE_QUERY, 'shs11': SHS11_MINIGAMES_QUERY,
-                    'brew_catch': BREW_MINIGAMES_QUERY, 'claire_round': CLAIRE_ROUNDS_QUERY}
+                    'brew_catch': BREW_MINIGAMES_QUERY, 'claire_round': CLAIRE_ROUNDS_QUERY,
+                    'claire2_round': CLAIRE2_ROUNDS_QUERY}
 QUERY_FOR = {'x360_slot': '', 'x360_leash': '', 'x360_puzzle': '', 'x360_diss': '', 'x360_battle': 'x360_battle',
              'shs11_memory': 'shs11', 'shs11_reflex': 'shs11', 'brew_catch': 'brew_catch', 'claire_round': 'claire_round'}
 QUERY_NAMES = {'': 'the X360 games', 'x360_battle': 'the Diss Battle', 'shs11': "SHS '11's games",
-               'brew_catch': 'the catch game', 'claire_round': "Claire Hart's rounds"}
+               'brew_catch': 'the catch game', 'claire_round': "Claire Hart's rounds",
+               'claire2_round': "Secret in the Shadows' rounds"}
 # CoD's own: Claire Hart Classic's hidden-object round (claire_round_services; Claire Hart plan Stage 3), and the query for it.
 COD_ONLY_KINDS = frozenset(('claire_round',))
 # shshd-runtime presentation (SCHEMA.md "Presentation extension"): the SHS global numbers (service 54) a dialogue line
@@ -312,9 +314,11 @@ def validate_node(project, node, nodes, assets, characters):
     if node.kind == 'random' and p['bound'] <= 0:
         raise ProjectError('Random upper bound must be positive')
     if node.kind == 'minigames_available' and p['for'] not in MINIGAME_QUERIES:
-        raise ProjectError('A minigames query is for the X360 games (empty), x360_battle, shs11, brew_catch or claire_round')
+        raise ProjectError('A minigames query is for the X360 games (empty), x360_battle, shs11, brew_catch, claire_round or '
+                           'claire2_round')
     if node.kind == 'claire_round' and not 1 <= p['round'] <= 32767:
-        raise ProjectError(f"{label}: the round is its original episode's number x 10 + the round (E018's third: 183)")
+        raise ProjectError(f"{label}: the round is its original episode's number x 10 + the round (E018's third: 183), or "
+                           "a Secret in the Shadows round's 20000 + case x 100 + part x 10 + round")
     if node.kind == 'x360_diss' and p['tutorial'] not in (0, 1):
         raise ProjectError('Diss Practice tutorial is 0 or 1')
     if node.kind == 'x360_battle':
@@ -379,7 +383,7 @@ def validate_node(project, node, nodes, assets, characters):
             raise ProjectError(f'{label}: enter a result variable')
     if node.kind in HD_KINDS:
         validate_hd_node(project, node, p, label, assets)
-    claire_query = node.kind == 'minigames_available' and p.get('for') == 'claire_round'
+    claire_query = node.kind == 'minigames_available' and p.get('for') in ('claire_round', 'claire2_round')
     if node.kind in SHS_ONLY_KINDS and project.game != 'shs' and not claire_query:
         raise ProjectError(f'{label}: the CoD game has no {node.kind.replace("_", " ")} service')
     if (node.kind in COD_ONLY_KINDS or claire_query) and project.game != 'cod':
@@ -657,6 +661,8 @@ def validate(project: Project):
     asked = {parameters(n)['for'] for n in project.nodes if n.kind == 'minigames_available'}
     for node in project.nodes:
         wants = QUERY_FOR.get(node.kind)
+        if node.kind == 'claire_round' and parameters(node)['round'] >= SHADOWS_KEY_BASE:
+            wants = 'claire2_round'             # (a Secret in the Shadows round asks for ch2rounds)
         if wants is not None and wants not in asked:
             raise ProjectError(f'{node.label or node.id}: put it behind a Real minigames? node asking about '
                                f'{QUERY_NAMES[wants]}, so a player without it takes your other path')

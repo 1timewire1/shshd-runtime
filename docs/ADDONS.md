@@ -572,6 +572,32 @@ A group with no normal sprite is no object (KeepersCottage's Handbell). Story ob
 (`Mirror.round_items`), then to the scene's object by its normal sprite: 983 in all; E014's Flyer and E125's Snowman Toy have no
 sprite in their scenes (`names.json` entries without an object), so those rounds play as Classic picked them. Classic writes five names in lowercase ("love", "flute", "lemon", "microphone", "fleur-de-lis"); they take a capital here.
 
+### `ch2rounds`: Claire Hart: Secret in the Shadows: Rounds (`claire-hart` branch)
+
+Optional, for the sequel's translated cases (pack 31900): its hidden-object rounds played for real
+(Other Games/docs/CLAIRE_HART_SHADOWS_ROUNDS_PLAN.md), on the sequel's own round screen (`desktop_shadows_round.py`), its HUD
+placed from build 232's round scene. `tools/translate/claire_hart_shadows_rounds.py` writes it (`claire_hart_shadows.py
+rounds`; `--story` takes the scenes' bases from `ch2`, `--patch` gives a revision 1 build How To Play, its rounds' new keys and
+its HUD cut again without the hour-long build). Revision 2.
+
+```sh
+python tools/translate/claire_hart_shadows.py rounds --mirror CH2_DIR --out OUT_DIR --story OUT_DIR/CH_Shadows.exp   # FFmpeg on PATH
+```
+
+| Resources | What |
+| --- | --- |
+| 26000 | The spec, JSON: `scenes` (folder → `base` (a resource, or `[ch2, resource]`: the story add-on's same picture), `sprites`, `size`, `objects`, each `[name, kind, normal, found, hint offset]` with the kinds of `shadows_rounds.KINDS`, a multi-part object's `parts`, and its `close_up`: backing, hotspot cutout and glow), `rounds` (key → `[scene, [story objects], location, spotlight]`, 855), `balance` (gamebalance.json), `hud`, `sounds`, `particles`, `fonts`, `spotlight`, `tutorial` (How To Play's pages, pictures and Claire) |
+| 26001–26512 | The scenes' bases not shared with `ch2` |
+| 27001–27512 | Each scene's sprite pack (`claire_rounds.encode_sprite_pack`) |
+| 28000–28217 | The HUD: every named frame of the game's UI atlases (`claire_hart_shadows_frames.py`'s table, each frame from its own texture) |
+| 28600– | The 22 sound effects, as WAV |
+| 28700– | The particle systems |
+| 28800–28821 | The Roboto, Roboto Condensed and Roboto Slab faces |
+| 28900 | The spotlight rounds' overlay |
+| 28950–28959 | How To Play's nine pictures and Claire's standing picture |
+
+About 573 MB. Story objects are resolved by name (decision G2): 630 of 646; the 16 the game couldn't place either are left out.
+
 ## Settings
 
 Switches that only concern translated games and addons live on **Options › Add-Ons** (`ADDON_KEYS` in `desktop_pause_hd.py`), which

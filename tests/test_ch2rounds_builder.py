@@ -47,8 +47,39 @@ class RoundKeyTests(unittest.TestCase):
     def test_sequel_keys_stay_clear_of_classics(self):
         import claire_hart_shadows_rounds as r
         from exp_runtime.claire_round_services import round_key
-        self.assertEqual(r.round_key(31, 4, 5), 53145)
+        self.assertEqual(r.round_key(31, 4, 5), 23145)
         self.assertLess(round_key('E266', 5), r.round_key(1, 1, 1))
+
+
+class TutorialTests(unittest.TestCase):
+    def test_how_to_play_becomes_pages_of_what_is_on_stage(self):
+        """howToHOG (owner, 2026-11-25): each of Claire's lines a page, with the pictures shown then and her side."""
+        import json
+        import tempfile
+        import claire_hart_shadows_rounds as r
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'unpacked/resources_json/cases/howtoplay').mkdir(parents=True)
+            nodes = [dict(type='spriteIntro', id='Dark', ref='dark', x=0, y=0),
+                     dict(type='stageBlockIntro', id='CLAIRE', ref='CLAIRE', intro='enterFromRight'),
+                     dict(type='dialogText', body='One.', narrator='Claire'),
+                     dict(type='spriteIntro', id='List', ref='list', x=-20, y=-140),
+                     dict(type='dialogText', body='Two.', narrator='Claire'),
+                     dict(type='spriteOutro', id='List'), dict(type='stageBlockOutro', id='CLAIRE'),
+                     dict(type='dialogText', body='Three.', header='Claire')]
+            (root / r.TUTORIAL).write_text(json.dumps({'sequences': {'howToHOG': {'nodes': nodes}}}), encoding='utf-8')
+            refs = {'sprites': {'dark': 'p/dark', 'list': 'p/list'},
+                    'characters': {'Claire': {'expressions': {'default': 'p/claire'}}}}
+            (root / r.TUTORIAL_CONFIG).write_text(json.dumps({'sceneRefs': {'howToHOG': refs}}), encoding='utf-8')
+            rows = {}
+            for name in ('dark', 'list', 'claire'):
+                (root / f'{name}.jpg').write_bytes(name.encode())
+                rows[f'p/{name}'] = [dict(ext='.jpg', local_path=f'{name}.jpg', width='8', height='6')]
+            added, spec = r.tutorial_resources(root, rows)
+        self.assertEqual([resource for resource, _ in added], [r.TUTORIAL_FIRST, r.TUTORIAL_FIRST + 1, r.TUTORIAL_FIRST + 2])
+        self.assertEqual(spec['claire'], [r.TUTORIAL_FIRST + 2, 8, 6])
+        self.assertEqual([(p['text'], [s[0] for s in p['sprites']], p['claire']) for p in spec['pages']],
+                         [('One.', ['dark'], 'right'), ('Two.', ['dark', 'list'], 'right'), ('Three.', ['dark'], None)])
 
 
 class StoryEntryTests(unittest.TestCase):

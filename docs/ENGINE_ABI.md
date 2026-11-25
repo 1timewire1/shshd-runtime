@@ -717,9 +717,20 @@ with the round's total score (`Session.claire_continue`). The story reads no res
 keep the round whole, so a save mid-round resumes it exactly (save version 44). A key the add-on hasn't stops as an unhandled
 yield.
 
+A key from **20000** is Secret in the Shadows' round (`shadows_key`: 20000 + case × 100 + part × 10 + the round, so case 31
+part 4's fifth is 23145; a signed word, as every Creator node's number is), from the optional `ch2rounds` add-on, under build
+232's rules (`shadows_rounds.ShadowsRound`: close-ups, multi-part objects, the Gold Key, the Psychic Sensor with its cooldown,
+the combo to ×6 a tier at a time, spotlight rounds, the Hint, Time Warp and Clairvoyance under Power-Ups) on the sequel's
+screen (`desktop_shadows_round.py`). **Round Style** (`claire_round_style.py`) plays either game's round under the other's
+rules and screen: a sequel scene under Classic's offers only its ordinary objects; a Classic scene under the sequel's has no
+extras. A style whose screen's add-on is gone falls back to each game's own. Saves keep either round whole, with the add-on
+its scene is from (save version 48; an older save's round is Classic's).
+
 A story asks **70 selector 207** (`CLAIRE_ROUNDS_QUERY`) first. Cause of Death's dispatcher answers 1 where `chcrounds` is in the
 library and Use Translated Mini-Games is on; native players, upstream exp-runtime and this player's SHS answer 0, and the story
-takes its other path (the translated cases' stand-in line naming the place searched and what was found).
+takes its other path (the translated cases' stand-in line naming the place searched and what was found). A sequel round asks
+**70 selector 208** (`CLAIRE2_ROUNDS_QUERY`), answered 1 where `ch2rounds` is in the library and Use Translated Mini-Games is
+on.
 
 ## 5.7 The BREW packs' text and menus
 

@@ -1117,6 +1117,8 @@ class Commands:
                 self.app.apply_ch_dialogue()
             if key == 'claire_powerups':
                 self.app.apply_claire_powerups()
+            if key == 'claire_round_style':
+                self.app.apply_claire_round_style()
             return dict(ok=True, key=key, value=getattr(state, key))
         if key == 'start_in':
             # General's Start In (settings.json, the app's own): auto, games, shs or cod.
@@ -1907,20 +1909,21 @@ class Commands:
         own rule), nearest its middle; the view centred on it first when that pixel is off the play area. None if no
         such pixel."""
         from .claire_rounds import pixel_hit
-        _, normal, _, _ = renderer.spec()['scenes'][game.scene]['objects'][obj]
+        normal = renderer.objects(game)[obj][0]
         number, w, h, left, top = normal
-        sprite = renderer.sprite(game.scene, number)
+        sprite = renderer.sprite(game, number)
         step = max(1, min(w, h) // 12)
         points = sorted(((px, py) for py in range(0, h, step) for px in range(0, w, step)
                          if pixel_hit(lambda ax, ay: sprite.get_at((ax, ay))[3], w, h, px, py)),
                         key=lambda p: (p[0] - w / 2) ** 2 + (p[1] - h / 2) ** 2)
-        wanted = [o for o in game.listed if o not in game.found]
+        wanted = [o for o in game.listed if o not in game.found] + [obj]     # (the sequel's parts and Gold Key too)
         top_bar, bar_top = renderer.top_bar_bottom(), renderer.bar_top()
         for recentred in (False, True):
             if recentred:
                 renderer.view.centre_on(left + w / 2, top + h / 2)    # (as the hint's marker brings an object into view)
             for px, py in points:
-                x, y = renderer.view.to_canvas(left + px, top + py)
+                place = getattr(renderer, 'to_canvas', None)         # (the sequel's: a close-up's objects in it)
+                x, y = place(game, obj, left + px, top + py) if place else renderer.view.to_canvas(left + px, top + py)
                 if not (0 <= x < renderer.canvas.get_width() and top_bar + 4 <= y < bar_top - 24):
                     continue
                 if renderer.hit(game, x, y) != ('scene', renderer.objects_at(game, x, y)):
@@ -1935,6 +1938,8 @@ class Commands:
         if not game._claire_ready():
             return dict(ok=False, error='the round is not ready to play (opening, paused or a window over it)')
         renderer, round_ = game.claire_round_renderer, game.session.engine.claire_round
+        if renderer is getattr(game, 'shadows_round_renderer', None):
+            return self._shadows_play(game, renderer, round_, verb, arg)
         if verb == 'continue':
             if not round_.over:
                 return dict(ok=False, error='the round is still being played')
@@ -1975,6 +1980,82 @@ class Commands:
                 return dict(ok=False, error=f'a slot is 0-{len(round_.slots) - 1}')
             return self._claire_tap(*renderer.label_rect(int(arg)).center)
         return dict(ok=False, error=f'a round takes find, miss, hint, powerup, pick or continue, not {verb!r}')
+
+    def _shadows_play(self, game, renderer, round_, verb, arg):
+        """A round under Secret in the Shadows' rules: find NAME|SLOT (a close-up object needs `open` first; a multi-part
+        object taps its next part), key (the Gold Key), miss, sensor, powerup hint|time_warp|clairvoyance, open / close (the
+        close-up), help / next (How To Play and its pages), continue."""
+        from . import shadows_rounds as sr
+        if renderer.tutorial is not None and verb not in ('next', 'help'):
+            return dict(ok=False, error='How To Play is showing: `play next` turns its pages')
+        if verb == 'next':
+            if renderer.tutorial is None:
+                return dict(ok=False, error='How To Play is not showing: `play help`')
+            return self._claire_tap(renderer.canvas.get_width() / 2, renderer.canvas.get_height() / 2)
+        if verb == 'help':
+            return self._claire_tap(*renderer.help_rect().center)
+        if verb == 'continue':
+            if not round_.over:
+                return dict(ok=False, error='the round is still being played')
+            def after_cleared():
+                yield from self._settled(1.6)          # ("Scene Cleared!" first)
+                return (yield from self._claire_tap(*renderer.continue_rect().center))
+            return after_cleared()
+        if round_.over:
+            return dict(ok=False, error='the round is over: `play continue`')
+        if verb in ('find', 'key'):
+            if verb == 'key':
+                if round_.key == sr.NO_OBJECT or round_.key_found_ms >= 0:
+                    return dict(ok=False, error='no Gold Key to find')
+                target = round_.key
+            else:
+                listed = [(slot, o) for slot, o in enumerate(round_.slots) if o >= 0 and o not in round_.found]
+                match = ([o for slot, o in listed if slot == int(arg)] if arg.isdigit()
+                         else [o for _, o in listed if round_.names[o].lower() == arg.lower()])
+                if not match:
+                    return dict(ok=False, error=f'{arg!r} is not listed to find; listed: {[round_.names[o] for _, o in listed]}')
+                target = match[0]
+                if round_.kinds[target] == sr.WHOLE:
+                    target = next(p for p in round_.parts[target] if p not in round_.collecting)
+                if round_.kinds[target] == sr.CLOSE_UP and not round_.pip_open:
+                    return dict(ok=False, error=f'{round_.names[target]} is in the close-up: `play open` first')
+            spot = self._claire_spot(renderer, round_, target)
+            if spot is None:
+                return dict(ok=False, error=f'no spot on {round_.names[target]} a tap reaches first')
+            return self._claire_tap(*spot)
+        if verb == 'miss':
+            width = renderer.canvas.get_width()
+            for y in range(round(renderer.top_bar_bottom() + 10), round(renderer.bar_top() - 10), 23):
+                for x in range(10, width - 10, 37):
+                    if renderer.hit(round_, x, y) == ('scene', []):
+                        return self._claire_tap(x, y)
+            return dict(ok=False, error='no empty spot in view')
+        if verb == 'sensor':
+            return self._claire_tap(*renderer.sensor_rect().center)
+        if verb == 'powerup':
+            rects = {sr.HINT: renderer.small_rect((292.5, 28)), sr.CLAIRVOYANCE: renderer.small_rect((359.3, 28)),
+                     sr.TIME_WARP: renderer.stopwatch_rect()}
+            if arg not in rects:
+                return dict(ok=False, error=f'a power-up is one of {sorted(rects)}')
+            return self._claire_tap(*rects[arg].center)
+        if verb == 'open':
+            close_up = renderer.close_up(round_)
+            if close_up is None or round_.pip_open:
+                return dict(ok=False, error='no closed close-up in this scene')
+            number, w, h, left, top = close_up['cutout']
+            renderer.view.centre_on(left + w / 2, top + h / 2)
+            for dy in range(0, h, max(1, h // 10)):
+                for dx in range(0, w, max(1, w // 10)):
+                    x, y = renderer.view.to_canvas(left + dx, top + dy)
+                    if renderer.hit(round_, x, y) == ('open_pip',):
+                        return self._claire_tap(x, y)
+            return dict(ok=False, error='no spot on the close-up a tap reaches')
+        if verb == 'close':
+            if not round_.pip_open:
+                return dict(ok=False, error='the close-up is not open')
+            return self._claire_tap(*renderer.close_rect(round_).center)
+        return dict(ok=False, error='a sequel round takes find, key, miss, sensor, powerup, open, close, help, next or '
+                                    f'continue, not {verb!r}')
 
     # -- the app's data folder ----------------------------------------------------------------------------------------
 

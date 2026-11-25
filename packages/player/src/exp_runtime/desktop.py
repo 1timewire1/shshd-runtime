@@ -4,6 +4,7 @@ from dataclasses import astuple
 from io import BytesIO
 from copy import deepcopy
 import logging
+import math
 import os
 import random
 import re
@@ -47,6 +48,7 @@ from .desktop_x360_slot import X360SlotRenderer
 from .desktop_shs11_memory import Shs11MemoryRenderer, memory_spec
 from .desktop_brew_catch import BrewCatchRenderer
 from .desktop_claire_round import ClaireRoundRenderer, SOUND_BUTTON as CLAIRE_BUTTON
+from .desktop_shadows_round import ShadowsRoundRenderer, SOUND_BUTTON as SHADOWS_BUTTON
 from .desktop_shs11_reflex import Shs11ReflexRenderer
 from .gamepad import REPEAT_DELAY_MS, REPEAT_MS
 from .x360_games import DOWN, LEFT, RIGHT, SHAKE_WINDOW_STICK_MS, UP
@@ -55,7 +57,7 @@ from .x360_diss import (ROUND_BACKGROUNDS as X360_ROUND_BACKGROUNDS, ROUND_EPISO
                         SOUND_GOOD as X360_SOUND_GOOD, SOUND_REMIX as X360_SOUND_REMIX)
 from .shs11_games import GAME_SOUNDS as SHS11_GAME_SOUNDS, GRID_SOUNDS, PLAY
 from . import desktop_tree_zoom, frame_log, momentum, scene_fade
-from .desktop_pause_hd import (ASPECT_NAMES, CH_DIALOGUE_NAMES, CLAIRE_POWERUPS_NAMES, TEXT_ANIMATION_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, LANGUAGE_NAMES,
+from .desktop_pause_hd import (ASPECT_NAMES, CH_DIALOGUE_NAMES, CLAIRE_POWERUPS_NAMES, ROUND_STYLE_NAMES, TEXT_ANIMATION_NAMES, CONFIRM_NAMES, DSI_LANGUAGE_NAMES, DSI_BACKGROUNDS_NAMES, dsi_backgrounds_value, SHS11_LANGUAGE_NAMES, STORY_LANGUAGE_NAMES, GRID_CONTROLS_NAMES, HdPauseMenu, KEYS_ACTIVATE, LANGUAGE_NAMES,
                                drag_scroll, focus_step, place_controls)
 from . import backdrop_fit, frame_shape
 from .desktop_hd_menu import HdMenuWindows
@@ -397,6 +399,7 @@ class Desktop:
     ch_43 = True                    # ...and "Claire Hart 4:3": their cases in their own 4:3 where there's room (wide_frame)
     _ch_dialogue = 'auto'           # Claire Hart UI: Auto, Off, Claire Hart Classic or Secret in the Shadows (content.skin_entry)
     _claire_powerups = 'once'       # Claire Hart's rounds' Power-Ups: Once Each Round, Unlimited or Off
+    _claire_round_style = 'own'     # ...and their Round Style: each game's own, Classic's or the sequel's
     _arena_minigames = True         # translated episodes: the "Use Translated Mini-Games" switch (arena_minigames)
     x360_tutorial = None            # a tutorial taken in the X360 look: the game's music request it began under
     arena_skin = False              # ...drawn in the X360 prototype's look: the "Use X360 Arena Skin" switch (x360_arena_switch)
@@ -642,7 +645,8 @@ class Desktop:
         self.shs11_reflex_renderer._images = self.shs11_memory_renderer._images
         self.shs11_reflex_renderer._glyphs = self.shs11_memory_renderer._glyphs
         self.brew_catch_renderer = BrewCatchRenderer(session.resources)
-        self.claire_round_renderer = ClaireRoundRenderer(session.resources)
+        self.classic_round_renderer = ClaireRoundRenderer(session.resources)
+        self.shadows_round_renderer = ShadowsRoundRenderer(session.resources)    # (the sequel's rules: Round Style)
         self._warm_claire_rounds(session)
         self.x360_leash_renderer = X360LeashRenderer(session.resources)
         self.x360_puzzle_renderer = X360PuzzleRenderer(session.resources)
@@ -1478,6 +1482,19 @@ class Desktop:
     CLAIRE_LEFT = (pygame.K_LEFT, pygame.K_q, pygame.K_a, pygame.K_PAGEUP)        # (a controller's L: PAGEUP, gamepad.py)
     CLAIRE_RIGHT = (pygame.K_RIGHT, pygame.K_e, pygame.K_d, pygame.K_PAGEDOWN)    # (and its R: PAGEDOWN)
 
+    @property
+    def claire_round_renderer(self):
+        """The round's screen: the sequel's for a round under its rules (shadows_rounds.ShadowsRound), else Classic's."""
+        game = self.session.engine.claire_round if getattr(self, 'session', None) is not None else None
+        if game is not None and type(game).__name__ == 'ShadowsRound':
+            return self.shadows_round_renderer
+        return self.classic_round_renderer
+
+    @claire_round_renderer.setter
+    def claire_round_renderer(self, renderer):
+        """(A stand-in for both screens: a test's.)"""
+        self.classic_round_renderer = self.shadows_round_renderer = renderer
+
     def _claire_ready(self):
         action = self.session.pending
         return (action is not None and action.name == 'claire_round' and not self.menu_open and not self.error
@@ -1543,12 +1560,13 @@ class Desktop:
         if not self.sound_enabled:
             return
         library = self.session.resources.library
+        addon = renderer.sound_addon()
         for name in dict.fromkeys(due):
             resource = renderer.sound_resource(name)
             if resource is None:
                 continue
             try:
-                self._sound(('claire', name), lambda r=resource: library.addon_resource('chcrounds', r)).play()
+                self._sound(('claire', addon, name), lambda r=resource: library.addon_resource(addon, r)).play()
             except (ContentError, pygame.error, TypeError) as error:
                 logging.warning('Sound %s cannot be played: %s', name, error)
 
@@ -1564,11 +1582,19 @@ class Desktop:
         renderer, game = self.claire_round_renderer, self.session.engine.claire_round
         if renderer.canvas is None or renderer.view is None or game is None:
             return True
+        sequel = renderer is self.shadows_round_renderer
         if event.type == pygame.MOUSEWHEEL:
+            if sequel and (renderer.zoom_locked or renderer.tutorial is not None):
+                return True                             # (the sensor locks the zoom: ENGINE 5.3)
             x, y = self._claire_point(pygame.mouse.get_pos())
             renderer.view.zoom_at(0.05 if event.y > 0 else -0.05, x, y)
             return True
         x, y = self._claire_point(event.pos)
+        touch = bool(getattr(event, 'touch', False))
+        if sequel:
+            renderer.last_touch = touch
+            if not touch and event.type == pygame.MOUSEMOTION:
+                renderer.pointer = (x, y)               # (the ring and the light follow a mouse)
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button != 1:
                 return True
@@ -1595,32 +1621,54 @@ class Desktop:
         drag, renderer.drag, renderer.pressed = renderer.drag, None, None
         renderer.held = 0
         if drag is not None and drag[2]:
+            if sequel and touch and game.sensor_on:
+                renderer.move_ring(x, y)                # (a drag moves the ring on touch)
             return True                                 # (a pan, not a tap)
         meaning = renderer.hit(game, x, y)
         if not meaning:
             return True
         kind = meaning[0]
+        if sequel and kind == 'scene' and touch and (game.sensor_on or game.spotlight):
+            # The touch rule (plan S1): with the sensor or a spotlight on, a tap counts only near its ring or light; a tap
+            # elsewhere moves the ring there and is no misclick.
+            moved = 0 if drag is None else math.hypot(x - drag[0][0], y - drag[0][1])
+            counts = renderer.touch_counts(x, y, moved)
+            if game.sensor_on:
+                renderer.move_ring(x, y)
+            if not counts:
+                return True
         if kind == 'scene':
             self._attempt(lambda: self.session.claire_tap(meaning[1]))
+        elif kind == 'tutorial':
+            renderer.tutorial_tap()
+        elif kind == 'help':
+            renderer.open_tutorial()
+        elif kind == 'sensor':
+            renderer.sounds.append(SHADOWS_BUTTON)
+            self._attempt(lambda: self.session.claire_use('sensor'))
+        elif kind in ('open_pip', 'close_pip'):
+            self._attempt(lambda: self.session.claire_use(kind))
+        elif kind == 'backing':
+            self._attempt(self.session.claire_backing)
         elif kind == 'hint':
             self._attempt(lambda: self.session.claire_use('hint'))
         elif kind == 'powerup':
-            renderer.sounds.append(CLAIRE_BUTTON)
+            renderer.sounds.append(SHADOWS_BUTTON if sequel else CLAIRE_BUTTON)
             self._attempt(lambda: self.session.claire_use(meaning[1]))
         elif kind == 'label' and game.locating:
             self._attempt(lambda: self.session.claire_pick(meaning[1]))
         elif kind == 'continue':
-            renderer.sounds.append(CLAIRE_BUTTON)
+            renderer.sounds.append(SHADOWS_BUTTON if sequel else CLAIRE_BUTTON)
             self._attempt(self.session.claire_continue)
         elif kind == 'menu':
-            renderer.sounds.append(CLAIRE_BUTTON)
+            renderer.sounds.append(SHADOWS_BUTTON if sequel else CLAIRE_BUTTON)
             self.command(('menu',))
         return True
 
     def claire_pinch_start(self, centre):
         """Two fingers landing on a Claire Hart round (the Android host's pinch): (its zoom then, the scene point between
         them), or None when no round is being played."""
-        if not self._claire_ready():
+        if not self._claire_ready() or getattr(self.claire_round_renderer, 'zoom_locked', False):
             return None
         view = self.claire_round_renderer.view
         self.claire_round_renderer.drag = None
@@ -1650,16 +1698,20 @@ class Desktop:
         if event.key in self.CLAIRE_RIGHT:
             renderer.held = 1
             return True
+        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE) and getattr(renderer, 'tutorial', None):
+            renderer.tutorial_tap()
+            return True
         if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE) and game is not None and game.over:
-            renderer.sounds.append(CLAIRE_BUTTON)
-            self._attempt(self.session.claire_continue)
+            if getattr(renderer, 'summary_ready', lambda: True)():
+                renderer.sounds.append(CLAIRE_BUTTON if renderer is self.classic_round_renderer else SHADOWS_BUTTON)
+                self._attempt(self.session.claire_continue)
             return True
         return False
 
     def _claire_key_up(self, event):
-        renderer = getattr(self, 'claire_round_renderer', None)
-        if renderer is not None and event.key in self.CLAIRE_LEFT + self.CLAIRE_RIGHT:
-            renderer.held = 0
+        for renderer in (getattr(self, 'classic_round_renderer', None), getattr(self, 'shadows_round_renderer', None)):
+            if renderer is not None and event.key in self.CLAIRE_LEFT + self.CLAIRE_RIGHT:
+                renderer.held = 0
 
     def _resolve_x360_puzzle(self, action, index):
         """The jewel puzzle's skip prompt: Skip goes straight on, Play plays it."""
@@ -2079,7 +2131,8 @@ class Desktop:
             # under a strip). An iPad's 4:3 screen leaves none, and keeps the pad.
             self._top_pad = 0.
         for game in (getattr(self, 'football_hd', None), getattr(self, 'word_hd', None), getattr(self, 'shs11_hd', None),
-                     getattr(self, 'claire_round_renderer', None)):     # (a Claire Hart round's top bar too: R7)
+                     getattr(self, 'classic_round_renderer', None),     # (a Claire Hart round's top bar too: R7)
+                     getattr(self, 'shadows_round_renderer', None)):
             if game is not None:
                 game.top_pad = round(self._top_pad * 768 / width)       # (in its canvas's points)
         from .desktop_nr_arena import NATIVE
@@ -2093,7 +2146,8 @@ class Desktop:
                      getattr(self, 'shs11_memory_renderer', None), getattr(self, 'shs11_reflex_renderer', None),
                      getattr(self, 'x360_slot_renderer', None), getattr(self, 'x360_leash_renderer', None),
                      getattr(self, 'x360_puzzle_renderer', None), getattr(self, 'x360_diss_renderer', None),
-                     getattr(self, 'x360_battle_renderer', None), getattr(self, 'claire_round_renderer', None)):
+                     getattr(self, 'x360_battle_renderer', None), getattr(self, 'classic_round_renderer', None),
+                     getattr(self, 'shadows_round_renderer', None)):
             if card is not None:
                 card.frame_units = (width, tall)        # drawn over the whole frame, its shape (desktop_title)
         scale = STORY_SCALE * FRAME_UNITS[0] / width
@@ -2724,13 +2778,37 @@ class Desktop:
             if engine.claire_round is not None:
                 engine.claire_round.powerups = self._claire_powerups
 
+    @property
+    def claire_round_style(self):
+        return self._claire_round_style
+
+    @claire_round_style.setter
+    def claire_round_style(self, value):
+        """Round Style, kept by the library too: the next round opened plays by it (one being played keeps its rules)."""
+        from .claire_round_style import ROUND_STYLES
+        self._claire_round_style = value if value in ROUND_STYLES else 'own'
+        session = self.__dict__.get('_session')
+        library = getattr(getattr(session, 'resources', None), 'library', None)
+        if library is not None:
+            library.claire_round_style = self._claire_round_style
+        engine = getattr(session, 'engine', None)
+        if engine is not None:
+            engine.claire_round_style = self._claire_round_style
+
+    def claire_round_style_switch(self):
+        """Whether this is a Claire Hart case and the library holds both games' rounds (plan S2)."""
+        library = getattr(self.session.resources, 'library', None)
+        held = {a.get('addon') for a in getattr(library, 'addons', None) or ()}
+        return (game_id(self.session.resources) == 'cod' and self.minigames_switch()
+                and {'chcrounds', 'ch2rounds'} <= held)
+
     def claire_powerups_switch(self):
         """Whether this is a Claire Hart case and the library holds its rounds (chcrounds)."""
         # (a pack's TRANSLATED_MINIGAMES entry is None for all its episodes: minigames_switch asks it rightly; pack_setting's
         # None read as "not one", and the setting never showed in a case, owner 2026-11-20)
         library = getattr(self.session.resources, 'library', None)
         return (game_id(self.session.resources) == 'cod' and self.minigames_switch()
-                and any(a.get('addon') == 'chcrounds' for a in getattr(library, 'addons', None) or ()))
+                and any(a.get('addon') in ('chcrounds', 'ch2rounds') for a in getattr(library, 'addons', None) or ()))
 
     def ch_dialogue_switch(self):
         """Whether a Claire Hart game's add-on carries its UI skin (the profile's DIALOGUE_SKINS) in this library."""
@@ -2820,7 +2898,8 @@ class Desktop:
         self._drop_portraits()
         self.dialogue_renderer.drop_translated_badges()
         self.brew_catch_renderer.drop_images()
-        self.claire_round_renderer.drop_images()
+        self.classic_round_renderer.drop_images()
+        self.shadows_round_renderer.drop_images()
         self._frame_backdrop_cache = (None, {})          # both box colours' backdrops, as scaled so far
         self.badge_hd._tab_cache = None                  # a time badge on screen, with its icon
 
@@ -2844,7 +2923,8 @@ class Desktop:
         self._drop_portraits()
         self.dialogue_renderer.drop_translated_badges()
         self.brew_catch_renderer.drop_images()
-        self.claire_round_renderer.drop_images()
+        self.classic_round_renderer.drop_images()
+        self.shadows_round_renderer.drop_images()
         self._frame_backdrop_cache = (None, {})
         self.badge_hd._tab_cache = None
 
@@ -4202,6 +4282,8 @@ class Desktop:
                     **({'ch_dialogue': CH_DIALOGUE_NAMES[self.ch_dialogue]} if self.ch_dialogue_switch() else {}),
                     **({'claire_powerups': CLAIRE_POWERUPS_NAMES[self.claire_powerups]}
                        if getattr(self, 'claire_powerups_switch', None) and self.claire_powerups_switch() else {}),
+                    **({'claire_round_style': ROUND_STYLE_NAMES[self.claire_round_style]}
+                       if getattr(self, 'claire_round_style_switch', None) and self.claire_round_style_switch() else {}),
                     **({'arena_minigames': self.arena_minigames} if self.minigames_switch() else {}),
                     **({'arena_skin': self.arena_skin} if self.hires_switch() and self.x360_arena_switch() else {}))
 
@@ -4397,6 +4479,17 @@ class Desktop:
             if self.on_settings:
                 self.on_settings()
             self.pause_hd.back()
+            self._menu_sound()
+            return
+        if kind == 'pause_cycle' and command[1] == 'claire_round_style':
+            # Round Style (both rounds add-ons), picked on its choice page (or stepped to the next); the app keeps it.
+            choices = list(ROUND_STYLE_NAMES)
+            self.claire_round_style = (command[2] if len(command) > 2
+                                       else choices[(choices.index(self.claire_round_style) + 1) % len(choices)])
+            if self.on_settings:
+                self.on_settings()
+            if len(command) > 2:
+                self.pause_hd.back()
             self._menu_sound()
             return
         if kind == 'pause_cycle' and command[1] == 'claire_powerups':
@@ -6025,6 +6118,9 @@ class Desktop:
                 else:
                     game.remaining_ms = 0
                 self.choice_closing = dict(action=pending, index=None, ms=SELECT_MS)
+            elif (pending is not None and pending.name == 'claire_round'
+                  and getattr(self.claire_round_renderer, 'tutorial', None) is not None):
+                pass                            # How To Play shows: the round's clock waits (the sequel's tutorial)
             elif self._cutscene_waiting():
                 # Held until its first frame is drawn; the tick after that (whose time is that frame's loading) lets
                 # it run from 0, its music with it.

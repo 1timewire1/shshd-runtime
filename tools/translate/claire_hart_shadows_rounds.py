@@ -29,14 +29,19 @@ import tempfile
 
 import claire_rounds_addon as cra
 
-ROUNDS_ID, ROUNDS_TITLE, ROUNDS_REVISION = 'ch2rounds', 'Claire Hart: Secret in the Shadows: Rounds', 1
+ROUNDS_ID, ROUNDS_TITLE, ROUNDS_REVISION = 'ch2rounds', 'Claire Hart: Secret in the Shadows: Rounds', 2
 PACK_ID = 31900
 SPEC, SPEC_VERSION = 26000, 1
 BASE_FIRST = 26001                      # the scenes' bases, in the layouts' sorted order
 SPRITES_FIRST = 27001                   # each scene's sprite pack, in the same order
 HUD_FIRST = 28000                       # every named UI frame (sorted by name)
 SOUND_FIRST, PARTICLE_FIRST, FONT_FIRST, SPOTLIGHT = 28600, 28700, 28800, 28900
-ROUND_KEY_BASE = 50000                  # a sequel round's key: 50000 + case x 100 + part x 10 + round (Classic's are < 3,000)
+TUTORIAL_FIRST = 28950                  # How To Play (revision 2): its pictures, then Claire's standing picture
+TUTORIAL = 'unpacked/resources_json/cases/howtoplay/howtoplay.json'
+TUTORIAL_CONFIG = 'unpacked/resources_json/cases/howtoplay/htpconfig.json'
+TUTORIAL_SEQUENCE = 'howToHOG'
+ROUND_KEY_BASE = 20000                  # a sequel round's key: 20000 + case x 100 + part x 10 + round (Classic's are < 3,000)
+OLD_KEY_BASE = 50000                    # (revision 1's: out of a Creator node's signed word, so re-keyed by add_tutorial)
 GAMEBALANCE = 'unpacked/resources_json/config/gamebalance.json'
 FRAMES = 'claire_hart_shadows_ui_frames.json'
 SPOTLIGHT_PICTURE = 'placeholder/spotlight2alpha'
@@ -309,6 +314,87 @@ def hud_resources(root, frames):
     return out, hud
 
 
+def tutorial_resources(root, rows):
+    """How To Play (owner, 2026-11-25: included, the sequel's only): the round's `howToHOG` sequence as the spec's
+    `tutorial`: its pages ({text, name, sprites [[picture, x, y]], claire 'left' / 'right' / None}: what is on the stage at
+    each of Claire's lines, x and y from the 800 x 600 stage's centre, y up), the pictures ({name: [resource, width,
+    height]}) and Claire's standing picture (her sd default face, as the sequence's character config names it); and
+    [(resource, bytes)]."""
+    root = Path(root)
+    sequence = json.loads((root / TUTORIAL).read_text(encoding='utf-8'))['sequences'][TUTORIAL_SEQUENCE]
+    refs = json.loads((root / TUTORIAL_CONFIG).read_text(encoding='utf-8'))['sceneRefs'][TUTORIAL_SEQUENCE]
+    out, pictures = [], {}
+
+    def picture(path):
+        row = next(r for r in rows[path] if r['ext'] in ('.png', '.jpg'))
+        data = (root / row['local_path']).read_bytes()
+        if row['ext'] == '.png':
+            data = compact(without_text(data))
+        out.append((TUTORIAL_FIRST + len(out), data))
+        return [TUTORIAL_FIRST + len(out) - 1, int(row['width']), int(row['height'])]
+    for name, path in sorted(refs['sprites'].items()):
+        pictures[name] = picture(path)
+    claire = picture(refs['characters']['Claire']['expressions']['default'])
+    pages, shown, side = [], {}, None
+    for node in sequence['nodes']:
+        kind = node['type']
+        if kind == 'spriteIntro':
+            shown[node['id']] = [node['ref'], node.get('x', 0), node.get('y', 0)]
+        elif kind == 'spriteOutro':
+            shown.pop(node['id'], None)
+        elif kind == 'stageBlockIntro':
+            side = 'right' if node.get('intro') == 'enterFromRight' else 'left'
+        elif kind == 'stageBlockOutro':
+            side = None
+        elif kind == 'dialogText':
+            pages.append(dict(text=node['body'], name=node.get('narrator') or node.get('header') or 'Claire',
+                              sprites=[list(v) for v in shown.values()], claire=side))
+    return out, dict(pictures=pictures, claire=claire, pages=pages)
+
+
+def add_tutorial(rounds_path, root, out_path, progress=print):
+    """A built ch2rounds (revision 1) given How To Play (tutorial_resources), its rounds re-keyed from 20000 (revision
+    1's 50000 overflowed a Creator node's signed word) and its HUD cut again, made revision 2, streaming the rest as it is
+    (claire_rounds_addon.share_bases' way), so the hour-long build needn't run again."""
+    from exp_runtime.addons import RESOURCE as ADDON_RECORD, provides_bytes
+    index = cra.archive_index(rounds_path)
+    spec = json.loads(cra.read_resource(rounds_path, index, SPEC))
+    added, spec['tutorial'] = tutorial_resources(root, bundle_rows(root))
+    spec['rounds'] = {str(int(k) - OLD_KEY_BASE + ROUND_KEY_BASE) if int(k) >= OLD_KEY_BASE else k: v
+                      for k, v in spec['rounds'].items()}
+    # (and the HUD cut again from the frames table: 40 frames of revision 1 came from the wrong atlas page)
+    hud, spec['hud'] = hud_resources(root, json.loads((Path(root) / FRAMES).read_text(encoding='utf-8')))
+    added += hud
+    out_path = Path(out_path)
+    work = Path(tempfile.mkdtemp(prefix='.ch2rounds-tutorial-', dir=out_path.parent))
+    try:
+        parts = {}
+        for resource, data in added:
+            parts[resource] = work / f'{resource}.bin'
+            parts[resource].write_bytes(data)
+        for resource, (offset, size) in index.items():
+            if resource in parts:
+                continue
+            path = parts[resource] = work / f'{resource}.bin'
+            if resource == SPEC:
+                path.write_bytes(json.dumps(spec, separators=(',', ':')).encode('utf-8'))
+            elif resource == ADDON_RECORD:
+                path.write_bytes(provides_bytes(ROUNDS_ID, ROUNDS_TITLE, ROUNDS_REVISION))
+            else:
+                with open(rounds_path, 'rb') as source, open(path, 'wb') as target:
+                    source.seek(offset)
+                    left = size
+                    while left:
+                        block = source.read(min(left, 1 << 20))
+                        target.write(block)
+                        left -= len(block)
+        cra.write_exp(out_path, parts)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    progress(f"How To Play: {len(spec['tutorial']['pages'])} pages; {len(added)} pictures written; revision {ROUNDS_REVISION}")
+    return dict(pages=len(spec['tutorial']['pages']), pictures=len(added), bytes=out_path.stat().st_size)
+
+
 def build(mirror, out, *, only=None, workers=3, progress=print):
     """Write `out` from `mirror` (claire_hart_shadows.Mirror); return a report. `only`: these scene folders alone (a check
     build; its rounds table still lists every round)."""
@@ -379,6 +465,9 @@ def build(mirror, out, *, only=None, workers=3, progress=print):
             spec['fonts'][path.rsplit('/', 1)[1]] = FONT_FIRST + i
         put(SPOTLIGHT, (root / next(r for r in rows[SPOTLIGHT_PICTURE] if r['ext'] == '.png')['local_path']).read_bytes())
         spec['spotlight'] = SPOTLIGHT
+        added, spec['tutorial'] = tutorial_resources(root, rows)
+        for resource, data in added:
+            put(resource, data)
         frames = json.loads((root / FRAMES).read_text(encoding='utf-8'))
         hud, spec['hud'] = hud_resources(root, frames)
         for resource, data in hud:

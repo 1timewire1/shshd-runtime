@@ -106,10 +106,12 @@ class ShadowsRound:
     finished: bool = False
     title: str = ''
     started: bool = False
+    source: str = 'ch2rounds'           # the add-on whose scene this is (Round Style: a Classic scene comes from chcrounds)
 
     # --- opening ----------------------------------------------------------------------------------------------------------
     @classmethod
-    def opened(cls, scene, names, kinds, parts, story, random, powerups=ONCE_EACH, title='', spotlight=False):
+    def opened(cls, scene, names, kinds, parts, story, random, powerups=ONCE_EACH, title='', spotlight=False,
+               source='ch2rounds'):
         """A round of the scene whose objects are `names` of `kinds`, its multi-part objects' `parts` ({whole: [parts]}), the
         story objects `story` (their places; a multi-part object listed first) forced in: hogscene.selectObjectList, its
         shuffle drawn from the session's `random` so a reload picks the same."""
@@ -138,7 +140,7 @@ class ShadowsRound:
         game = cls(scene, list(names), list(kinds), picked, {int(w): list(p) for w, p in parts.items()},
                    [i for i in wholes + rest if i in picked], powerups if powerups in POWERUP_MODES else ONCE_EACH,
                    sol, sol, slots=[NO_OBJECT] * min(AOL_SIZE, len(picked)), extra=[False] * min(AOL_SIZE, len(picked)),
-                   title=title or scene, spotlight=bool(spotlight))
+                   title=title or scene, spotlight=bool(spotlight), source=source)
         for _ in range(len(game.slots)):
             game._list_next()
         return game
@@ -458,7 +460,7 @@ class ShadowsRound:
         count = len(self.names)
         objects = set(range(count))
         parts = {int(w): p for w, p in self.parts.items()}
-        if (not self.scene or len(self.kinds) != count or any(k not in KINDS for k in self.kinds)
+        if (not self.scene or self.source not in ('chcrounds', 'ch2rounds') or len(self.kinds) != count or any(k not in KINDS for k in self.kinds)
                 or not 0 < len(self.picked) <= count or len(set(self.picked)) != len(self.picked)
                 or not set(self.picked) <= objects or not set(self.story) <= set(self.picked)
                 or any(self.kinds[o] not in (ORDINARY, CLOSE_UP, WHOLE) for o in self.picked)

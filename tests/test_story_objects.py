@@ -59,7 +59,7 @@ class StoryObjectTests(unittest.TestCase):
         rows(session, 1)                                    # Ann's second line is up, with the broom and the key
         state = json.loads(json.dumps(session.snapshot()))
         self.assertEqual((state['version'], state['engine']['story_objects'], state['engine']['story_objects_due']),
-                         (47, [27001, 27002], []))
+                         (48, [27001, 27002], []))
         restored = Session.from_snapshot(story_resources(), state)
         self.assertEqual(rows(restored, 2), [[27001, 27002], []])
         old = json.loads(json.dumps(state))
@@ -153,7 +153,7 @@ class StoryPhotoTests(unittest.TestCase):
         photos(session, 1)                                  # Ann's second line is up, with the key
         state = json.loads(json.dumps(session.snapshot()))
         self.assertEqual((state['version'], state['engine']['story_photo'], state['engine']['story_photo_due']),
-                         (47, 27002, -1))
+                         (48, 27002, -1))
         restored = Session.from_snapshot(story_resources(), state)
         restored.engine.story_photo_mode = True
         self.assertEqual(photos(restored, 1), [27002])

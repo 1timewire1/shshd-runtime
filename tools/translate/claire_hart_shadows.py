@@ -65,6 +65,7 @@ import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from claire_hart import markdown_table, mp3, norm, story_text      # noqa: E402
+from exp_runtime.claire_round_services import shadows_key  # noqa: E402
 
 PACK_ID = 31900
 ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'ch2', 'Claire Hart: Secret in the Shadows', 2     # (2: S2b's skin, 29100 on)
@@ -715,9 +716,10 @@ def make_builder():
                 self.log['journal entries added at their chapter\'s end'] += left
                 self.unlock(left)
 
-        def stand_in(self, mirror, part, chapter, round_id, next_chapter):
-            """A round with the real rounds off (S3 brings them): a line naming what the player finds (G, G2), unless the
-            next chapter's first two lines tell it (claire_hart.round_told)."""
+        def stand_in(self, mirror, part, chapter, round_id, next_chapter, key=None):
+            """A round: played for real where it can be (ch2rounds with Use Translated Mini-Games: the round `key`, S3),
+            else a line naming what the player finds (G, G2), unless the next chapter's first two lines tell it
+            (claire_hart.round_told; a round the next chapter tells is still played, R6)."""
             from claire_hart import first_name, round_line, round_told
             entry = mirror.round_entry(part.config, chapter, round_id) or {}
             items = []
@@ -739,12 +741,26 @@ def make_builder():
             self.reviews['rounds'].append((part.epid, round_id, where, ', '.join(items), told or 'stand-in', line,
                                            ' / '.join(lines)[:220]))
             self.report['rounds'] += 1
+            ends = []
+            if key is not None:
+                if not self.asked:
+                    self.add('minigames_available', params={'result': 'real_rounds', 'for': 'claire2_round'})
+                    self.asked = True
+                real = self.add('branch', params={'expression': '(real_rounds == 1)'})
+                self.pending = [(real, 'next')]
+                played = self.add('claire_round', params={'round': key, 'result': 'round_score'})
+                ends = [(played, 'next')]
+                self.pending = [(real, 'otherwise')]
+                self.report['real rounds'] += 1
             if told:
                 self.report['rounds told by the next chapter'] += 1
+                if self.pending is not None:
+                    self.pending += ends
             else:
                 self.add('background', asset=self.scene(scene))
                 self.narrate_as_player()
-                self.add(text=line, expression=0)
+                last = self.add(text=line, expression=0)
+                self.pending = [(last, 'next')] + ends
                 self.report['round lines'] += 1
             self.cast = (None, None)
 
@@ -801,7 +817,8 @@ def store_scenes(mirror, cache=None):
 
 def convert(mirror, art, number, title, parts):
     """A case as (a Creator Project for Cause of Death, its backdrop slices, a report): its parts in order, each opened by
-    a title card over its store picture's scene (N, N2), its chapters, and each round as a stand-in line (G)."""
+    a title card over its store picture's scene (N, N2), its chapters, and each round: played for real behind the
+    claire2_round query (S3), else its stand-in line (G)."""
     from exp_runtime.creator import Project
     builder = make_builder()(mirror, art, art['names'])
     title = story_text(title)
@@ -816,10 +833,13 @@ def convert(mirror, art, number, title, parts):
         builder.quest = (part.number - 1, (f'Part {part.number}: {story_text(part.title)}' if len(parts) > 1
                                            else story_text(part.title))[:80])
         order = chapters_of(part.sequences)
+        played = 0
         for k, (chapter, round_id) in enumerate(order):
             builder.chapter(mirror, part, chapter, last=k == len(order) - 1, reintroduced=again and k == 0)
             if round_id:
-                builder.stand_in(mirror, part, chapter, round_id, order[k + 1][0])
+                played += 1                 # (the round's key as ch2rounds' table numbers it: claire_hart_shadows_rounds)
+                builder.stand_in(mirror, part, chapter, round_id, order[k + 1][0],
+                                 key=shadows_key(number, part.number, played))
         builder.log['journal entries never unlocked'] += len(builder.queue)
     builder.add('end')
     project = Project(title=title + TITLE_TAG, game='cod', pack_id=PACK_ID, episode_id=number * 10,
@@ -983,6 +1003,7 @@ def main(argv=None):
             command.add_argument('--scenes', help='only these scene folders (a check build)')
             command.add_argument('--workers', type=int, default=3)
             command.add_argument('--story', type=Path, help="ch2's .exp: the scenes' bases taken from it (share_bases)")
+            command.add_argument('--patch', type=Path, help='a built ch2rounds .exp to give How To Play (revision 2)')
         if name == 'build':
             command.add_argument('--cases', help='only these case numbers (1,2,31)')
             command.add_argument('--cache', type=Path, help='the store pictures matched (made on first use)')
@@ -1036,6 +1057,13 @@ def main(argv=None):
         import claire_hart_shadows_rounds as rounds
         args.out.mkdir(parents=True, exist_ok=True)
         out = args.out / 'CH_Shadows_Rounds.exp'
+        if args.patch:
+            # (a revision 1 build given How To Play, the rest streamed as it is: no hour-long build)
+            made = out.with_suffix('.new.exp')
+            report = rounds.add_tutorial(args.patch, mirror.root, made)
+            made.replace(out)                       # (the patched build may be the one it replaces)
+            print(f"addon: {rounds.ROUNDS_TITLE!r} -> {out} ({report['bytes'] // 2 ** 20} MB), {report}")
+            return 0
         report = rounds.build(mirror, out, only=set(args.scenes.split(',')) if args.scenes else None, workers=args.workers)
         if args.story:
             import claire_rounds_addon

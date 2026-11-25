@@ -343,7 +343,7 @@ class StoryTests(unittest.TestCase):
         for _ in range(20):
             session.tick(250)
         state = json.loads(json.dumps(session.snapshot()))
-        self.assertEqual(state['version'], 47)
+        self.assertEqual(state['version'], 48)
         again = Session.from_snapshot(session_for(self.project()).resources, state)
         self.assertEqual(again.engine.x360_battle, session.engine.x360_battle)
         state['engine']['x360_battle']['tier'] = 7

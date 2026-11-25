@@ -26,6 +26,8 @@ from .story_object_services import STORY_OBJECT, STORY_OBJECT_ROW
 from .brew_catch import BREW_CATCH, CatchGame, ITEM_WORDS, MAX_ITEMS
 from .claire_round_services import CLAIRE_ROUND
 from .claire_rounds import ClaireRound
+from .claire_round_style import open_round
+from .shadows_rounds import ShadowsRound
 from .shs11_games import MemoryGame, REFLEX_ROUND_WORDS, ReflexGame, ROUND_WORDS, SHS11_MEMORY, SHS11_REFLEX
 from .cutscene import CUTSCENE, Cutscene
 from .game_state import GameState
@@ -154,11 +156,14 @@ class EngineState:
     hd_version = None
     # Not saved: the DSiWare add-on's translation for the language picked (EpisodeResources.dsi_translation; Session sets it).
     translation_source = None
-    # Not saved: Claire Hart's rounds (Session sets them): a round's (scene, names, story objects, title) by its key from the
-    # chcrounds add-on, or None without it; and the Power-Ups setting for a round opened.
+    # Not saved: Claire Hart's rounds (Session sets them): a round by its key (claire_round_style.RoundData, or a Classic
+    # source's (scene, names, story objects, title)) from the chcrounds / ch2rounds add-on, or None without it; the
+    # Power-Ups setting for a round opened, and Round Style (claire_round_style.ROUND_STYLES).
     claire_round_source = None
     claire_powerups = 'once'
+    claire_round_style = 'own'
     claire_rounds_ready = False             # (chcrounds is in the library)
+    claire2_rounds_ready = False            # (ch2rounds is in the library)
     story_photo_mode = False                # service 225 as Secret in the Shadows' one photo (the profile's STORY_OBJECT_PHOTO)
     badge_sounds = None            # Not saved: a translated pack's own (for, against) (TRANSLATED_BADGE_SOUNDS; Session sets it)
     # Not saved: whether service 22 makes "a(n) word" "a word" or "an word", and "1 Win(s)" "1 Win" (choose_plurals) (a pack in
@@ -235,7 +240,9 @@ class EngineState:
     shs11_reflex: ReflexGame | None = None      # shshd-runtime: and its Reflex
     shs11_reflex_tutorial_seen: bool = False
     brew_catch: CatchGame | None = None         # shshd-runtime: the BREW games' catch game (brew_catch.py)
-    claire_round: ClaireRound | None = None     # shshd-runtime: Claire Hart Classic's hidden-object round (claire_rounds.py)
+    # shshd-runtime: Claire Hart's hidden-object round, under Classic's rules (claire_rounds.py) or the sequel's
+    # (shadows_rounds.py): Round Style (claire_round_style.py)
+    claire_round: ClaireRound | ShadowsRound | None = None
     random: NativeRandom = field(default_factory=NativeRandom)
     word_grid: GameState | None = None
     grid_tutorials_seen: bool = False
@@ -1307,9 +1314,11 @@ class EngineState:
             found = self.claire_round_source(args[0]) if self.claire_round_source is not None else None
             if found is None:
                 return EngineAction('unhandled_yield', request, False,
-                                    dict(reason=f'Claire Hart round {args[0]}: the chcrounds add-on has no such round'))
-            scene, names, story, title = found
-            self.claire_round = ClaireRound.opened(scene, names, story, self.random, self.claire_powerups, title)
+                                    dict(reason=f'Claire Hart round {args[0]}: no rounds add-on has it'))
+            style = self.claire_round_style         # (a style whose screen's add-on has gone: each game's own)
+            if (style == 'shadows' and not self.claire2_rounds_ready) or (style == 'classic' and not self.claire_rounds_ready):
+                style = 'own'
+            self.claire_round = open_round(found, self.random, self.claire_powerups, style)
             return EngineAction('claire_round', request, False)
         if y == GRID_PART_SCORE:
             need(0)

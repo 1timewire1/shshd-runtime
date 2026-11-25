@@ -267,7 +267,7 @@ class LibraryMenuTests(unittest.TestCase):
         state = MenuState(self.library)
         path = state.save_path(state.selected, automatic=True)
         path.parent.mkdir()
-        for version in (48, 60):                # (any later version's)
+        for version in (49, 60):                # (any later version's)
             path.write_text(json.dumps({'format': 'shs-runtime-save', 'version': version}))
             with self.assertRaises(NewerSaveError):
                 state.session(state.selected)

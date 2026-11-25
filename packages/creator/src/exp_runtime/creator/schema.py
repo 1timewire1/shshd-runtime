@@ -139,7 +139,10 @@ NOTES = {
                     "from the chcrounds add-on (optional: without it the query answers 0). Claire Hart Classic's hidden-object round "
                     "params.round (its original episode's number x 10 + the round: E018's third is 183), as Classic plays it: 12 "
                     "objects to find in its scene, the round's story objects among them, the hint and power-ups, then its Level "
-                    "Summary. Result: the round's total score (the story has one outcome).",
+                    "Summary. A Secret in the Shadows round (ch2rounds, behind minigames_available asking for \"claire2_round\") "
+                    "is 20000 + case x 100 + part x 10 + round, played as the sequel plays it (close-ups, multi-part objects, "
+                    "the Gold Key, the Psychic Sensor); Round Style may play either under the other's rules. Result: the "
+                    "round's total score (the story has one outcome).",
     'brew_catch': "shshd-runtime only, behind minigames_available; needs the shsbrew add-on. The BREW games' catch game: items fall "
                   '(kind angled: at `angle` degrees with `chance` percent of them; sideways: from the left with `chance` percent; '
                   'orbit: round a circle `spread` wide) every interval_ms at `speed`, and the player moves to catch them. Each item '

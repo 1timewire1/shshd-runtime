@@ -59,6 +59,7 @@ All carry the CH tag; on the main menu they're on Add-Ons › Per-Game Settings,
 | --- | --- | --- |
 | Claire Hart UI | Auto, Off, Claire Hart Classic, Secret in the Shadows (above) | Auto |
 | Power-Ups | Once Each Round, Unlimited, Off | Once Each Round |
+| Round Style | Each Game's Own, Claire Hart Classic, Secret in the Shadows: which game's rules and round screen both games' rounds play under (shown with both rounds add-ons) | Each Game's Own |
 | Dim Backdrops | The scenes darkened to 110/255, as Classic drew them | On |
 | Claire Hart 4:3 | A 4:3 frame where the window has room (above) | On |
 | HD Portraits in CoD, Backdrop | Claire Hart's sharper originals of CoD's own portraits; its green beside CoD's frame | On |

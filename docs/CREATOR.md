@@ -260,8 +260,11 @@ so E001's first is 11 and E018's third is 183. The result is the round's total s
 it is a bonus, never the plot. Put it behind **Real minigames?** asking about Claire Hart's rounds: a player without
 `chcrounds`, or with Use Translated Mini-Games off, answers 0 and should take a line saying what Claire searched instead (the
 cases' own stand-in: "Claire searches the Office."). Adding the node declares `chcrounds` when the library has it.
+A round of Secret in the Shadows is 20000 + case × 100 + part × 10 + the round (case 1 part 1's third is 20113), played from
+the `ch2rounds` add-on as the sequel plays it; put it behind **Real minigames?** asking about Secret in the Shadows' rounds
+instead. The player's **Round Style** may play either under the other's rules.
 
-**Real minigames?** stores 1 where the player plays the game it asks about and 0 elsewhere, which should take your other path. Its **Asks about** list has five: the X360 games (slot machine, leash, jewel puzzle, Diss Practice), the Diss Battle, SHS '11's games, the catch game and (CoD projects) Claire Hart's rounds. Each has its own question, since a player may have one and not another (an SHSHD Runtime from before the Diss Battle has the other X360 games). A project with a game not behind a question about it is refused.
+**Real minigames?** stores 1 where the player plays the game it asks about and 0 elsewhere, which should take your other path. Its **Asks about** list has six: the X360 games (slot machine, leash, jewel puzzle, Diss Practice), the Diss Battle, SHS '11's games, the catch game and (CoD projects) Claire Hart's rounds and Secret in the Shadows' rounds. Each has its own question, since a player may have one and not another (an SHSHD Runtime from before the Diss Battle has the other X360 games). A project with a game not behind a question about it is refused.
 
 A storyboard plays stills with a window moving across them, overlays growing or sliding in, and sounds at their moments, then holds for a press. Day of Diss's opening is one ([X360.md](X360.md#day-of-disss-opening)).
 

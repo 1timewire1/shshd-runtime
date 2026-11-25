@@ -88,7 +88,7 @@ class SyncFlowTests(unittest.TestCase):
                            'sound', 'logging_disabled', 'side_panels', 'choice_hints', 'skip_minigames', 'skip_ad_intros',
                            'skip_upsell_intros', 'skip_ahead', 'undo', 'disable_choice_timer', 'hd_backdrop', 'hires_portraits', 'ms3_characters', 'java_look', 'brew_08_backgrounds', 'hollywood_art', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'ch_portraits', 'ch_backdrop', 'dim_backdrops',
                            'arena_minigames', 'arena_skin', 'skip_sound_prompt', 'dsi_backgrounds')}, dsi_pixels='sharp', preferred_language='fr', music_volume=50, sound_volume=50, order='episode', title_language='en',
-                           title_music='default', last_title_game='default', title_look='default', last_title_look='default', ch_dialogue='cases', claire_powerups='once')
+                           title_music='default', last_title_game='default', title_look='default', last_title_look='default', ch_dialogue='cases', claire_powerups='once', claire_round_style='own')
         provider = SendProvider(app, ['options', 'episodes'], ['shs'])
         self.assertEqual(provider.offer(['shs']), {'shs': ['a']})
         self.assertEqual(provider.player, {})                     # Names off, Saved Games off

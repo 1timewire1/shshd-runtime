@@ -75,7 +75,7 @@ MAX_NAMES = 4096               # player.json `names`: far more keys than the who
 SHARED_PREFERENCES = dict(
     music=bool, sound=bool, vibration=bool, device_vibration=bool, logging_disabled=bool, choice_hints=bool,
     skip_minigames=bool, skip_ad_intros=bool, skip_upsell_intros=bool, autoplay=bool, disable_choice_timer=bool,
-    side_panels=bool, hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, brew_08_backgrounds=bool, hollywood_art=bool, dsi_backgrounds=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, undo=bool, ch_portraits=bool, ch_backdrop=bool, dim_backdrops=bool, ch_43=bool, ch_dialogue=('auto', 'off', 'classic', 'shadows'), claire_powerups=('once', 'unlimited', 'off'), arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
+    side_panels=bool, hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, brew_08_backgrounds=bool, hollywood_art=bool, dsi_backgrounds=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, undo=bool, ch_portraits=bool, ch_backdrop=bool, dim_backdrops=bool, ch_43=bool, ch_dialogue=('auto', 'off', 'classic', 'shadows'), claire_powerups=('once', 'unlimited', 'off'), claire_round_style=('own', 'classic', 'shadows'), arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
     controller_confirm=('south', 'east'), grid_controls=('tap', 'hold'), dsi_pixels=('sharp', 'smooth'),
     text_animation=TEXT_ANIMATIONS,
     preferred_language=PREFERRED_LANGUAGES,
@@ -220,6 +220,8 @@ class MenuState:
                     self.ch_dialogue = skin_choice(data['ch_dialogue'])     # (Off / Cases / Everywhere carry over)
                 if data.get('claire_powerups') in ('once', 'unlimited', 'off'):
                     self.claire_powerups = data['claire_powerups']
+                if data.get('claire_round_style') in ('own', 'classic', 'shadows'):
+                    self.claire_round_style = data['claire_round_style']
                 if type(data.get('arena_minigames')) is bool:
                     self.arena_minigames = data['arena_minigames']
                 if type(data.get('arena_skin')) is bool:
@@ -325,6 +327,9 @@ class MenuState:
         # Claire Hart UI: each game's own skin ('auto'), none ('off'), or one by name everywhere ('classic', 'shadows')
         self.ch_dialogue = 'auto'
         self.claire_powerups = 'once'           # Claire Hart's rounds' power-ups (R2): once each a round, unlimited, off
+        # ...and their Round Style (claire_round_style.py): each game's own rules and screen, or Classic's or the sequel's
+        # for both (with both rounds add-ons)
+        self.claire_round_style = 'own'
         # translated New Rules episodes: their minigames in New Rules' own arena (desktop_nr_arena.py); off, the timed
         # choices the translations carry for players without it (owner, 2026-10-31: the arena by default)
         self.arena_minigames = True
@@ -470,7 +475,7 @@ class MenuState:
                     skip_upsell_intros=self.skip_upsell_intros,
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     side_panels=self.side_panels, hd_backdrop=self.hd_backdrop, hires_portraits=self.hires_portraits,
-                    ms3_characters=self.ms3_characters, java_look=self.java_look, brew_08_backgrounds=self.brew_08_backgrounds, hollywood_art=self.hollywood_art, dsi_backgrounds=self.dsi_backgrounds, dsi_pixels=self.dsi_pixels, smartphone_music=self.smartphone_music, word_grid_skin=self.word_grid_skin, grids_as_memory=self.grids_as_memory, skip_ahead=self.skip_ahead, undo=self.undo, ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop, dim_backdrops=self.dim_backdrops, ch_43=self.ch_43, ch_dialogue=self.ch_dialogue, claire_powerups=self.claire_powerups,
+                    ms3_characters=self.ms3_characters, java_look=self.java_look, brew_08_backgrounds=self.brew_08_backgrounds, hollywood_art=self.hollywood_art, dsi_backgrounds=self.dsi_backgrounds, dsi_pixels=self.dsi_pixels, smartphone_music=self.smartphone_music, word_grid_skin=self.word_grid_skin, grids_as_memory=self.grids_as_memory, skip_ahead=self.skip_ahead, undo=self.undo, ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop, dim_backdrops=self.dim_backdrops, ch_43=self.ch_43, ch_dialogue=self.ch_dialogue, claire_powerups=self.claire_powerups, claire_round_style=self.claire_round_style,
                     arena_minigames=self.arena_minigames, arena_skin=self.arena_skin,
                     skip_sound_prompt=self.skip_sound_prompt, controller_confirm=self.controller_confirm,
                     grid_controls=self.grid_controls, text_animation=self.text_animation,
