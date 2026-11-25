@@ -754,14 +754,20 @@ def build_from_map(library, twin_map, progress=None) -> bool:
             if effect:
                 standards.add(standard)
     originals = set()                                   # SD Portraits: the standard originals of HD portraits
-    if sd_due:
+    # The SD add-on just added to a store gathered from this map without it: only the add-on is read, for what the
+    # library's episodes lacked (6 minutes on the g54 for a full regather, 2026-11-25). Removed or replaced, the
+    # originals are gathered again from everything.
+    sd_source = sd_store.source() if sd_due else {}
+    sd_added = (sd_due and not twins_due and sd_source.get('map') == twin_map.VERSION
+                and sd_source.get('addon') is None and sd_addon_revision(library) is not None)
+    if sd_due and not sd_added:
         sd_store.pictures.clear()
         sd_store.write_tables(twin_map)
         originals = sd_store.wanted()
-    elif incremental and sd_store is not None and sd_store.tables['sd_of']:
+    elif (sd_added or incremental) and sd_store is not None and sd_store.tables['sd_of']:
         originals = sd_store.wanted() - set(sd_store.pictures.index)
     # HD episodes first: in the owner's library every HD picture the map names is in one. The SD add-on last.
-    scanned = library.episodes if (twins_due or sd_due) else fresh
+    scanned = library.episodes if (twins_due or (sd_due and not sd_added)) else fresh
     records = sorted(scanned, key=lambda record: record.get('variant') != 'hd')
     found, held, kept = set(), {}, set()                # held: the bytes an effect needs, standard and HD
 

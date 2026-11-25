@@ -166,6 +166,25 @@ class SdPortraitsTests(unittest.TestCase):
         r, g, b = Image.open(BytesIO(made)).convert('RGB').getpixel((40, 70))
         self.assertLess(max(r, g, b) - min(r, g, b), 12)                      # greyscale, as the standard picture
 
+    def test_adding_the_add_on_reads_only_the_add_on_and_removing_it_gathers_again(self):
+        library = self.library()
+        library._assets['standard_party_fowl'] = {}
+        build_from_map(library, self.map)
+        held = len(library.sd_portraits_store().pictures.index)
+        with_addon = self.library(addon={26000: self.sd_patchouli})
+        with_addon._assets['standard_party_fowl'] = {}
+        opened = []
+        real_open = with_addon.open_episode
+        with_addon.open_episode = lambda key: opened.append(key) or real_open(key)
+        self.assertTrue(build_from_map(with_addon, self.map))
+        self.assertEqual(opened, [])                                         # the add-on alone was read
+        self.assertEqual(len(with_addon.sd_portraits_store().pictures.index), held + 1)
+        without = self.library()                                             # removed: gathered again from everything
+        without._assets['standard_party_fowl'] = {}
+        self.assertTrue(sd_portraits_due(without, self.map))
+        build_from_map(without, self.map)
+        self.assertIsNone(without.sd_portraits_store().original('hd_party_fowl', fingerprint(self.hd_viv)))
+
     def test_a_store_built_before_the_searched_list_takes_the_library_as_searched(self):
         from exp_runtime.hd_twins import new_episodes
         library = self.library()
