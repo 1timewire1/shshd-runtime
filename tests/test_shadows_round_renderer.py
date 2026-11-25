@@ -108,6 +108,50 @@ class ShadowsRendererTests(unittest.TestCase):
         self.assertEqual(r.hit(game, rect.right - 5, rect.bottom - 5), ('backing',))
         self.assertEqual(r.hit(game, 5, r.top_bar_bottom() + 5), ('close_pip',))           # the vignette
 
+    def test_classics_screen_leaves_a_sequel_scenes_close_up_objects_out(self):
+        """Round Style Classic on a sequel scene (owner, 2026-11-25): the close-up's objects, drawn at its scale, showed
+        huge in the scene; the hotspot's art is drawn."""
+        from exp_runtime.claire_round_style import CLASSIC, RoundData, open_round
+        from exp_runtime.desktop_claire_round import ClaireRoundRenderer
+        classic = ClaireRoundRenderer(self.renderer.resources)
+        classic._specs['ch2rounds'] = self.renderer._specs['ch2rounds']
+        names = [f'Thing {i}' for i in range(len(KINDS))]
+        game = open_round(RoundData('ch2rounds', 'Bedroom', names, [], kinds=KINDS, parts={15: [13, 14]}),
+                          Random48(1), sr.ONCE_EACH, CLASSIC)
+        self.assertEqual([classic.in_scene(game, i) for i in (10, 11, 12, 13)], [True, False, False, True])
+        picture = classic.scene_picture(game)
+        self.assertEqual(picture.get_at((660, 160))[:3], (40, 60, 80))         # (the base: no close-up object on it)
+        self.assertNotEqual(picture.get_at((910, 610))[:3], (40, 60, 80))      # the hotspot's cutout
+
+    def test_scene_cleared_slides_in_centred_on_its_band_and_lifts_away(self):
+        """(owner, 2026-11-25: the text sat left of its band) gameover.js's clips: the text ends 12 units right of the
+        band's middle, as the game's does."""
+        from exp_runtime import desktop_shadows_round as dsr
+        r, game = self.renderer, self.game
+        r.draw_game(game)
+        drawn = []
+
+        real = r.canvas
+
+        class Canvas:
+            def __getattr__(self, name):
+                return getattr(real, name)
+
+            @staticmethod
+            def blit(picture, at, *rest):
+                drawn.append(picture.get_rect(topleft=at) if isinstance(at, tuple) else at)
+        r.canvas = Canvas()
+        held = dsr.CLEARED_IN_MS + 500
+        r.draw_cleared(held, 1.0)
+        self.assertEqual(len(drawn), 2)
+        band, text = drawn
+        centre = r.summary_point(dsr.CLEARED_AT[0] + 90, dsr.CLEARED_AT[1])
+        self.assertAlmostEqual(text.centerx, centre[0], delta=1)
+        self.assertAlmostEqual(band.centerx, r.summary_point(dsr.CLEARED_AT[0] + 78, 0)[0], delta=1)
+        drawn.clear()
+        r.draw_cleared(dsr.CLEARED_MS, 1.0)
+        self.assertEqual(drawn, [])                                         # (both gone before the box)
+
     def test_the_sensor_resets_the_zoom_without_looking(self):
         r, game = self.renderer, self.game
         r.draw_game(game)

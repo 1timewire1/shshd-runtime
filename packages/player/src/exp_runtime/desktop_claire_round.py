@@ -48,6 +48,7 @@ TEXT, NAME_TEXT, LIST_TEXT, BLUE_TEXT = (110, 50, 20), (110, 50, 20), (239, 236,
 SCORE_TEXT, VALUE_TEXT = (255, 255, 255), (255, 236, 90)
 ARROW_SIZE = (54, 120)                     # the edge arrows (new: Classic has none), in canvas pixels at 768 wide
 ARROW_SPEED = 900                          # canvas pixels a second, as the scene scrolls under a held arrow
+SNUG_PAN = 0.01                            # a scene this little wider than the frame fits its width instead (RoundView)
 ZOOM_STEP = 0.05                           # touchdetector: the wheel's 0.05 a notch, 1x to 2x
 FOUND_POP = 1.08
 COUNT_EXPAND_MS = 850                       # Clairvoyance's six more: "n/18 Items Found" grows and shrinks (itemCountExpand)
@@ -89,7 +90,14 @@ class RoundView:
 
     @property
     def scale(self):
-        return self.canvas[1] / self.scene[1] * self.zoom
+        """Canvas pixels a scene pixel: the scene fills the frame's height, or its width where filling the height would
+        leave under SNUG_PAN of the frame's width to pan (owner, 2026-11-25: a sequel scene, 1026 x 770, in a 4:3
+        frame got arrows that panned a pixel or two; the rows lost to the bars are under them anyway)."""
+        fit = self.canvas[1] / self.scene[1]
+        spare = self.scene[0] * fit - self.canvas[0]
+        if 0 < spare <= SNUG_PAN * self.canvas[0]:
+            fit = self.canvas[0] / self.scene[0]
+        return fit * self.zoom
 
     def clamp(self):
         half_w, half_h = self.canvas[0] / self.scale / 2, self.canvas[1] / self.scale / 2
@@ -396,6 +404,9 @@ class ClaireRoundRenderer:
                     continue
                 number, _, _, left, top = normal
                 base.blit(self.sprite(game, number), (left, top))
+            cutout = self.hotspot_cutout(game)
+            if cutout is not None:
+                base.blit(self.sprite(game, cutout[0]), (cutout[3], cutout[4]))
             self._scene, self._composed, self._scaled = key, base, None
         return self._composed
 
@@ -404,8 +415,19 @@ class ClaireRoundRenderer:
         return len(game.found)
 
     def in_scene(self, game, index):
-        """Whether object `index` is drawn in the scene (Classic's: every object not yet found)."""
-        return index not in game.found
+        """Whether object `index` is drawn in the scene (Classic's: every object not yet found; of a sequel scene, not
+        those inside its close-up: they're drawn at the close-up's scale, for its backing, not the scene's)."""
+        return index not in game.found and self.object_kind(game, index) != 'p'     # (shadows_rounds.CLOSE_UP)
+
+    def object_kind(self, game, index):
+        """A sequel scene's object's kind (shadows_rounds.KINDS); a Classic scene's are all ordinary."""
+        entry = self.scene_entry(game)['objects'][index]
+        return entry[1] if len(entry) == 5 else 'o'
+
+    def hotspot_cutout(self, game):
+        """A sequel scene's close-up hotspot (its cutout, part of the scene's art), or None."""
+        close_up = self.scene_entry(game).get('close_up')
+        return close_up['cutout'] if close_up else None
 
     def draw_scene(self, game):
         picture = self.scene_picture(game)

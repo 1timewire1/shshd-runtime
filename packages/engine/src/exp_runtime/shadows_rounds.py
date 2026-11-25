@@ -432,17 +432,21 @@ class ShadowsRound:
 
     # --- the end ----------------------------------------------------------------------------------------------------------
     def summary(self):
-        """gameover: the rows, the total and the ten half-star checks."""
+        """gameover: the rows, the total and the ten half-star checks. A scene with no Gold Key (two of the sequel's, and
+        every Classic scene under Round Style's sequel rules) passes the key's two checks (owner, 2026-11-25: a key that
+        isn't there mustn't cost stars)."""
         minutes = self.seconds // 60
         time_bonus = next((points for limit, points in TIME_BONUS if minutes < limit), 0)
         key_s = self.key_found_ms // 1000 if self.key_found_ms >= 0 else None
+        keyless = self.key == NO_OBJECT
         rows = {'found': self.find_points, 'time_bonus': time_bonus,
                 'sensor_bonus': SENSOR_BONUS if self.sensor_uses == 0 else 0,
                 'key_bonus': KEY_BONUS if key_s is not None else 0,
                 'perfect_bonus': PERFECT_BONUS if self.misclicks == 0 else 0}
         checks = [self.sensor_uses <= 2, self.sensor_uses == 0, self.misclicks <= 4, self.misclicks <= 1,
                   self.find_points >= SCORE_TIERS[0], self.find_points >= SCORE_TIERS[1],
-                  key_s is not None and key_s <= KEY_TIMES_S[0], key_s is not None and key_s <= KEY_TIMES_S[1],
+                  keyless or key_s is not None and key_s <= KEY_TIMES_S[0],
+                  keyless or key_s is not None and key_s <= KEY_TIMES_S[1],
                   self.seconds < TIME_LIMITS_S[0], self.seconds < TIME_LIMITS_S[1]]
         return dict(rows, total=sum(rows.values()), half_stars=sum(checks), checks=checks, seconds=self.seconds,
                     found_count=self.found_count, misclicks=self.misclicks, sensor_uses=self.sensor_uses, key_s=key_s,

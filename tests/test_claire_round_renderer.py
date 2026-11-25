@@ -80,6 +80,17 @@ class RendererTests(unittest.TestCase):
         self.assertAlmostEqual(x, 100)
         self.assertAlmostEqual(y, 200)
 
+    def test_a_scene_a_hair_wider_than_the_frame_fits_its_width(self):
+        """(owner, 2026-11-25): a 4:3 frame's arrows panned a pixel or two; now nothing to pan, so no arrows."""
+        from exp_runtime.desktop_claire_round import RoundView
+        view = RoundView((1026, 770), (1404, 1056))                         # (1,407 wide at its height)
+        view.clamp()
+        left, _, width, _ = view.source()
+        self.assertAlmostEqual(left, 0)
+        self.assertAlmostEqual(width, 1026)
+        wide = RoundView((1026, 770), (1300, 1056))                        # (well wider: it pans as before)
+        self.assertAlmostEqual(wide.scale, 1056 / 770)
+
     def test_a_tap_hits_hud_pieces_arrows_and_sprites(self):
         r, game = self.renderer, self.game
         r.draw_game(game)

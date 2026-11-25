@@ -89,7 +89,13 @@ KEY_GROW_MS, KEY_SETTLE_MS, KEY_WAIT_MS, KEY_FLY_MS = 470, 360, 1000, 360
 # "Not So Fast" (inGameMessagePrefab)
 SPAM_TITLE, SPAM_BODY = 'Not So Fast', 'Looking at too many objects at once confuses Claire!'
 # The summary (GameOverUI), measured on chs_25 in design units from the frame's middle (y up)
-CLEARED_MS, ROW_GAP_MS = 1500, 250
+# "Scene Cleared!" (gameover.js with its clips): sceneClearedFirstGrow (the band 0 -> 76 tall, fading in) with
+# sceneClearedTextIntro (the text sliding in from 99 units left, fading in), both 1 s; a 1 s hold; then sceneClearedTextOutro
+# (0.8 s: the text up 73, to 1.2x, fading) with sceneClearedSecondGrow (to 334 tall and 33 up by 0.817 s, gone by 0.883 s);
+# then the box (finalScore).
+CLEARED_IN_MS, CLEARED_HOLD_MS, CLEARED_OUT_MS, CLEARED_GROWN_MS = 1000, 1000, 883, 817
+CLEARED_MS, ROW_GAP_MS = CLEARED_IN_MS + CLEARED_HOLD_MS + CLEARED_OUT_MS, 250
+CLEARED_AT = (-24.1, -5.8)              # sceneCleared; its band at +78, the text (textHolder 0, sceneClearedText 90) at +90
 BOX_TOP, BOX_CENTRE, BOX_SIZE = 222.5, 58.5, (535, 420.7)
 STARS_X, STARS_Y = (-44.7, 5.8, 56.8, 107.8, 159.3), 197.6
 ROWS = (('Object Found', 'found', 132), ('Time Bonus', 'time_bonus', 90), ('Psychic Sensor Bonus', 'sensor_bonus', 46),
@@ -168,10 +174,11 @@ class ShadowsRoundRenderer(ClaireRoundRenderer):
         self.canvas.blit(picture, rect)
         return rect
 
-    def sliced(self, name, rect, unit, alpha=255):
-        """A 9-patch frame (SLICES) stretched over `rect`, its corners at `unit` canvas pixels a design unit."""
+    def sliced(self, name, rect, unit, alpha=255, cache=True):
+        """A 9-patch frame (SLICES) stretched over `rect`, its corners at `unit` canvas pixels a design unit (not kept when
+        `cache` is False: a size or opacity that changes every frame)."""
         key = ('sliced', name, rect.size, round(unit * 100), alpha)
-        found = self._images.get(key)
+        found = self._images.get(key) if cache else None
         if found is None:
             art = self.hud(name)
             left, top, right, bottom = SLICES.get(name, (0, 0, 0, 0))
@@ -195,7 +202,8 @@ class ShadowsRoundRenderer(ClaireRoundRenderer):
                     found.blit(pygame.transform.smoothscale(part, (dw, dh)), (dxs[i], dys[j]))
             if alpha != 255:
                 found.set_alpha(alpha)
-            self._images[key] = found
+            if cache:
+                self._images[key] = found
         self.canvas.blit(found, rect.topleft)
 
     def say(self, text, font, size, colour, centre, scale, anchor='center', alpha=255):
@@ -302,17 +310,6 @@ class ShadowsRoundRenderer(ClaireRoundRenderer):
             whole = next((w for w, ps in game.parts.items() if index in ps), None)
             return whole is None or whole not in game.found
         return index not in game.found
-
-    def scene_picture(self, game):
-        """The Classic screen's composition, with the close-up's hotspot (its cutout) drawn into the scene."""
-        key = (self.scene_addon(game), game.scene, self.scene_state(game))
-        if self._scene != key:
-            super().scene_picture(game)
-            close_up = self.close_up(game)
-            if close_up is not None:
-                number, _, _, left, top = close_up['cutout']
-                self._composed.blit(self.sprite(game, number), (left, top))
-        return self._composed
 
     def close_up(self, game):
         entry = self.scene_entry(game)
@@ -954,12 +951,7 @@ class ShadowsRoundRenderer(ClaireRoundRenderer):
         shade.fill((0, 0, 0, round(SUMMARY_SHADE * clamp(age / 400))))
         self.canvas.blit(shade, (0, 0))
         if age < CLEARED_MS:
-            t = clamp(age / 300)
-            centre = self.summary_point(-24.1 + 78, -5.8)
-            band = self.button_rect(centre, (541 * u, max(2, 76 * u * t)))
-            self.sliced('cmp_chapterresult_backing_scenecleared', band, u)
-            if t >= 1:
-                self.piece('chapterresult_text_scenecleared', self.summary_point(-24.1 - 50.5, -5.8), (325 * u, 37 * u))
+            self.draw_cleared(age, u)
             return
         age -= CLEARED_MS
         slide = 1 - (1 - clamp(age / 500)) ** 3
@@ -998,6 +990,32 @@ class ShadowsRoundRenderer(ClaireRoundRenderer):
         self.canvas.blit(self.hud_scaled('btn_primary_press' if self.pressed == 'continue' else 'btn_primary_idle',
                                          button.size), button)
         self.say('CONTINUE', 'Roboto-Black', 22, CREAM, button.center, u)
+
+    def draw_cleared(self, age, u):
+        """"Scene Cleared!" at `age` ms (CLEARED_* above; the clips' curves are linear)."""
+        x, y = CLEARED_AT
+        out = age - CLEARED_IN_MS - CLEARED_HOLD_MS
+        if out < 0:
+            t = clamp(age / CLEARED_IN_MS)
+            height, lift, band_alpha = 76 * t, 0, 255 * t
+            text_x, text_lift, text_scale, text_alpha = -189 * (1 - t) + 100 - 10 * t, 0, 1, 255 * t
+        else:
+            g = clamp(out / CLEARED_GROWN_MS)
+            height, lift = 76 + (334 - 76) * g, 33 * g
+            band_alpha = 255 * (1 - clamp((out - CLEARED_GROWN_MS) / (CLEARED_OUT_MS - CLEARED_GROWN_MS)))
+            o = clamp(out / 800)
+            text_x, text_lift, text_scale, text_alpha = 90, 73 * o, 1 + 0.2 * o, 255 * (1 - o)
+        if band_alpha > 0 and height >= 1:
+            band = self.button_rect(self.summary_point(x + 78, y + lift), (541 * u, max(2, height * u)))
+            self.sliced('cmp_chapterresult_backing_scenecleared', band, u, round(band_alpha), cache=False)
+        if text_alpha > 0:
+            size = (325 * u * text_scale, 37 * u * text_scale)
+            picture = (self.hud_scaled if text_scale == 1 else self.scaled_now)('chapterresult_text_scenecleared', size)
+            if text_alpha < 255:
+                picture = picture.copy()
+                picture.set_alpha(round(text_alpha))
+            centre = self.summary_point(x + text_x, y + text_lift)
+            self.canvas.blit(picture, picture.get_rect(center=(round(centre[0]), round(centre[1]))))
 
     def summary_ready(self):
         """Continue answers once the rows are all in."""

@@ -223,6 +223,15 @@ class RoundStyleTests(unittest.TestCase):
         find_listed(game, 12, step_ms=500)
         self.assertEqual(game.summary()['key_bonus'], 0)
 
+    def test_a_scene_with_no_key_doesnt_lose_its_two_half_stars(self):
+        """(owner, 2026-11-25): a Classic scene under the sequel's rules scored two stars of five at most otherwise."""
+        keyless = sr.ShadowsRound.opened('Office', NAMES[:30], [sr.ORDINARY] * 30, {}, [], Random48(4))
+        with_key = a_round()
+        for game in (keyless, with_key):
+            find_listed(game, 12, step_ms=500)
+        self.assertEqual(keyless.summary()['checks'][6:8], [True, True])
+        self.assertEqual(with_key.summary()['checks'][6:8], [False, False])      # (its key not found)
+
 
 class SensorFeelTests(unittest.TestCase):
     def test_the_feel_follows_the_games_points(self):
