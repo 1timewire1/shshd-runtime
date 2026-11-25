@@ -68,6 +68,26 @@ class ChUiTests(unittest.TestCase):
         self.assertNotEqual(full.get_at((500, 20)), half.get_at((500, 20)))   # (the fill cut at its fraction)
         self.assertGreater(ui.pitch(40), ui.font(40).get_linesize() - 1)
 
+    def test_a_shrinking_timer_keeps_its_rounded_end(self):
+        """Owner, 2026-11-24 (the sequel's skin): a timer cut square had a flat end; with `shrink` its fill is drawn as
+        long as the time left, its own rounded end there. Classic's is cut, as before."""
+        from PIL import Image
+        from exp_runtime.desktop_ch_ui import ChUi
+        resources, spec = a_chc()
+        rounded = Image.new('RGBA', (624, 74), (200, 40, 40, 255))
+        rounded.paste((0, 0, 0, 0), (604, 0, 624, 12))                   # (its end's top corner: see-through)
+        out = io.BytesIO()
+        rounded.save(out, 'PNG')
+        data = {29115: out.getvalue()}
+        library = SimpleNamespace(addon_resource=lambda addon, r: data.get(r) or resources.library.addon_resource(addon, r))
+        corner = (299, 1)                                               # (the half-full fill's end, at its top)
+        cut = ChUi(library, dict(spec)).timer((600, 40), 1.0, 0.5).get_at(corner)
+        shrunk_spec = dict(spec, ui=dict(spec['ui'], timer=dict(spec['ui']['timer'], shrink=True)))
+        shrunk = ChUi(library, shrunk_spec).timer((600, 40), 1.0, 0.5).get_at(corner)
+        near = lambda colour: max(abs(a - b) for a, b in zip(tuple(colour)[:3], (200, 40, 40))) < 12     # noqa: E731
+        self.assertTrue(near(cut))                                       # (cut: the fill's middle there)
+        self.assertFalse(near(shrunk))                                   # (shrunk: its rounded end, the back showing)
+
     def test_the_message_panel_draws_in_classics_panel_when_the_skin_is_on(self):
         from exp_runtime.desktop_message_hd import CodMessageRenderer
         from exp_runtime.message_panel import MessagePanel

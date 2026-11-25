@@ -62,20 +62,31 @@ class SkinTabTests(unittest.TestCase):
 
     def test_the_tab_sits_beside_the_ring_on_the_speakers_side(self):
         box, ring = Rect(30, 300, 260, 70), Rect(0, 230, 128, 128)
-        tab, origin = DialogueLayout.skin_tab(SPEC, box, ring, 1, self.name(80))
+        tab, origin, scale = DialogueLayout.skin_tab(SPEC, box, ring, 1, self.name(80))
+        self.assertEqual(scale, 1)
         self.assertEqual((tab.x, tab.y), (ring.x + ring.width - 6, box.y - 10 - 104 / 4))
         self.assertEqual(tab.width, 80 + 2 * 50 / 4)
         self.assertAlmostEqual(origin[0], tab.x + (tab.width - 80) / 2)
         right_ring = Rect(200, 230, 128, 128)
-        tab, _ = DialogueLayout.skin_tab(SPEC, box, right_ring, 2, self.name(80))
+        tab, _, _ = DialogueLayout.skin_tab(SPEC, box, right_ring, 2, self.name(80))
         self.assertEqual(tab.x + tab.width, right_ring.x + 6)
-        tab, _ = DialogueLayout.skin_tab(SPEC, box, None, 3, self.name(80))         # no portrait: at the bubble's left
+        tab, _, _ = DialogueLayout.skin_tab(SPEC, box, None, 3, self.name(80))      # no portrait: at the bubble's left
         self.assertEqual(tab.x, box.x - 10 + 12)
 
-    def test_a_long_name_stays_on_the_bubble(self):
+    def test_a_long_name_is_set_smaller_beside_the_ring(self):
+        """Owner, 2026-11-24: a long name ("ALEXIS VAN DER WALT") ran its tab over a right speaker's ring; it's set smaller
+        to fit the room beside the ring, on either side."""
         box = Rect(30, 300, 260, 70)
-        tab, _ = DialogueLayout.skin_tab(SPEC, box, Rect(0, 230, 128, 128), 1, self.name(240))
+        ring = Rect(0, 230, 128, 128)
+        tab, _, scale = DialogueLayout.skin_tab(SPEC, box, ring, 1, self.name(240))
+        self.assertLess(scale, 1)
         self.assertLessEqual(tab.x + tab.width, box.x + box.width + 10 - 4)
+        right_ring = Rect(200, 230, 128, 128)
+        tab, origin, scale = DialogueLayout.skin_tab(SPEC, box, right_ring, 2, self.name(240))
+        self.assertLess(scale, 1)
+        self.assertLessEqual(tab.x + tab.width, right_ring.x + 6 + 1e-9)            # (off the ring)
+        self.assertGreaterEqual(tab.x, box.x - 10 + 4 - 1e-9)                        # (on the bubble)
+        self.assertGreaterEqual(origin[0], tab.x)
 
     def test_the_tab_comes_in_ahead_of_its_name(self):
         """Owner, 2026-11-20: a new speaker's name showed over the backdrop before its tab, which waited for the box to

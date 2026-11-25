@@ -232,8 +232,17 @@ class ChUi:
         t = self.ui['timer']
         left, _, right, _ = t['slice']
         back = self._nine('timer', size, s, resource=t['back'], slice_=(left, 0, right, 0))
-        fill = self._nine('timer', size, s, resource=t['fill'], slice_=(left, 0, right, 0))
         surface = back.copy()
+        if t.get('shrink'):
+            # (the sequel's: its fill a capsule as long as the time left, its ends rounded as the bar's; owner,
+            # 2026-11-24: cut square, its end was flat. Shorter than its two ends, it is cut from the shortest whole one.)
+            shown = round(size[0] * max(0., min(1., fraction)))
+            if shown:
+                least = (left + right) * s
+                fill = self._nine('timer', (max(shown, least), size[1]), s, resource=t['fill'], slice_=(left, 0, right, 0))
+                surface.blit(fill, (0, 0), pygame.Rect(0, 0, shown, fill.get_height()))
+            return surface
+        fill = self._nine('timer', size, s, resource=t['fill'], slice_=(left, 0, right, 0))
         shown = max(0, min(fill.get_width(), round(fill.get_width() * fraction)))
         if shown:
             surface.blit(fill, (0, 0), pygame.Rect(0, 0, shown, fill.get_height()))

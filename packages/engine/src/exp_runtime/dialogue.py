@@ -96,6 +96,7 @@ SKIN_RING_ROWS = 8
 # A narrator's ring is smaller, to tell narration from speech besides its missing name tab (owner, 2026-11-20); its
 # text wraps around it in turn, so narration keeps nearly CoD's own lines.
 SKIN_NARRATION_RING = 0.8
+NAME_FIT = 0.55                     # (the smallest a skin's name is set to fit its tab beside the ring: skin_tab)
 
 
 def skin_ring_insets(portrait, mode, rect, style, cod, radius=SKIN_RING_RADIUS):
@@ -667,7 +668,7 @@ class DialogueLayout:
                     name = _speaker_colors(name, partner_name or '', *colors)
         tab = None
         if skin and mode != 4 and not narration and details['speaker']:
-            tab, name_origin = self.skin_tab(skin, box, portrait, mode, name)
+            tab, name_origin, name_scale = self.skin_tab(skin, box, portrait, mode, name)
         pictures = tuple(details.get('story_objects') or ())
         story_objects = ()
         if pictures:
@@ -709,14 +710,26 @@ class DialogueLayout:
 
     @staticmethod
     def skin_tab(skin, box, portrait, mode, name):
-        """(the tab's rectangle, the name's origin) for Claire Hart Dialogue: the tab as wide as the name and its insets, its
-        base on the bubble's outer top, beside the ring (to its right for a left speaker, its left for a right one; at the
-        bubble's left without a portrait), the name centred in the tab's band."""
+        """(the tab's rectangle, the name's origin, its scale) for Claire Hart Dialogue: the tab as wide as the name and its
+        insets, its base on the bubble's outer top, beside the ring (to its right for a left speaker, its left for a right
+        one; at the bubble's left without a portrait), the name centred in the tab's band. A name too long for the room
+        beside the ring is set smaller, to no less than NAME_FIT of its size (owner, 2026-11-24: "Alexis van der Walt" in
+        the sequel's capitals ran the tab over the ring)."""
         k, tab = skin['density'], skin['tab']
-        width = max((tab['caps'][0] + tab['caps'][1]) / k, name.width + 2 * tab['inset'] / k)
-        height = tab['size'][1] / k
         outset = skin['speaker']['outset']
         left, right = box.x - outset[0], box.x + box.width + outset[2]
+        inset = tab['inset'] / k
+        if portrait is not None and mode == 1:
+            room = right - 4 - (portrait.x + portrait.width - 6)
+        elif portrait is not None and mode == 2:
+            room = portrait.x + 6 - (left + 4)
+        else:
+            room = right - left - 16
+        scale = 1.
+        if name.width + 2 * inset > room and name.width > 0:
+            scale = max(NAME_FIT, (room - 2 * inset) / name.width)
+        width = max((tab['caps'][0] + tab['caps'][1]) / k, name.width * scale + 2 * inset)
+        height = tab['size'][1] / k
         if portrait is not None and mode == 1:
             x = portrait.x + portrait.width - 6
         elif portrait is not None and mode == 2:
@@ -728,4 +741,4 @@ class DialogueLayout:
         rect = Rect(x, top, width, height)
         x0, y0, x1, y1 = name.ink_bounds
         middle = top + (tab['name'][0] + tab['name'][1]) / 2 / k
-        return rect, (x + (width - (x1 - x0)) / 2 - x0, middle - (y1 - y0) / 2 - y0)
+        return rect, (x + (width - (x1 - x0) * scale) / 2 - x0 * scale, middle - (y1 - y0) * scale / 2 - y0 * scale), scale

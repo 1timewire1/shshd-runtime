@@ -213,12 +213,18 @@ def timer_pictures():
         draw.rounded_rectangle((2 * k, 2 * k, size[0] * k - 1 - 2 * k, size[1] * k - 1 - 2 * k), radius=18 * k,
                                fill=(0, 24, 21, 250))
 
-    def fill(draw, k):
-        for y in range(5 * k, (size[1] - 5) * k):        # the round's teal bar, lighter at its top
-            t = (y - 5 * k) / ((size[1] - 10) * k)
-            colour = tuple(round(a + (b - a) * t) for a, b in zip((120, 250, 220), (20, 170, 140))) + (255,)
-            draw.line((6 * k, y, (size[0] - 6) * k, y), fill=colour)
-    return supersampled(size, back), supersampled(size, fill)
+    # The fill: the round's teal bar, lighter at its top, a capsule inside the back's rim (its ends rounded as the bar's).
+    k = 3
+    w, h = size[0] * k, size[1] * k
+    fill = Image.new('RGBA', (w, h))
+    lines = ImageDraw.Draw(fill)
+    for y in range(5 * k, h - 5 * k):
+        t = (y - 5 * k) / (h - 10 * k)
+        lines.line((0, y, w, y), fill=tuple(round(a + (b - a) * t) for a, b in zip((120, 250, 220), (20, 170, 140))) + (255,))
+    mask = Image.new('L', (w, h))
+    ImageDraw.Draw(mask).rounded_rectangle((5 * k, 5 * k, w - 1 - 5 * k, h - 1 - 5 * k), radius=15 * k, fill=255)
+    fill.putalpha(mask)
+    return supersampled(size, back), fill.resize(size, Image.LANCZOS)
 
 
 def ui_spec():
@@ -230,7 +236,7 @@ def ui_spec():
         'row': {'picture': UI_ROW, 'slice': [10, 10, 10, 10]},
         'row_lit': {'picture': UI_ROW_LIT, 'slice': [12, 10, 10, 10]},
         'capsule': {'picture': UI_CAPSULE, 'slice': [20, 0, 20, 0]},
-        'timer': {'back': UI_TIMER, 'fill': UI_TIMER_FILL, 'slice': [20, 0, 20, 0]},
+        'timer': {'back': UI_TIMER, 'fill': UI_TIMER_FILL, 'slice': [20, 0, 20, 0], 'shrink': True},
         'close': [UI_CLOSE, UI_CLOSE_PRESSED], 'pill_lit': UI_PILL_HOVER, 'colours': UI_COLOURS,
     }
 
