@@ -183,6 +183,24 @@ class RendererTests(unittest.TestCase):
         self.assertEqual(r.hit(game, *r.design(25, 91, bottom=True)), ('menu',))
         self.assertTrue(all(rect.right <= r.canvas.get_width() for rect in r.segment_rects().values()))
 
+    def test_zoomed_in_the_scene_pans_out_from_under_the_bars(self):
+        """(owner, 2026-11-25) an object at the scene's top or bottom edge stayed half under a bar even at 2x: zoomed in,
+        the scene's edge may come as far as the bar's inner edge; at 1x it stays as it was."""
+        r, game = self.renderer, self.game
+        r.frame_units = (384, 512)
+        r.draw_game(game, 16)
+        r.view.centre_on(513, 0)
+        self.assertAlmostEqual(r.view.to_canvas(513, 0)[1], 0)               # (1x: the scene fills the frame's height)
+        r.view.zoom_at(1.0, 384, 512)
+        self.assertEqual(r.view.zoom, 2.0)
+        r.view.centre_on(513, 0)
+        self.assertAlmostEqual(r.view.to_canvas(513, 0)[1], r.top_bar_bottom(), places=3)
+        r.view.centre_on(513, 770)
+        self.assertAlmostEqual(r.view.to_canvas(513, 770)[1], r.bar_top(), places=3)
+        r.draw_game(game, 16)                                                # (drawn with the black past the edge)
+        r.view.zoom_at(-1.0, 384, 512)
+        self.assertAlmostEqual(r.view.to_canvas(513, 770)[1], r.canvas.get_height())     # (back at 1x: as before)
+
     def test_names_fit_their_columns_in_a_tall_frame(self):
         """(owner's audit, 2026-11-25) at 9:20 the grown text met in the narrowed bar: each name's room stops short of its
         neighbours' and of the wheel; at 3:4 the rooms hold every name Classic has (its widest is 156 px)."""

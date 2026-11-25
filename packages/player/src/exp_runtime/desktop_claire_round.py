@@ -87,6 +87,10 @@ class RoundView:
         self.canvas = canvas_size
         self.zoom = 1.0
         self.cx, self.cy = scene_size[0] / 2, scene_size[1] / 2
+        # Canvas pixels the top and bottom bars cover (the renderer keeps them current): zoomed in, the scene may be panned
+        # that far past its top or bottom edge, so an object at the edge comes out from under a bar (owner, 2026-11-25,
+        # after the audit of every round: a clock or a vent at the top stayed half under the bar even at 2x).
+        self.pads = (0, 0)
 
     @property
     def scale(self):
@@ -102,6 +106,10 @@ class RoundView:
     def clamp(self):
         half_w, half_h = self.canvas[0] / self.scale / 2, self.canvas[1] / self.scale / 2
         self.cx = clamp(self.cx, half_w, self.scene[0] - half_w) if self.scene[0] > 2 * half_w else self.scene[0] / 2
+        if self.zoom > 1 and self.scene[1] > 2 * half_h:
+            top, bottom = (pad / self.scale for pad in self.pads)
+            self.cy = clamp(self.cy, half_h - top, self.scene[1] - half_h + bottom)
+            return
         self.cy = clamp(self.cy, half_h, self.scene[1] - half_h) if self.scene[1] > 2 * half_h else self.scene[1] / 2
 
     def source(self):
@@ -455,6 +463,7 @@ class ClaireRoundRenderer:
         if self.view is None or self.view.scene != picture.get_size() or self.view.canvas != size:
             self.view = RoundView(picture.get_size(), size)
             self.view.clamp()
+        self.view.pads = (self.top_bar_bottom(), size[1] - self.bar_top())     # (a phone's status bar may move the top)
         view_key = (id(picture), round(self.view.cx), round(self.view.cy), self.view.zoom, size)
         if self._scaled is None or self._scaled[0] != view_key:
             left, top, w, h = self.view.source()
