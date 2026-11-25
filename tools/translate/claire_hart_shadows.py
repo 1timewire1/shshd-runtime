@@ -74,7 +74,7 @@ FRAME_ART = 'textures/SD/episodeSelector/episodeselector_bg'
 BACKDROP_SIZE = (1024, 768)
 SLICE_X = (BACKDROP_SIZE[0] - round(BACKDROP_SIZE[1] * 3 / 4)) // 2     # centred: CoD cut none of these scenes (M, ENGINE 12)
 CROP_HEIGHT, CROP_MARGIN, HEAD_BAND = 380, 14, 140
-CROP_HEIGHTS = {'Avatar_BrowdyBrothers': 640}     # a look's own window: both brothers (module doc)
+CROP_HEIGHTS = {'Avatar_BrowdyBrothers': 540}     # a look's own window: both brothers (module doc)
 PORTRAIT_SIZE = (220, 240)                   # CoD's 110 x 120 at twice its size (chslim.SCALE)
 # Decision K (settled 2026-11-20): case 31's parts 2-4, dropped from the case list by build 232, and case 45's
 # placeholder, with the titles they were released under (ENGINE 2.1).
@@ -89,7 +89,7 @@ NOTHING = ('nothing', 'none', 'noobject', 'nostoryobject')
 CLAIRE = 'references/characters/Avatar_ClaireHart/sd/avatar_clairehart_normal'
 # Decision L: photos whose round list names no item of its scene, named from the picture (owner's review list).
 HAND_NAMES = {'case1ep1scene1_5_0': 'Case Folder', 'case12ep4scene4_0': "Woman's Boots", 'case25ep2scene4_0': 'Rope',
-              'case36ep1scene4_0': 'Empty Box', 'case36ep2scene6_0': 'Collection Box'}
+              'case36ep1scene4_0': 'Empty Box', 'case36ep2scene6_0': 'Jewel Box'}
 
 Part = collections.namedtuple('Part', 'number title epid folder config sequences listed')
 

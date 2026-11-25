@@ -168,7 +168,7 @@ class ReaderTests(unittest.TestCase):
         self.assertAlmostEqual((head[0] + head[2]) / 2, S.PORTRAIT_SIZE[0] / 2, delta=3)     # centred on the head
         self.assertAlmostEqual(head[1], S.CROP_MARGIN * k, delta=2)                        # its top just below the frame's
         self.assertAlmostEqual(head[2] - head[0], 100 * k, delta=2)                        # at the rule's scale
-        wide = S.portrait_crop(picture, 640)                                               # (the Browdy brothers' window)
+        wide = S.portrait_crop(picture, 540)                                               # (the Browdy brothers' window)
         self.assertEqual(wide.size, S.PORTRAIT_SIZE)
 
     def test_the_stage_gives_every_line_its_face(self):
