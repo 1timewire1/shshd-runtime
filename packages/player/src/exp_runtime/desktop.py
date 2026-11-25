@@ -3153,6 +3153,11 @@ class Desktop:
             cached.append(HdWordRenderer.portrait_image)
         for method in cached:
             method.cache_clear()
+        # A phone keeps a settled line's layer (desktop_dialogue.REUSE_AT_REST), which names the line, not its pictures:
+        # without this the line on screen kept its old portrait until the next (SD Portraits on the g54, 2026-11-25).
+        renderer = self.__dict__.get('dialogue_renderer')
+        if renderer is not None:
+            renderer.cached_key = renderer._rest_drawn = None
 
     def _present(self):
         engine = self.session.engine

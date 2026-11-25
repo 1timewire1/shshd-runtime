@@ -110,6 +110,17 @@ class RendererTests(unittest.TestCase):
             renderer.continue_progress = lambda _: 1
             self.assertNotEqual(self.rest(renderer), on)
 
+    def test_a_portrait_setting_redraws_the_kept_line(self):
+        # SD Portraits switched mid-line on the g54 kept the old picture until the next line (2026-11-25).
+        from exp_runtime.desktop import Desktop
+        desktop = Desktop.__new__(Desktop)
+        desktop.images = {}
+        renderer = desktop.dialogue_renderer = self.renderer()
+        renderer.cached_key, renderer._rest_drawn = (1, 2), ((1, 2, 3, 0), 1)
+        desktop._drop_portraits()
+        self.assertIsNone(renderer._rest_drawn)
+        self.assertIsNone(renderer.cached_key)
+
     def test_a_repeated_box_is_the_same_box_and_a_changed_one_is_rebuilt(self):
         import pygame
         from exp_runtime.ui_assets import Rect
