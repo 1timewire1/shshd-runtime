@@ -1377,8 +1377,9 @@ class AppScreens:
 
     def draw_card(self, app, layer):
         if app.busy:
-            title = {'previews': 'Preparing episodes', 'data': getattr(app, 'job_title', '')}.get(
-                app.job_kind, 'Importing content')
+            title = (app.busy_title() if hasattr(app, 'busy_title')
+                     else {'previews': 'Preparing episodes', 'data': getattr(app, 'job_title', '')}.get(
+                         app.job_kind, 'Importing content'))
             line = app.progress_text or 'Checking and copying your files...'
             self.window(layer, title, line, (), (), note=None if app.job_kind in ('previews', 'data') else IMPORT_NOTE,
                         spinner=True)

@@ -66,7 +66,7 @@ EPISODE_LISTS = ('delete_episodes', 'export_episodes', 'reset_trees', 'mark_read
 DATA_JOBS = {
     'verify_library': ('Verifying library', 'verify_report'),
     'rebuild_previews': ('Drawing previews', 'previews_rebuilt'),
-    'rebuild_hd_art': ('Building HD art', 'hd_art_rebuilt'),
+    'rebuild_hd_art': ('Rebuilding HD Art', 'hd_art_rebuilt'),
 }
 # "Options Unlocked" / "Warping feature has been unlocked for Football Season Mega Pack!" (strings 115 / 272): shown by
 # `SHSEngine::setAppMode` on the main menu after Football Season clears the warp lock (its flag +0x6490b), and by

@@ -376,10 +376,18 @@ player's machine from **SHS's shipped twin map**
 - per standard episode, the resource ids its coverage counts.
 
 **The build** (`hd_twins.build_from_map`):
-- **When:** during the picker's first-time preparation ("HD art: n of m
-  episodes"), for any SHS library with HD episodes whose store did not come
-  from the shipped map's `VERSION`. A library imported by an earlier version
-  gets it on its next open; nothing is re-imported.
+- **When:** during the picker's preparation (the "Updating HD Art" card: once
+  after an update, a few minutes on a phone), for any SHS library with HD
+  episodes whose store did not come from the shipped map's `VERSION`. A
+  library imported by an earlier version gets it on its next open; nothing is
+  re-imported.
+- **Episodes imported later** (owner, 2026-11-25): the store records the
+  standard and HD episodes it has searched (`source.json` `episodes`). One
+  imported since is searched on its own (`hd_twins.new_episodes`): the twins,
+  effect pictures and SD Portraits' originals it makes possible are added
+  without emptying the store, and the rest of the library is read only for
+  an effect's other half. A store built before the list was kept takes the
+  library's episodes as searched.
 - **How:** a new `VERSION` empties the store first, so a pair the new map
   drops or moves leaves every player's store too. It then searches the
   library's own episodes for each HD fingerprint (HD episodes first), copies
@@ -389,7 +397,10 @@ player's machine from **SHS's shipped twin map**
   that library shows it). A picture the player's files cannot supply stays
   standard, and the episode keeps its SD mark.
 - **Time:** on the owner's 284-episode library it found all 1,795 twins in
-  about 45 seconds.
+  about 45 seconds. The 2026-11 map on a 491-episode library: 74 s on the PC,
+  480 s on a Moto g54 (2026-11-25). The card stays up meanwhile: run behind
+  the menus, its pure-Python effect fitting would stall a story's frames and
+  the emptied store would swap art mid-scene.
 
 **Making the map.** The map comes from a library that holds both the standard
 and HD copies of the stories. Since the 2026-11 art audit (every SHS episode

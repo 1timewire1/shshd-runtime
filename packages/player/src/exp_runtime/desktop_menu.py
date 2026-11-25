@@ -497,7 +497,7 @@ class MenuRenderer:
                 self.button('Use This Folder', (162, 436, 146, 29), ('folder',))
         if app.busy:
             if app.job_kind == 'previews':
-                self.overlay('Preparing episodes', app.progress_text)
+                self.overlay(getattr(app, 'job_heading', None) or 'Preparing episodes', app.progress_text)
             elif app.job_kind == 'copying':             # iOS: the picked files are being copied into the app
                 self.overlay('Importing content', app.progress_text)
             else:

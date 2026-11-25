@@ -247,9 +247,12 @@ class TwinStore:
             return {}
         return data if isinstance(data, dict) else {}
 
-    def mark_source(self, version: str) -> None:
+    def mark_source(self, version: str, episodes=None) -> None:
+        """Record the map that built the store, and (`build_from_map`) the episodes it has searched, so one imported
+        later is searched too (`new_episodes`)."""
         self.directory.mkdir(parents=True, exist_ok=True)
-        (self.directory / SOURCE).write_text(json.dumps({'map': version}), encoding='utf-8')
+        data = {'map': version} if episodes is None else {'map': version, 'episodes': sorted(episodes)}
+        (self.directory / SOURCE).write_text(json.dumps(data), encoding='utf-8')
 
     def clear(self) -> None:
         """Empty the store's pictures (`build_from_map` before a new map's rebuild); the coverage cache stays."""
@@ -389,6 +392,32 @@ def sd_addon_revision(library):
     except Exception:
         found = None
     return None if found is None else found[0].get('revision')
+
+
+SEARCHED_VARIANTS = ('standard', 'hd')     # the episodes whose pictures a shipped map's pairs can come from
+
+
+def searched_ids(library):
+    """The ids of the library's episodes the twin store's build searches for pictures: SHS's standard and HD ones."""
+    return [record['id'] for record in library.episodes if record.get('variant') in SEARCHED_VARIANTS]
+
+
+def new_episodes(library, twin_map):
+    """The standard and HD episodes imported since the twin store was built from this map (owner, 2026-11-25: one imported
+    later should get its HD twins, effect pictures and SD originals without waiting for the next map), or [] when a
+    full build is due anyway. A store built before the searched list was kept takes the library's episodes as searched:
+    the list is written here once, so the next import is found."""
+    store = library.twin_store()
+    source = store.source()
+    if source.get('map') != twin_map.VERSION:
+        return []
+    searched = source.get('episodes')
+    if not isinstance(searched, list):
+        store.mark_source(twin_map.VERSION, searched_ids(library))
+        return []
+    seen = set(searched)
+    return [record for record in library.episodes
+            if record.get('variant') in SEARCHED_VARIANTS and record['id'] not in seen]
 
 
 def sd_portraits_due(library, twin_map):
@@ -705,12 +734,20 @@ def build_from_map(library, twin_map, progress=None) -> bool:
     sd_store = library.sd_portraits_store() if hasattr(library, 'sd_portraits_store') else None
     twins_due = store.source().get('map') != twin_map.VERSION
     sd_due = sd_store is not None and sd_portraits_due(library, twin_map)
-    if not twins_due and not sd_due:
+    fresh = [] if twins_due else new_episodes(library, twin_map)
+    if not twins_due and not sd_due and not fresh:
         return False
+    # Only episodes imported since the store was built (`new_episodes`): the pictures they make possible are added,
+    # nothing is cleared, and the rest of the library is read only for an effect's other half.
+    incremental = not twins_due and bool(fresh)
+    held_twins = set() if twins_due else set(store.index)
     wanted, standards = {}, set()                       # hd fingerprint -> [(standard, size, effect)]; effect sources
     if twins_due:
         store.clear()
+    if twins_due or incremental:
         for standard, entry in twin_map.TWINS.items():
+            if standard in held_twins:
+                continue
             hd, width, height = entry[:3]
             effect = tuple(entry[3]) if len(entry) > 3 and entry[3] else None
             wanted.setdefault(hd, []).append((standard, (width, height), effect))
@@ -721,23 +758,26 @@ def build_from_map(library, twin_map, progress=None) -> bool:
         sd_store.pictures.clear()
         sd_store.write_tables(twin_map)
         originals = sd_store.wanted()
+    elif incremental and sd_store is not None and sd_store.tables['sd_of']:
+        originals = sd_store.wanted() - set(sd_store.pictures.index)
     # HD episodes first: in the owner's library every HD picture the map names is in one. The SD add-on last.
-    records = sorted(library.episodes, key=lambda record: record.get('variant') != 'hd')
+    scanned = library.episodes if (twins_due or sd_due) else fresh
+    records = sorted(scanned, key=lambda record: record.get('variant') != 'hd')
     found, held, kept = set(), {}, set()                # held: the bytes an effect needs, standard and HD
 
-    def archives():
+    def archives(records, addon=True):
         for record in records:
             try:
                 yield record.get('name'), library.open_episode(record['id']).archive
             except Exception as error:                  # one unreadable episode must not stop the rest
                 logging.warning('HD art: skipped %s: %s', record.get('name'), error)
-        if originals:
+        if addon and originals and sd_due:
             found_addon = library.addon(SD_ADDON) if hasattr(library, 'addon') else None
             if found_addon is not None:
                 yield SD_ADDON, found_addon[1]
 
-    total = len(records) + bool(originals)
-    for done, (name, archive) in enumerate(archives()):
+    total = len(records) + bool(originals and sd_due)
+    for done, (name, archive) in enumerate(archives(records)):
         if progress is not None:
             progress(min(done, total - 1), total)
         if len(found) == len(wanted) and standards <= set(held) and originals <= kept:
@@ -767,6 +807,30 @@ def build_from_map(library, twin_map, progress=None) -> bool:
             store.add_pictures(pictures)
         if sd_pictures:
             sd_store.pictures.add_pictures(sd_pictures)
+    if incremental:
+        # An effect needs both its pictures: when a new episode brought one, the other is looked for in the rest of
+        # the library (the HD picture in an HD episode, the standard one in a standard episode).
+        missing = set()
+        for hd, entries in wanted.items():
+            for standard, _, effect in entries:
+                if effect and (hd in held) != (standard in held):
+                    missing.add(standard if hd in held else hd)
+        if missing:
+            others = [record for record in library.episodes if record not in fresh]
+            for _, archive in archives(others, addon=False):
+                for resource_id in archive.entries:
+                    if resource_id < LOCAL_ART:
+                        continue
+                    try:
+                        data = archive.read(resource_id)
+                    except Exception:
+                        continue
+                    key = fingerprint(data)
+                    if key in missing:
+                        held.setdefault(key, data)
+                        missing.discard(key)
+                if not missing:
+                    break
     if originals - kept:
         # An original a story's standard release shows from the shared bank (by id, BANK_PORTRAITS): Android's own
         # copy, which every library's APK holds.
@@ -782,7 +846,7 @@ def build_from_map(library, twin_map, progress=None) -> bool:
                 sd_pictures[key] = (image_size(data) or (0, 0), data)
         if sd_pictures:
             sd_store.pictures.add_pictures(sd_pictures)
-    if twins_due:
+    if twins_due or incremental:
         pictures = {}
         for hd, entries in wanted.items():
             for standard, size, effect in entries:
@@ -794,11 +858,17 @@ def build_from_map(library, twin_map, progress=None) -> bool:
                     logging.warning('HD art: %s not recreated: %s', standard, error)
         if pictures:
             store.add_pictures(pictures)
+        added = len(store.index) - len(held_twins)
+        if incremental and not added:
+            # Nothing new to show: only the new episodes' own coverage (a standard episode the map counts) is measured.
+            measured = {record['id'] for record in fresh}
+        else:
+            measured = None
         store.coverage('')                              # loads the cache: other episodes' entries are kept
         coverage = dict(store._coverage or {})
         ids_by_record = {record['id']: record for record in library.episodes}
         for record_id, ids in twin_map.COVERAGE.items():
-            if record_id not in ids_by_record:
+            if record_id not in ids_by_record or (measured is not None and record_id not in measured):
                 continue
             try:
                 total, matched = coverage_counts(library, library.open_episode(record_id), ids)
@@ -807,8 +877,13 @@ def build_from_map(library, twin_map, progress=None) -> bool:
                 continue
             coverage[record_id] = {'total': total, 'matched': matched}
         store.write_coverage(coverage)
-        store.mark_source(twin_map.VERSION)
-        logging.info('HD art: %d of %d HD pictures found; %d episodes measured', len(found), len(wanted), len(coverage))
+        store.mark_source(twin_map.VERSION, searched_ids(library))
+        logging.info('HD art: %d of %d HD pictures found (%s); %d episodes measured', len(found), len(wanted),
+                     f'{len(fresh)} new episodes' if incremental else 'a full build', len(coverage))
+    elif sd_due:
+        store.mark_source(twin_map.VERSION, searched_ids(library))      # every episode was searched for the originals
+    if incremental and originals:
+        logging.info('SD Portraits: %d of %d missing originals found in the new episodes', len(kept), len(originals))
     if sd_due:
         sd_store.mark_source(twin_map.VERSION, sd_addon_revision(library))
         logging.info('SD Portraits: %d of %d originals found', len(kept), len(originals))

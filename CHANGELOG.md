@@ -21,7 +21,11 @@
     and 38_The_Prince_Plot_Part_2's noir scenes stay greyscale in HD, a green-tinted hallway stays green, Magic School's
     cave stays blue, a motion-blurred lab stays blurred, and Ben's mirrored copy faces the way it does in SD.
   - **Every player's store follows the map:** a new map version now rebuilds the store from nothing
-    (`build_from_map`), so removed and moved pairs leave existing stores too.
+    (`build_from_map`), so removed and moved pairs leave existing stores too. Its card says so: **Updating HD
+    Art**, once after an update (8 minutes on a Moto g54, 74 s on a PC).
+  - **Episodes imported later get their HD art at once:** a standard or HD episode imported after the build is
+    searched on its own for the twins, effect pictures and SD originals it makes possible, without a rebuild (before,
+    they waited for the next map or Rebuild HD Art).
   - Coverage of the owner's 80 standard episodes: mean 92.1% → 93.8%, 29 complete (was 28).
   - New `tools/write_hd_twins.py` writes the store from the reviewed pairs (kept with the art catalogue, outside the
     project). `export_hd_twin_map.py` writes effects and marks the owner's store as built from the new map, and leaves

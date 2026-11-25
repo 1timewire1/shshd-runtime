@@ -599,7 +599,7 @@ class Application:
             from .hd_twins import build_from_map
 
             def found(done, total):
-                self.progress_text = f'HD art: {done + 1} of {total} episodes'[:44]
+                self.progress_text = f'Episode {done + 1} of {total}. This can take a few minutes on a phone.'
             build_from_map(library, self.twin_map(library), found)
         return len(library.twin_store())
 
@@ -1929,6 +1929,29 @@ class Application:
         except (ContentError, OSError, pygame.error, ValueError) as error:
             logging.warning('Could not save a screenshot: %s', error)
 
+    job_heading = None          # the previews job's card while it builds HD art ('Updating HD Art': _prepare_previews)
+
+    def busy_title(self):
+        """The busy card's title: a Data Management job's own, the previews job's (HD art while it builds it), or an
+        import's."""
+        if self.job_kind == 'data':
+            return self.job_title
+        if self.job_kind == 'previews':
+            return self.job_heading or 'Preparing episodes'
+        return 'Importing content'
+
+    @staticmethod
+    def hd_art_progress(done, total, kind):
+        """The busy card's line while HD art is built (owner, 2026-11-25: say why the wait, and that it is once): after
+        an update ('update'), for episodes added since ('new'), or for SD Portraits' originals ('sd': its add-on added
+        or removed)."""
+        if kind == 'new':
+            return f'Episode {done + 1} of {total}: finding the HD art your new episodes add.'
+        if kind == 'sd':
+            return f'Episode {done + 1} of {total}: gathering the portraits SD Portraits shows.'
+        return (f'Episode {done + 1} of {total}. This happens once after an update and can take a few minutes on a '
+                f'phone. Keep the app open.')
+
     def prepare_previews(self):
         """First-time setup for the HD picker: index episodes, build the HD twin store from the shipped twin map when
         it is due (this fork), and render the missing previews, off the UI thread."""
@@ -1971,21 +1994,31 @@ class Application:
         twin_map = self.twin_map()
         if twin_map is None or not any(r.get('variant') == 'hd' for r in self.library.episodes):
             return False
-        from .hd_twins import sd_portraits_due
-        # SD Portraits' store too: a new map, or the SD add-on imported or replaced since (hd_twins.SdPortraits).
+        from .hd_twins import new_episodes, sd_portraits_due
+        # SD Portraits' store too: a new map, or the SD add-on imported or replaced since (hd_twins.SdPortraits); and a
+        # standard or HD episode imported since the build (searched alone: hd_twins.new_episodes).
         return (self.library.twin_store().source().get('map') != twin_map.VERSION
-                or sd_portraits_due(self.library, twin_map))
+                or sd_portraits_due(self.library, twin_map) or bool(new_episodes(self.library, twin_map)))
 
     def _prepare_previews(self, library):
         library.index_missing()
         if self.hd_art_due() and self.cod_twin_map() is not None:
             self._build_cod_twins(library)
         elif self.hd_art_due():
-            from .hd_twins import build_from_map
+            from .hd_twins import build_from_map, sd_portraits_due
+            twin_map = self.twin_map()
+            # The whole library after an update (a new map), SD Portraits' originals again (its add-on added or removed),
+            # or only the episodes imported since the build.
+            kind = ('update' if library.twin_store().source().get('map') != twin_map.VERSION
+                    else 'sd' if sd_portraits_due(library, twin_map) else 'new')
+            self.job_heading = 'Updating HD Art'
 
             def found(done, total):
-                self.progress_text = f'HD art: {done + 1} of {total} episodes'[:44]
-            build_from_map(library, self.twin_map(), found)
+                self.progress_text = self.hd_art_progress(done, total, kind)
+            try:
+                build_from_map(library, twin_map, found)
+            finally:
+                self.job_heading = None
         model = PickerModel(library)
 
         def progress(done, total, title):
@@ -2290,10 +2323,8 @@ class Application:
         if self.busy:
             # Only a Data Management job has a title of its own; the others (the first run's episode previews, an
             # import) are named here.
-            title = (self.job_title if self.job_kind == 'data'
-                     else {'previews': 'Preparing episodes'}.get(self.job_kind, 'Importing content'))
-            self.shell.main.draw_busy(canvas, title, self.progress_text or 'Checking and copying your files. This can '
-                                      'take a while: keep the app open.')
+            self.shell.main.draw_busy(canvas, self.busy_title(), self.progress_text or 'Checking and copying your files. '
+                                      'This can take a while: keep the app open.')
         elif self.message:
             # The prompt's card with an OK button: on a phone or an iPad there is no Escape or Enter to dismiss it
             # (the owner's g54 was left on "Added 53 episodes." with no way out).

@@ -129,6 +129,51 @@ class SdPortraitsTests(unittest.TestCase):
         self.assertEqual(found, (self.sd_patchouli, False))
         self.assertIsNotNone(with_addon.twin_store().twin(self.sd_viv))     # the twins were not rebuilt for it
 
+    def test_an_episode_imported_after_the_build_adds_its_art_without_a_rebuild(self):
+        # Owner, 2026-11-25: a standard episode imported after the update gets its originals (and twins) at once.
+        from exp_runtime.hd_twins import new_episodes
+        library = self.library()
+        later = library.episodes.pop(next(i for i, r in enumerate(library.episodes) if r['id'] == 'standard_party_fowl'))
+        build_from_map(library, self.map)
+        self.assertIsNone(library.sd_portraits_store().original('hd_party_fowl', fingerprint(self.hd_viv)))
+        twins = len(library.twin_store())
+        library.episodes.append(later)                                       # imported now
+        self.assertEqual([r['id'] for r in new_episodes(library, self.map)], ['standard_party_fowl'])
+        self.assertTrue(build_from_map(library, self.map))
+        self.assertEqual(library.sd_portraits_store().original('hd_party_fowl', fingerprint(self.hd_viv)),
+                         (self.sd_patchouli, False))
+        self.assertEqual(len(library.twin_store()), twins)                   # nothing cleared or rebuilt
+        self.assertEqual(new_episodes(library, self.map), [])
+        self.assertFalse(build_from_map(library, self.map))
+
+    def test_an_effect_picture_is_made_when_its_standard_episode_arrives_later(self):
+        from exp_runtime.hd_twins import image_size
+        noir_sd = png((48, 72), 'gray')
+        stream = BytesIO()
+        Image.new('RGB', (96, 144), (200, 60, 30)).save(stream, 'PNG')
+        noir_hd = stream.getvalue()
+        self.map.TWINS[fingerprint(noir_sd)] = (fingerprint(noir_hd), 48, 72, ('E',))
+        library = self.library()
+        library._assets['hd_12_7'][26002] = noir_hd                          # the HD half, in an episode already held
+        build_from_map(library, self.map)
+        self.assertIsNone(library.twin_store().twin(noir_sd))                 # its standard episode isn't here yet
+        library._assets['standard_noir'] = {26000: noir_sd}
+        library.episodes.append(dict(id='standard_noir', name='standard_noir', variant='standard'))
+        self.assertTrue(build_from_map(library, self.map))
+        made = library.twin_store().twin(noir_sd)
+        self.assertIsNotNone(made)
+        self.assertEqual(image_size(made), (96, 144))
+        r, g, b = Image.open(BytesIO(made)).convert('RGB').getpixel((40, 70))
+        self.assertLess(max(r, g, b) - min(r, g, b), 12)                      # greyscale, as the standard picture
+
+    def test_a_store_built_before_the_searched_list_takes_the_library_as_searched(self):
+        from exp_runtime.hd_twins import new_episodes
+        library = self.library()
+        build_from_map(library, self.map)
+        library.twin_store().mark_source(self.map.VERSION)                    # as tools/export_hd_twin_map.py marks it
+        self.assertEqual(new_episodes(library, self.map), [])
+        self.assertEqual(len(library.twin_store().source()['episodes']), 4)    # written once, for the next import
+
     def test_a_strict_episode_original_never_falls_back_to_another_look(self):
         library = self.library()
         library._assets['standard_12_7'] = {26001: self.sd_kevin}           # Viv's own original is missing
