@@ -647,6 +647,7 @@ class Desktop:
         self.brew_catch_renderer = BrewCatchRenderer(session.resources)
         self.classic_round_renderer = ClaireRoundRenderer(session.resources)
         self.shadows_round_renderer = ShadowsRoundRenderer(session.resources)    # (the sequel's rules: Round Style)
+        self.classic_round_renderer.backdrop = self.shadows_round_renderer.backdrop = self.round_backdrop
         self._warm_claire_rounds(session)
         self.x360_leash_renderer = X360LeashRenderer(session.resources)
         self.x360_puzzle_renderer = X360PuzzleRenderer(session.resources)
@@ -1494,6 +1495,28 @@ class Desktop:
     def claire_round_renderer(self, renderer):
         """(A stand-in for both screens: a test's.)"""
         self.classic_round_renderer = self.shadows_round_renderer = renderer
+
+    _round_backdrop = (None, None)          # (what it was cut for, the surface)
+
+    def round_backdrop(self, size):
+        """The window's backdrop behind the frame (the Claire Hart Backdrop chosen, else SHS HD's collage: _window_backdrop),
+        scaled to a round's canvas `size`, so a zoomed scene panned past its edge shows what's beside the frame; None when
+        neither is on (black, as before) or before the frame's first draw (owner, 2026-11-25)."""
+        frame = self.__dict__.get('bg_viewport')
+        window = getattr(self, 'window', None)
+        if frame is None or window is None:
+            return None
+        backdrop = self._window_backdrop(window.get_size())
+        if backdrop is None:
+            return None
+        key = (id(backdrop), tuple(frame), tuple(size))
+        if self._round_backdrop[0] != key:
+            area = frame.clip(backdrop.get_rect())
+            picture = None
+            if area.width and area.height:
+                picture = pygame.transform.smoothscale(backdrop.subsurface(area), size)
+            self._round_backdrop = (key, picture)
+        return self._round_backdrop[1]
 
     def _claire_ready(self):
         action = self.session.pending

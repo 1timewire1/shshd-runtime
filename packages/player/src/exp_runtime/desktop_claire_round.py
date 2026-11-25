@@ -166,6 +166,9 @@ class ClaireRoundRenderer:
         self._marks = (cr.NO_OBJECT,) * 3     # the hint's, Focus's and the Locator's objects last drawn
         self.effects = []                  # [kind, start clock, data]: trails, the hint's flight, the orb's explosion
         self.sounds = []                   # Classic's sounds due (their names), for the player to play and empty
+        # What shows past the scene's top or bottom edge when a zoomed view is panned there (RoundView.pads): the player's
+        # backdrop behind the frame at the canvas's size (Desktop.round_backdrop), or None for black (owner, 2026-11-25)
+        self.backdrop = lambda size: None
         self._was = None                   # what the last frame showed, for the sounds
         self._ticks = None                 # the wall clock at the last draw (draw: the renderer's own animations)
         self.drag = None                   # (start, last) canvas points of a press on the scene, panning once it moves
@@ -472,8 +475,20 @@ class ClaireRoundRenderer:
                                                   (round(area.width * self.view.scale), round(area.height * self.view.scale)))
             self._scaled = (view_key, scaled, self.view.to_canvas(area.x, area.y))
         _, scaled, at = self._scaled
-        self.canvas.fill((0, 0, 0))
-        self.canvas.blit(scaled, (round(at[0]), round(at[1])))
+        left, top = round(at[0]), round(at[1])
+        width, height = size
+        gaps = [pygame.Rect(0, 0, width, top)] if top > 0 else []
+        if top + scaled.get_height() < height:
+            gaps.append(pygame.Rect(0, top + scaled.get_height(), width, height - top - scaled.get_height()))
+        if left > 0 or left + scaled.get_width() < width or not gaps:
+            self.canvas.fill((0, 0, 0))
+        backdrop = self.backdrop(size) if gaps else None
+        for gap in gaps:
+            if backdrop is not None:
+                self.canvas.blit(backdrop, gap, gap)
+            else:
+                self.canvas.fill((0, 0, 0), gap)
+        self.canvas.blit(scaled, (left, top))
 
     def scene_rect(self, scene_rect):
         """A rectangle of the scene's pixels on the canvas."""

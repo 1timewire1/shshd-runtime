@@ -201,6 +201,27 @@ class RendererTests(unittest.TestCase):
         r.view.zoom_at(-1.0, 384, 512)
         self.assertAlmostEqual(r.view.to_canvas(513, 770)[1], r.canvas.get_height())     # (back at 1x: as before)
 
+    def test_past_the_scenes_edge_shows_the_backdrop_or_black(self):
+        """(owner, 2026-11-25) the strip a zoomed view shows past the scene's top or bottom is the frame's backdrop (the
+        Claire Hart Backdrop or SHS HD's collage: Desktop.round_backdrop), black when none is on."""
+        r, game = self.renderer, self.game
+        r.frame_units = (384, 512)
+        r.draw_game(game, 16)
+        r.view.zoom_at(1.0, 384, 512)
+        r.view.centre_on(513, 0)
+        r.draw_scene(game)
+        self.assertEqual(r.canvas.get_at((300, 3))[:3], (0, 0, 0))
+        backdrop = pygame.Surface(r.canvas.get_size())
+        backdrop.fill((90, 40, 140))
+        r.backdrop = lambda size: backdrop if size == backdrop.get_size() else None
+        r.draw_scene(game)
+        self.assertEqual(r.canvas.get_at((300, 3))[:3], (90, 40, 140))
+        top = round(r.view.to_canvas(513, 0)[1])
+        self.assertNotEqual(r.canvas.get_at((300, top + 3))[:3], (90, 40, 140))      # (the scene from its edge on)
+        r.view.centre_on(513, 385)
+        r.draw_scene(game)
+        self.assertNotEqual(r.canvas.get_at((300, 3))[:3], (90, 40, 140))           # (no gap: the scene all over)
+
     def test_names_fit_their_columns_in_a_tall_frame(self):
         """(owner's audit, 2026-11-25) at 9:20 the grown text met in the narrowed bar: each name's room stops short of its
         neighbours' and of the wheel; at 3:4 the rooms hold every name Classic has (its widest is 156 px)."""
