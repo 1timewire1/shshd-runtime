@@ -572,6 +572,39 @@ A group with no normal sprite is no object (KeepersCottage's Handbell). Story ob
 (`Mirror.round_items`), then to the scene's object by its normal sprite: 983 in all; E014's Flyer and E125's Snowman Toy have no
 sprite in their scenes (`names.json` entries without an object), so those rounds play as Classic picked them. Classic writes five names in lowercase ("love", "flute", "lemon", "microphone", "fleur-de-lis"); they take a capital here.
 
+### `ch2`: Claire Hart: Secret in the Shadows (`claire-hart` branch)
+
+The add-on of the translated Secret in the Shadows cases (Other Games/docs/CLAIRE_HART_PLAN.md, sequel stages S0–S4), pack
+31900. `tools/translate/claire_hart_shadows.py addon` writes it from the sequel's mirror (build 232). **Revision 1**
+(2026-11-24) has the story's art and music; **revision 2** adds Secret in the Shadows UI (the dialogue skin, above);
+**revision 3** (2026-11-25) adds the Title Screen Look and Music (`--patch` gives a revision 2 build the title without
+rebuilding it). The cases need revision 1; the tester zip carries revision 3. About 653 MB.
+
+```sh
+python tools/translate/claire_hart_shadows.py addon --mirror CH2_DIR --out OUT_DIR [--patch OUT_DIR/CH_Shadows.exp]   # FFmpeg on PATH
+python tools/translate/claire_hart_shadows.py build --mirror CH2_DIR --out OUT_DIR [--cases 1,2,31] [--cache STORE.json]
+python tools/translate/claire_hart_shadows.py report --mirror CH2_DIR
+```
+
+| Resources | What |
+| --- | --- |
+| 26000–26519 | The scenes' clean bases (each round layout's `default` layer, without the objects; else the template), the game's own files at their own size and full brightness, in the scene folders' sorted order. `ch2rounds` takes the same pictures from here |
+| 26900–26936 | The 37 tracks, MP3 128 kb/s |
+| 26940 | The Case Journal's cue, `DS_Call_Attention` |
+| 26960–26961, 26990 | Revision 3: the Title Screen Look (its spec and the loading picture's cast over the violet backdrop) and Title Screen Music (the main jingle, the same file as Classic's) |
+| 26998 | The spec, JSON (as `chc`'s): looks, look names, pictures, scenes and their slices, tracks, story objects |
+| 26999 | The violet backdrop beside CoD's frame (the episode select's own); also the **Backdrop** setting's Secret in the Shadows choice |
+| 27000–27257 | The story-object photos: the 253 pictures, then the 5 round sprites photos show |
+| 28000–28417 | The portraits, cropped to Classic's head size (the crop rule in the tool's docstring), at 28000 + their place in the sorted list |
+| 29100–29118 | Revision 2: Secret in the Shadows UI's spec and pieces (`ch2_dialogue_skin.py`) |
+| 29190–29192 | Its faces: Roboto Condensed, Roboto Slab Bold, Roboto Condensed Italic |
+
+**Pack 31900's episodes** (tagged `(CH2)`: the category "Claire Hart: Secret in the Shadows", its violet CH2 badge) require it.
+They name their looks through look banks as Classic's cases do (84 looks), dim their backdrops to 102/255 under Dim Backdrops
+(the sequel's own value), show the narrator's portrait in narration, and show a story photo one line at a time, framed as
+the game's, above the dialogue box at its right (service 225's `STORY_OBJECT_PHOTO`). The sequel's journal is the pause
+menu's **Case Journal**: one page a part, rewritten at each unlock with a notice and its cue.
+
 ### `ch2rounds`: Claire Hart: Secret in the Shadows: Rounds (`claire-hart` branch)
 
 Optional, for the sequel's translated cases (pack 31900): its hidden-object rounds played for real

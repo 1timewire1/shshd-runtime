@@ -7,7 +7,9 @@ CLAIRE_HART_SHADOWS_ENGINE.md for the game's own rules).
     python tools/translate/claire_hart_shadows.py faces --mirror CH2_DIR [--out FACES.tsv]
     python tools/translate/claire_hart_shadows.py portraits --mirror CH2_DIR --sheet SHEET.png --classic CLASSIC_DIR
     python tools/translate/claire_hart_shadows.py names --mirror CH2_DIR --out NAMES.md [--sheet SHEET.png]
-    python tools/translate/claire_hart_shadows.py addon --mirror CH2_DIR --out OUT_DIR
+    python tools/translate/claire_hart_shadows.py addon --mirror CH2_DIR --out OUT_DIR [--patch CH_Shadows.exp]
+    python tools/translate/claire_hart_shadows.py build --mirror CH2_DIR --out OUT_DIR [--cases 1,2,31] [--cache STORE.json]
+    python tools/translate/claire_hart_shadows.py rounds --mirror CH2_DIR --out OUT_DIR --story OUT_DIR/CH_Shadows.exp
 
 CH2_DIR is the mirror (`reference/Other Games/Claire Hart Secret in the Shadows`: bundle_names.csv, raw/, unpacked/).
 
@@ -50,7 +52,7 @@ scaled to CoD's portrait at twice its size (220 x 240), as chslim.whole gives Cl
     26999        the frame backdrop beside CoD's frame (the episode selector's own backdrop)
     27000-27257  the story-object photos, their original PNGs: the 253 pictures, then the 5 round sprites photos show
     28000-28417  the portraits, cropped (above), at 28000 + their place in the sorted list (a duplicate takes the first's)
-    29100-29108  revision 2: Secret in the Shadows UI, the dialogue skin's spec and pieces (ch2_dialogue_skin.py), and
+    29100-29118  revision 2: Secret in the Shadows UI, the dialogue skin's spec and pieces (ch2_dialogue_skin.py), and
     29190-29192  its faces, Roboto Condensed, Roboto Slab Bold and Roboto Condensed Italic
 """
 import argparse

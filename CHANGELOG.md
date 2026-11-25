@@ -4,6 +4,10 @@
 
 ### Changed
 
+- **Claire Hart's Backdrop: Off / Claire Hart Classic / Secret in the Shadows** (owner, 2026-11-25), each offered with its
+  add-on; a saved On is Classic's. In a round zoomed in, the scene can now be dragged out from under the HUD's bars, and
+  whatever lies past the scene's edge shows the chosen backdrop (black when it's Off). Long names on Classic's round
+  screen fit their column in tall frames.
 - **Claire Hart's rounds: Classic's HUD text** (owner, 2026-11-22: "match Claire Hart's layout exactly"). The scene's
   name, the combo, the score and HINT are Romic regular at Classic's sizes (the bold face drew them short), and the
   count is bold at its size. The name, score, menu icon and the six names sit where Classic's do, measured against
@@ -23,6 +27,27 @@
   (the owner's pick, since the sequel's own spot lands on CoD's text). It slides in from the right with a 0.5 s fade,
   lasts one line, and fades out over 0.3 s as the next starts, as the sequel's does. Saves are version 47 (the photo's
   state); older ones load with none. No sequel episodes exist yet: the translator is Stage 1.
+
+- **Claire Hart: Secret in the Shadows, all 51 cases** (Claire Hart plan S1–S4, 2026-11-24/25; [CLAIRE_HART.md](docs/CLAIRE_HART.md#secret-in-the-shadows)).
+  `tools/translate/claire_hart_shadows.py` translates the sequel's cases into 58 Cause of Death entries (pack 31900, CH2)
+  with the `ch2` add-on (653 MB, revision 3). Seven cases too long for one episode script come in halves, "(Part 1)" and
+  "(Part 2)" (ROADMAP 3.35).
+  - **Each line has its speaker's face** on the game's stage, 84 looks cropped to Classic's head size, and photos framed
+    as the game's.
+  - **The Case Journal** (pause menu): a page a part, with a notice and the game's cue at each new entry; the
+    Creator's `quest` node now compiles for CoD.
+  - **Secret in the Shadows UI:** the sequel's own dialogue box and screens. **Claire Hart UI** became Auto / Off /
+    Claire Hart Classic / Secret in the Shadows, and the old choices carry over.
+  - **Title Screen Look and Music** for the sequel.
+  - **`ch2rounds`** (574 MB, optional) plays its 855 rounds for real on its own round screen: close-ups, multi-part
+    objects, the Gold Key, the Psychic Sensor, spotlight rounds, the ×6 combo, "Not So Fast!", ten half-star checks and
+    "Scene Cleared!", with How To Play on the pause menu.
+  - **Round Style** (Each Game's Own / Claire Hart Classic / Secret in the Shadows) plays either game's rounds under the
+    other's rules and screen.
+
+  Saves are version 48 (a round may be the sequel's). Checked: all 58 entries against an independent walk; save/load and
+  Skip Ahead; every round of both games under both styles at 3:4, 4:3 and 9:20 (`tools/claire_round_audit/`); the
+  g54 at 57–60 fps in rounds.
 
 - **Claire Hart Classic in the Creator** (Claire Hart plan Stage 6, owner 2026-11-24; `claire-hart` branch). A Cause of Death
   project can take `chc` as its primary add-on (Add-ons and settings…, now open to CoD projects, which also reaches CoD's

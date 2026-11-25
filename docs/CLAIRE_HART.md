@@ -102,6 +102,70 @@ next time; the receiving library is unchanged until all of it has arrived.
   `Romic.ttf`, and its dialogue box prefab draws with bitmap fonts made from Romic (`romicorange`, `romicwhite`, tinted by
   the box). The skin's dialogue is Romic Bold, since regular Romic lacks "&", "/" and most accented letters.
 
+## Secret in the Shadows
+
+*Claire Hart: Secret in the Shadows* is the sequel (Pogo HTML5, build 232), translated the same way into Cause of Death episodes
+by `tools/translate/claire_hart_shadows.py`.
+
+**In the library:** 51 cases, pack 31900, tagged CH2 in their own category, Claire Hart: Secret in the Shadows. Each needs the
+[`ch2` add-on](ADDONS.md#ch2-claire-hart-secret-in-the-shadows-claire-hart-branch) (653 MB); the
+[`ch2rounds` add-on](ADDONS.md#ch2rounds-claire-hart-secret-in-the-shadows-rounds-claire-hart-branch) (574 MB) is optional.
+Neither needs Classic's. The tester zips carry them: the cases with `ch2` inside, and the rounds add-on on its own.
+
+| | |
+| --- | --- |
+| Cases | 51 in 58 entries: 171 parts, entry *case × 10*. Seven cases are too long for one episode's script (its text limit), so they come in two halves, "(Part 1)" and "(Part 2)", the second entry numbered *case × 10* + its first part; the second half opens with the first's journal pages. They are 18 Lateral Libel, 21 Merry in Maui, 23 Overbaked, 28 End of Asbolus, 30 Best Intentions, 44 Silverhill Thriller and 50 The Art of Death (ROADMAP 3.35: rejoin them if the limit is raised). Case 31's three unlisted parts are included with their released titles, and case 45 takes its released title, *Lost Soul* |
+| Lines | 13,500, each with its speaker's face on the game's stage |
+| Portraits | 418 in 84 looks, cropped so the heads match Classic's |
+| Scenes | 512, at full brightness, dimmed to 102/255 under Dim Backdrops |
+| Story objects | 253 photos, one at a time for one line, framed as the game's, above the dialogue box at its right |
+| Music | 37 tracks |
+| Rounds | 855 over 512 scenes (with `ch2rounds`) |
+
+**How a case plays:**
+- **Secret in the Shadows UI** on Auto: the sequel's teal-framed dialogue box with the name in capitals on its tab, Roboto
+  Condensed text, its purple CONTINUE, and its glass panels on the other screens.
+- **The Case Journal** (pause menu): one page a part, its notes so far. A new entry shows its notice in a narration box with the
+  game's cue.
+- **Rounds** (`shadows_rounds.py`, `desktop_shadows_round.py`), on the sequel's own round screen: 12 objects, 6 listed at a
+  time. Its extras over Classic:
+  - **close-ups:** a hotspot opens a picture-in-picture with more objects (171 scenes);
+  - **multi-part objects:** found piece by piece, when they're the story object;
+  - **the Gold Key:** 500 points and its time recorded;
+  - **the Psychic Sensor:** free, with a 60 s cooldown;
+  - **spotlight rounds** (4);
+  - **the combo** up to ×6, draining a tier at a time;
+  - **"Not So Fast!"** for six taps in a second or nine in six.
+
+  The summary counts the time, sensor, perfect and Gold Key bonuses and ten half-star checks, and ends with "Scene Cleared!".
+  The Hint, Time Warp and Clairvoyance follow **Power-Ups**. How To Play is on the pause menu.
+- **Round Style** (with both rounds add-ons) plays either game's rounds under the other's rules and screen. Under Classic's,
+  a sequel scene offers only its ordinary objects (no close-ups, parts or key); under the sequel's, a Classic scene simply
+  has none of the extras.
+
+**Building:**
+
+```sh
+python tools/translate/claire_hart_shadows.py addon --mirror CH2_DIR --out OUT_DIR                                # ch2
+python tools/translate/claire_hart_shadows.py build --mirror CH2_DIR --out OUT_DIR                                # the cases
+python tools/translate/claire_hart_shadows.py rounds --mirror CH2_DIR --out OUT_DIR --story OUT_DIR/CH_Shadows.exp  # ch2rounds
+```
+
+The plans and the engine study (`CLAIRE_HART_SHADOWS_ENGINE.md`, `CLAIRE_HART_SHADOWS_ROUNDS_PLAN.md`, and
+`CLAIRE_HART_PLAN.md`'s sequel stages) are in `reference/Other Games/docs` beside the repository.
+
+**Checked 2026-11-25:**
+- **Every case:** each of the 58 was played in a headless session and compared with an independent walk of the game's data
+  (title cards, speakers, text, backdrops, music, photos, round lines). Each was also played with rounds off and on (all 855
+  won), saved and loaded mid-part and mid-round, and skipped ahead to the end.
+- **Every round of both games, under both round styles** (`tools/claire_round_audit/` beside the repository), at 3:4, 4:3
+  and 9:20: every object can be seen and tapped clear of the HUD, every close-up opens, and every round plays to its summary.
+- **The g54:** the sequel's round screen holds 57–60 fps idle, panning, in a close-up, under the spotlight and at the end.
+
 ## Not verified yet
 
 - **The iPad:** cases, rounds, the skin and Claire Hart 4:3 are checked on the PC and the g54, not yet on iOS (ROADMAP 5.13).
+  The same goes for the sequel's cases and rounds.
+- **The sequel's rounds by hand:** its phone touch rule (while the sensor or a spotlight is on, a tap counts only near the
+  ring or the light: `shadows_rounds.touch_counts`) and its sounds are checked in tests and headless runs, not yet by a
+  player's finger and ear.
