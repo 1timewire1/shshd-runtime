@@ -62,7 +62,7 @@ PRESENTATION_RECORD = ('narration_portrait', 'addons', 'aliases', 'minigames')
 # takes (content.feature_pack; shs/profile.py's, CREATOR_ADDONS_PLAN.md): Claire Hart Classic's `chc` brings pack 31500's,
 # its dialogue skin with Claire Hart Cases, narrator portraits, Dim Backdrops, the green beside the scene, its looks, its
 # scenes' slices (whole with Claire Hart 4:3) and its title look and tune on Auto.
-ADDON_FEATURE_PACKS = {('chc', ''): 31500}
+ADDON_FEATURE_PACKS = {('chc', ''): 31500, ('ch2', ''): 31900}     # (ch2: Secret in the Shadows' pack 31900)
 # shshd-runtime: translated packs whose backdrops the player darkens as it draws them, to n/255, while the shared Dim
 # Backdrops switch is on: Claire Hart Classic's 110 (its backdrop node's colour; the sequel's 102 comes with pack 31900).
 # The add-on keeps them at full brightness (CLAIRE_HART_PLAN.md, decision F).
@@ -77,17 +77,17 @@ TRANSLATED_MINIGAMES = {31500: None}
 # shshd-runtime: a translated pack's looks (CoD draws one as 5 consecutive IDs, an expression each) taken from an add-on that
 # holds each picture once: pack -> (the add-on, its spec resource, the first ID). Look n's expression e is ID first + 5n + e,
 # the picture the spec's `looks`[n][e] names (content.EpisodeResources._look_bank; CLAIRE_HART_PLAN.md, look banks (a)).
-LOOK_BANKS = {31500: ('chc', 26998, 30000)}
+LOOK_BANKS = {31500: ('chc', 26998, 30000), 31900: ('ch2', 26998, 30000)}    # (ch2: claire_hart_shadows.py)
 # shshd-runtime: a translated pack whose 4:3 scenes show as a 3:4 slice that fills the frame (Claire Hart decision M, A):
 # pack -> (the add-on, its spec resource, whose `scenes` give each slice), the episode's own resource 7 first
 # (content.EpisodeResources.backdrop_slice, backdrop_slices.py).
-BACKDROP_SLICES = {31500: ('chc', 26998)}
+BACKDROP_SLICES = {31500: ('chc', 26998), 31900: ('ch2', 26998)}
 # shshd-runtime: translated packs whose title cards show a part's title over its case's, so the picker's preview, a photo of
 # the first card, swaps them back: the case on top (Claire Hart; episode_thumbnails.capture_title_card).
 PREVIEW_CASE_TITLE = (31500,)
 # shshd-runtime: a translated pack's own picture for the whole frame, under its backdrops (desktop._frame_backdrop): Claire
 # Hart's 4:3 scenes leave bands in CoD's 3:4 frame, which take chslim's green backdrop (28001, kept in chc).
-TRANSLATED_FRAME_BACKDROP = {31500: 28001}
+TRANSLATED_FRAME_BACKDROP = {31500: 28001, 31900: 26999}       # (31900: the sequel's violet episode-select backdrop)
 # shshd-runtime: Add-Ons' Title Screen Look for CoD (as shs/profile.py's; owner, 2026-11-19): Claire Hart's Play Now screen
 # (its forest, and Claire and Paul over the gem banner) from chc's spec at 26960 (title_look.py), drawn in place of CoD's
 # painting behind the same buttons (desktop_cod_main). Auto follows the case last played.

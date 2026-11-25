@@ -38,6 +38,10 @@ ADDON_FEATURES = {
              "Its scenes as a 3:4 slice that fills the frame, whole with Claire Hart 4:3",
              "Its title tune and title screen, where Title Screen Music and Look are on Auto"), ()),
     'chcrounds': ((), ("Claire Hart's hidden-object rounds",)),
+    # ...and Secret in the Shadows' pack 31900 (sequel Stage S1): its skin and title look come in later revisions.
+    'ch2': (("Narration with the narrator's portrait", 'Backdrops darkened as the sequel drew them (Dim Backdrops)',
+             "The sequel's violet beside the scene", "Its scenes as a 3:4 slice that fills the frame, whole with Claire Hart 4:3",
+             "Its story objects as one photo above the dialogue box"), ()),
 }
 # Node kinds only this runtime answers, and how to name them to a person.
 MECHANIC_NODES = {'minigames_available': 'the translated mini-games', 'x360_slot': 'the X360 slot machine',
