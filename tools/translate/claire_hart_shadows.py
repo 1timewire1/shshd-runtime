@@ -958,10 +958,13 @@ def write_reviews(folder, reviews):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest='command', required=True)
-    for name in ('report', 'ids', 'faces', 'portraits', 'names', 'addon', 'build'):
+    for name in ('report', 'ids', 'faces', 'portraits', 'names', 'addon', 'build', 'rounds'):
         command = commands.add_parser(name)
         command.add_argument('--mirror', type=Path, required=True)
-        command.add_argument('--out', type=Path, required=name in ('ids', 'names', 'addon', 'build'))
+        command.add_argument('--out', type=Path, required=name in ('ids', 'names', 'addon', 'build', 'rounds'))
+        if name == 'rounds':
+            command.add_argument('--scenes', help='only these scene folders (a check build)')
+            command.add_argument('--workers', type=int, default=3)
         if name == 'build':
             command.add_argument('--cases', help='only these case numbers (1,2,31)')
             command.add_argument('--cache', type=Path, help='the store pictures matched (made on first use)')
@@ -1011,6 +1014,12 @@ def main(argv=None):
         if args.sheet:
             print(f'{len(rows)} photos, {names_sheet(mirror, rows, args.sheet)} without a name -> {args.sheet}')
         print(f'{len(rows)} photos -> {args.out}: {dict(hows)}')
+    elif args.command == 'rounds':
+        import claire_hart_shadows_rounds as rounds
+        args.out.mkdir(parents=True, exist_ok=True)
+        out = args.out / 'CH_Shadows_Rounds.exp'
+        report = rounds.build(mirror, out, only=set(args.scenes.split(',')) if args.scenes else None, workers=args.workers)
+        print(f"addon: {rounds.ROUNDS_TITLE!r} -> {out} ({report['bytes'] // 2 ** 20} MB), {dict(report)}")
     elif args.command == 'build':
         from claire_hart import compiled
         wanted = {int(n) for n in args.cases.split(',')} if args.cases else None
