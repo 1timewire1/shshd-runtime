@@ -999,6 +999,7 @@ def main(argv=None):
             command.add_argument('--out', type=Path, required=True, help='the folder for CH_Classic_Rounds.exp')
             command.add_argument('--scenes', help='only these scene folders (a check build)')
             command.add_argument('--workers', type=int, default=3)
+            command.add_argument('--story', type=Path, help="chc's .exp: the scenes' bases taken from it (share_bases)")
         if name == 'addon':
             command.add_argument('--pairs', type=Path, required=True)
             command.add_argument('--catalog', type=Path, required=True, help="the CoD catalogue's portraits folder")
@@ -1037,6 +1038,13 @@ def main(argv=None):
         out = args.out / 'CH_Classic_Rounds.exp'
         report = claire_rounds_addon.build(mirror, out, only=set(args.scenes.split(',')) if args.scenes else None,
                                            workers=args.workers)
+        if args.story:
+            whole = out.with_suffix('.whole.exp')
+            out.replace(whole)
+            claire_rounds_addon.share_bases(whole, args.story, chslim.CHC_ID, out, claire_rounds_addon.ROUNDS_REVISION,
+                                            claire_rounds_addon.ROUNDS_TITLE, claire_rounds_addon.ROUNDS_ID)
+            whole.unlink()
+            report['bytes'] = out.stat().st_size
         print(f"addon: {claire_rounds_addon.ROUNDS_TITLE!r} -> {out} ({report['bytes'] // 2 ** 20} MB), {report}")
     elif args.command == 'places':
         scenes = sorted({hog['scene'] for _, _, parts in mirror.cases() for _, config, _ in parts

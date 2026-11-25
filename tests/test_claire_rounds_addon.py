@@ -121,5 +121,33 @@ class ArchiveTests(unittest.TestCase):
             self.assertEqual(ExpArchive(written).read(27001), b'\x89PNG' * 1000)
 
 
+class ShareBasesTests(unittest.TestCase):
+    def test_a_base_the_story_add_on_holds_is_taken_from_it(self):
+        """2026-11-25 (owner): chcrounds' 786 bases and ch2rounds' 512 were copies of their story add-on's backdrops; a
+        base held the same is dropped and named there; one held otherwise stays."""
+        import claire_rounds_addon as ra
+        from exp_runtime.addons import RESOURCE as ADDON_RECORD, provides_bytes
+        from exp_runtime.addons import addon_record
+        from exp_runtime.exp import ExpArchive, encode_exp
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            spec = {'scenes': {'Office': {'base': 26001, 'sprites': 27001}, 'Den': {'base': 26002, 'sprites': 27002}}}
+            (folder / 'rounds.exp').write_bytes(encode_exp({
+                26000: json.dumps(spec).encode(), 26001: b'office picture', 26002: b'den, its own', 27001: b'pack 1',
+                27002: b'pack 2', ADDON_RECORD: provides_bytes('chcrounds', 'Rounds', 1)}))
+            (folder / 'story.exp').write_bytes(encode_exp({
+                26998: json.dumps({'scenes': {'Office': [26010, 224], 'Den': [26011, 224]}}).encode(),
+                26010: b'office picture', 26011: b'den, another picture'}))
+            report = ra.share_bases(folder / 'rounds.exp', folder / 'story.exp', 'chc', folder / 'out.exp', 2, 'Rounds',
+                                    'chcrounds', progress=lambda *_: None)
+            self.assertEqual((report['shared'], report['kept']), (1, 1))
+            out = ExpArchive((folder / 'out.exp').read_bytes())
+            scenes = json.loads(out.read(26000))['scenes']
+            self.assertEqual((scenes['Office']['base'], scenes['Den']['base']), (['chc', 26010], 26002))
+            self.assertNotIn(26001, out.entries)
+            self.assertEqual((out.read(26002), out.read(27001)), (b'den, its own', b'pack 1'))
+            self.assertEqual(addon_record(out), ('provides', dict(id='chcrounds', title='Rounds', revision=2)))
+
+
 if __name__ == '__main__':
     unittest.main()

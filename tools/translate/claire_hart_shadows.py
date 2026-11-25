@@ -40,7 +40,8 @@ scaled to CoD's portrait at twice its size (220 x 240), as chslim.whole gives Cl
 `ch2` holds:
 
     26000-26519  the scenes' clean bases (the round layout's `default` layer: the scene without its objects; else the
-                 template), 1024 x 768, full brightness (dimmed at draw time to 102), in the folders' sorted order
+                 template), the game's own files at their own size (the same bytes ch2rounds would hold: it takes them from
+                 here), full brightness (dimmed at draw time to 102), in the folders' sorted order
     26900-26936  the tracks, MP3 128 kb/s (FFmpeg)
     26940        the journal's cue, DS_Call_Attention (MP3)
     26998        the spec, JSON: looks, look names, pictures, scenes and slices, tracks, story objects (as chc's)
@@ -79,8 +80,6 @@ STORY_VERSION = 1                            # the cases' version (episode_versi
 LOOK_BANK_BASE = 30000                       # cod/profile.py LOOK_BANKS[31900]: look n is 30000 + 5n on
 FRAME_ART = 'textures/SD/episodeSelector/episodeselector_bg'
 JOURNAL_CUE = 'references/gamesfx/ogg/Claire_Hart_2_DS_Call_Attention'
-BACKDROP_SIZE = (1024, 768)
-SLICE_X = (BACKDROP_SIZE[0] - round(BACKDROP_SIZE[1] * 3 / 4)) // 2     # centred: CoD cut none of these scenes (M, ENGINE 12)
 CROP_HEIGHT, CROP_MARGIN, HEAD_BAND = 380, 14, 140
 CROP_HEIGHTS = {'Avatar_BrowdyBrothers': 540}     # a look's own window: both brothers (module doc)
 PORTRAIT_SIZE = (220, 240)                   # CoD's 110 x 120 at twice its size (chslim.SCALE)
@@ -170,6 +169,11 @@ def portrait_crop(picture, height=CROP_HEIGHT):
 
 def crop_height(path):
     return CROP_HEIGHTS.get(path.split('/')[2], CROP_HEIGHT)
+
+
+def rounds_png(data):
+    import claire_hart_shadows_rounds as rounds
+    return rounds.compact(rounds.without_text(data))
 
 
 def png(image):
@@ -280,31 +284,44 @@ class Mirror:
         return sorted(path.split('/')[2] for path, kind in self.kinds.items() if kind == 'template')
 
     def scenes(self):
-        """{scene folder: (backdrop ID, slice x)}: every scene's 3:4 slice centred in its 1024 x 768 backdrop."""
-        return {folder: (BACKDROP_BASE + n, SLICE_X) for n, folder in enumerate(self.scene_folders())}
+        """{scene folder: (backdrop ID, slice x)}: every scene's 3:4 slice centred in its backdrop (the game's own size:
+        CoD cut none of these scenes, M and ENGINE 12)."""
+        out = {}
+        for n, folder in enumerate(self.scene_folders()):
+            width, height = self.backdrop_size(folder)
+            out[folder] = (BACKDROP_BASE + n, max(0, (width - round(height * 3 / 4)) // 2))
+        return out
+
+    def _base_scene(self, folder):
+        """The round layout's scene model (claire_hart_shadows_rounds.SceneData), or None for a scene with no layout."""
+        if not hasattr(self, '_bases'):
+            self._bases = {}
+        if folder not in self._bases:
+            import claire_hart_shadows_rounds as rounds
+            layout = self.json_dir / 'references/backgrounds' / folder / 'hd' / f'{folder}.json'
+            files = {p: str(f) for p, f in self.files.items() if p.startswith(f'references/backgrounds/{folder}/')}
+            self._bases[folder] = rounds.SceneData(self.json_dir, files, folder) if layout.exists() else None
+        return self._bases[folder]
 
     def backdrop(self, folder):
-        """A scene's picture for the story, 1024 x 768: its clean base (the round layout's `default` layer, the scene
-        without the round's objects, as Classic's; owner 2026-11-20), else its template. A base's 1-pixel border
-        (1026 x 770, 1282 x 962, 1602 x 1202) is cut before scaling."""
-        from PIL import Image
-        layout = self.json_dir / 'references/backgrounds' / folder / 'hd' / f'{folder}.json'
-        picture = None
-        if layout.exists():
-            for group in load(layout)['textures']:
-                if str(group['id']) == 'default':
-                    for texture in group['textures']:
-                        path = self.path(f"references/backgrounds/{folder}/hd/{texture['id']}")
-                        if texture['width'] >= 1000 and path:
-                            picture = Image.open(self.files[path]).convert('RGB')
-                            break
-                    break
-        if picture is None:
-            picture = Image.open(self.files[f'references/backgrounds/{folder}/hd/template']).convert('RGB')
-        width, height = picture.size
-        if width % 4 == 2:                                   # (a base's border)
-            picture = picture.crop((1, 1, width - 1, height - 1))
-        return picture.resize(BACKDROP_SIZE, Image.LANCZOS) if picture.size != BACKDROP_SIZE else picture
+        """A scene's picture for the story: its clean base (the round layout's `default` layers, the scene without the
+        round's objects, as Classic's; owner 2026-11-20) as the game's own file, the very bytes `ch2rounds` holds as the
+        round's base (so the rounds take it from here: claire_rounds_addon.share_bases; 2026-11-25, owner: the copies made
+        it twice); else its template. Text chunks dropped, an uncompressed one re-encoded losslessly."""
+        import claire_hart_shadows_rounds as rounds
+        scene = self._base_scene(folder)
+        if scene is not None:
+            return scene.base_bytes()
+        data = self.files[f'references/backgrounds/{folder}/hd/template'].read_bytes()
+        return rounds.compact(rounds.without_text(data))
+
+    def backdrop_size(self, folder):
+        scene = self._base_scene(folder)
+        if scene is not None:
+            return scene.size
+        import claire_rounds_addon
+        with open(self.files[f'references/backgrounds/{folder}/hd/template'], 'rb') as file:
+            return claire_rounds_addon.png_size(file.read(32))
 
     def tracks(self):
         """{track stem: (music ID, the OGG's path)}."""
@@ -845,11 +862,11 @@ def addon(mirror, progress=print):
     progress(f'portraits: {len(resources)} pictures for {len(ids)} paths')
     scenes = mirror.scenes()
     for n, (folder, (ident, _)) in enumerate(scenes.items(), 1):
-        resources[ident] = png(mirror.backdrop(folder))
+        resources[ident] = mirror.backdrop(folder)
         if n % 50 == 0:
             progress(f'backdrops: {n} of {len(scenes)}')
     for path, ident in mirror.story_object_ids().items():
-        resources[ident] = mirror.files[path].read_bytes()
+        resources[ident] = rounds_png(mirror.files[path].read_bytes())     # (their XMP gone: 28.5 MB)
     tracks = mirror.tracks()
     with tempfile.TemporaryDirectory() as folder:
         for stem, (ident, ogg) in tracks.items():
@@ -965,6 +982,7 @@ def main(argv=None):
         if name == 'rounds':
             command.add_argument('--scenes', help='only these scene folders (a check build)')
             command.add_argument('--workers', type=int, default=3)
+            command.add_argument('--story', type=Path, help="ch2's .exp: the scenes' bases taken from it (share_bases)")
         if name == 'build':
             command.add_argument('--cases', help='only these case numbers (1,2,31)')
             command.add_argument('--cache', type=Path, help='the store pictures matched (made on first use)')
@@ -1019,6 +1037,14 @@ def main(argv=None):
         args.out.mkdir(parents=True, exist_ok=True)
         out = args.out / 'CH_Shadows_Rounds.exp'
         report = rounds.build(mirror, out, only=set(args.scenes.split(',')) if args.scenes else None, workers=args.workers)
+        if args.story:
+            import claire_rounds_addon
+            whole = out.with_suffix('.whole.exp')
+            out.replace(whole)
+            claire_rounds_addon.share_bases(whole, args.story, ADDON_ID, out, rounds.ROUNDS_REVISION, rounds.ROUNDS_TITLE,
+                                            rounds.ROUNDS_ID)
+            whole.unlink()
+            report['bytes'] = out.stat().st_size
         print(f"addon: {rounds.ROUNDS_TITLE!r} -> {out} ({report['bytes'] // 2 ** 20} MB), {dict(report)}")
     elif args.command == 'build':
         from claire_hart import compiled

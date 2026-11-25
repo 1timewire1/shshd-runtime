@@ -22,7 +22,7 @@ import struct
 import subprocess
 import tempfile
 
-ROUNDS_ID, ROUNDS_TITLE, ROUNDS_REVISION = 'chcrounds', 'Claire Hart Classic: Rounds', 1
+ROUNDS_ID, ROUNDS_TITLE, ROUNDS_REVISION = 'chcrounds', 'Claire Hart Classic: Rounds', 2   # (2: bases from chc, share_bases)
 PACK_ID = 31500
 SPEC = 26000
 BASE_FIRST = 26001                      # the scenes' bases, in the scene folders' sorted order (chc's own order)
@@ -341,3 +341,80 @@ def build(mirror, out, *, only=None, workers=3, progress=print):
         return report
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+# --- sharing the scenes' bases with the story add-on (2026-11-25) --------------------------------------------------------
+def archive_index(path):
+    """{resource: (offset of its bytes, length)} of an .exp archive on disk (exp.encode_exp's layout)."""
+    with open(path, 'rb') as file:
+        head = file.read(9)
+        if head[:5] != b'CSPUD':
+            raise ValueError(f'{path} is not an EXP archive')
+        count, = struct.unpack('>I', head[5:9])
+        index = file.read(6 * count)
+        out = {}
+        for i in range(count):
+            resource, offset = struct.unpack('>HI', index[6 * i:6 * i + 6])
+            file.seek(offset)
+            size, = struct.unpack('>I', file.read(4))
+            out[resource] = (offset + 12, size)
+    return out
+
+
+def read_resource(path, index, resource):
+    offset, size = index[resource]
+    with open(path, 'rb') as file:
+        file.seek(offset)
+        return file.read(size)
+
+
+def share_bases(rounds_path, story_path, story_id, out_path, revision, title, rounds_id, spec_id=26000,
+                story_spec=26998, progress=print):
+    """A rounds add-on rewritten to take each scene's base from its story add-on where that holds the very same picture as
+    the scene's backdrop (its spec's `scenes`: {folder: [resource, slice]}): the base resource dropped, the rounds spec's
+    entry `base` made [story_id, resource] (desktop_claire_round.base_picture), the add-on record at `revision`. Bases the
+    story add-on lacks or holds otherwise stay. Streams resource by resource, so a 1 GB add-on never sits in memory."""
+    from exp_runtime.addons import RESOURCE as ADDON_RECORD, provides_bytes
+    rounds_index, story_index = archive_index(rounds_path), archive_index(story_path)
+    spec = json.loads(read_resource(rounds_path, rounds_index, spec_id))
+    story = json.loads(read_resource(story_path, story_index, story_spec))
+    shared, kept, dropped = 0, 0, set()
+    for folder, entry in spec['scenes'].items():
+        backdrop = (story.get('scenes') or {}).get(folder)
+        base = entry['base']
+        if not isinstance(base, int) or not backdrop or backdrop[0] not in story_index:
+            kept += 1
+            continue
+        if read_resource(rounds_path, rounds_index, base) == read_resource(story_path, story_index, backdrop[0]):
+            entry['base'] = [story_id, backdrop[0]]
+            dropped.add(base)
+            shared += 1
+        else:
+            kept += 1
+    out_path = Path(out_path)
+    work = Path(tempfile.mkdtemp(prefix='.share-bases-', dir=out_path.parent))
+    try:
+        parts = {}
+        for resource in rounds_index:
+            if resource in dropped:
+                continue
+            path = work / f'{resource}.bin'
+            if resource == spec_id:
+                path.write_bytes(json.dumps(spec, separators=(',', ':')).encode('utf-8'))
+            elif resource == ADDON_RECORD:
+                path.write_bytes(provides_bytes(rounds_id, title, revision))
+            else:
+                offset, size = rounds_index[resource]
+                with open(rounds_path, 'rb') as source, open(path, 'wb') as target:
+                    source.seek(offset)
+                    left = size
+                    while left:
+                        block = source.read(min(left, 1 << 20))
+                        target.write(block)
+                        left -= len(block)
+            parts[resource] = path
+        write_exp(out_path, parts)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    progress(f'bases shared with {story_id}: {shared}, kept: {kept}')
+    return dict(shared=shared, kept=kept, bytes=out_path.stat().st_size)

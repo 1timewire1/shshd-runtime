@@ -162,6 +162,13 @@ class ClaireRoundRenderer:
             raise ValueError(f'The {addon} add-on is missing resource {resource}: import its latest build')
         return data
 
+    def base_picture(self, entry):
+        """A scene's base: the rounds add-on's own resource, or (chcrounds revision 2, ch2rounds) [add-on, resource] in the
+        story add-on that holds the same picture as a backdrop (the cases need it, so it is always there; 2026-11-25:
+        319 MB of chcrounds and 282 MB of ch2rounds were copies)."""
+        base = entry['base']
+        return self.addon(*base) if isinstance(base, list) else self.addon(ADDON, base)
+
     def spec(self):
         if self._spec is None:
             shared = getattr(self.resources.library, 'addon_json', None)     # (parsed once for the library, the engine's too)
@@ -177,7 +184,7 @@ class ClaireRoundRenderer:
         bars once into the canvas (their pieces and text sizes cached). Nothing here changes the round."""
         entry = self.spec()['scenes'][game.scene]
         yield
-        self.image(('base', game.scene), lambda: self.addon(ADDON, entry['base']))
+        self.image(('base', game.scene), lambda: self.base_picture(entry))
         yield
         for index, (_, normal, _, _) in enumerate(entry['objects']):
             if index not in game.found:
@@ -355,7 +362,7 @@ class ClaireRoundRenderer:
         key = (game.scene, len(game.found))
         if self._scene != key:
             entry = self.spec()['scenes'][game.scene]
-            base = self.image(('base', game.scene), lambda: self.addon(ADDON, entry['base'])).copy()
+            base = self.image(('base', game.scene), lambda: self.base_picture(entry)).copy()
             for index, (_, normal, _, _) in enumerate(entry['objects']):
                 if index in game.found:
                     continue
