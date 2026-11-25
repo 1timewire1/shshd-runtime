@@ -224,6 +224,72 @@ class RoundStyleTests(unittest.TestCase):
         self.assertEqual(game.summary()['key_bonus'], 0)
 
 
+class SensorFeelTests(unittest.TestCase):
+    def test_the_feel_follows_the_games_points(self):
+        feel = sr.sensor_feel
+        self.assertEqual(feel(0)[:3], (3.0, 0.30, (0, 255, 84)))        # (on it: green, three a second, particles)
+        self.assertTrue(feel(0)[7])
+        self.assertEqual(feel(700)[2], (127, 127, 127))                  # (far: grey, the coldest)
+        self.assertEqual(feel(700)[6], 0)
+        middle = feel(201)                                               # (halfway from 2 to 400)
+        self.assertAlmostEqual(middle[0], 1.4, places=2)
+        self.assertEqual(middle[2], (5, 162, 168))
+        self.assertEqual([feel(d)[6] for d in (1.5, 100, 500, 650)], [3, 2, 1, 0])   # (1.5: the warmest, the game's slip fixed)
+
+    def test_the_distance_is_to_the_targets_box_and_its_hint_offset(self):
+        box = (100, 100, 40, 20)
+        self.assertEqual(sr.sensor_distance(box, (0, 0), (110, 105)), 0)
+        self.assertEqual(sr.sensor_distance(box, (0, 0), (150, 100)), 30)
+        self.assertEqual(sr.sensor_distance(box, (30, 0), (150, 100)), 0)    # (shifted by its hint offset)
+        self.assertAlmostEqual(sr.sensor_distance(box, (0, 0), (150, 140)), (30 ** 2 + 30 ** 2) ** 0.5)
+
+    def test_the_ring_smooths_and_beats_at_its_rate(self):
+        ring = sr.SensorRing()
+        beats = []
+        for _ in range(120):                                             # two seconds right on the target
+            beats += ring.step(1 / 60, 0.0)
+        self.assertLess(ring.distance, 1)
+        self.assertGreater(len(beats), 3)
+        self.assertEqual(beats[-1], 3)
+        far = sr.SensorRing()
+        far_beats = []
+        for _ in range(240):                                             # four seconds far off
+            far_beats += far.step(1 / 60, 900.0)
+        self.assertTrue(1 <= len(far_beats) <= 3)                        # (half a beat a second)
+        self.assertEqual(set(far_beats), {0})
+
+    def test_the_sensor_steps_from_part_to_part(self):
+        game = sr.ShadowsRound.opened('Den_HO', NAMES, KINDS, PARTS, [44], Random48(1), sr.ONCE_EACH)
+        for obj in [o for o in game.listed if game.kinds[o] == sr.ORDINARY]:
+            game.slots[game.slots.index(obj)] = sr.NO_OBJECT             # (only the multi-part object left listed)
+        self.assertEqual(game.use_sensor(), 45)
+        self.assertEqual(game.tap([45]), sr.PART)
+        self.assertEqual((game.sensor_on, game.sensor_target), (True, 46))
+        self.assertEqual(game.tap([46]), 44)
+        self.assertFalse(game.sensor_on)
+
+
+class TouchAndSpotlightTests(unittest.TestCase):
+    def test_a_tap_counts_near_the_ring_only(self):
+        self.assertTrue(sr.touch_counts((150, 100), (100, 100), 2))
+        self.assertFalse(sr.touch_counts((250, 100), (100, 100), 2))     # (too far)
+        self.assertFalse(sr.touch_counts((110, 100), (100, 100), 12))    # (a drag)
+
+    def test_the_spotlight_follows_on_its_spring_and_breathes(self):
+        import random
+        light = sr.Spotlight()
+        source = random.Random(5).random                                 # (Math.random: uniform)
+        for _ in range(240):
+            light.step(1 / 60, (300, -100), source)
+        self.assertAlmostEqual(light.x, 300, delta=40)
+        self.assertAlmostEqual(light.y, -100, delta=40)
+        self.assertGreaterEqual(light.scale, 1.0)
+        far = sr.Spotlight()
+        for _ in range(240):
+            far.step(1 / 60, (5000, 0), lambda: 0.5)
+        self.assertEqual(far.x, sr.SPOTLIGHT_SIZE[0] / 4)                # (clamped to a quarter of its overlay)
+
+
 class SaveTests(unittest.TestCase):
     def test_a_round_survives_json_and_validates(self):
         game = a_round(story=[44, 41])

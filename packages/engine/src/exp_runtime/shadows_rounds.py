@@ -39,6 +39,20 @@ SCORE_TIERS = (1300, 5700)              # find points > 1,299, >= 5,700
 KEY_TIMES_S = (90, 60)
 TIME_LIMITS_S = (600, 300)
 
+# The Psychic Sensor's feel (gamebalance powerups.hotColdBehavior, by distance in the round's units: the scene 600 tall):
+# (distance, pulses a second, pulse strength, glow RGB, opacity, outer circle's opacity, outer circle's extra scale)
+SENSOR_POINTS = ((1, 3.0, 0.30, (0, 255, 84), 255, 255, 0.01),
+                 (2, 2.0, 0.25, (10, 240, 80), 255, 240, 0.14),
+                 (400, 0.8, 0.13, (0, 84, 255), 135, 160, 0.50),
+                 (600, 0.5, 0.08, (127, 127, 127), 125, 15, 0.65))
+SENSOR_SOUNDS = ('GS_Psychic_Sensor_1_Coldest', 'GS_Psychic_Sensor_2_Cold', 'GS_Psychic_Sensor_3_Warm',
+                 'GS_Psychic_Sensor_4_Warmest')
+SENSOR_STEP_S = 1 / 30                  # hotcoldpowerup.updateIndicator measures every other frame of 60
+SENSOR_SMOOTHING = 0.7                  # the distance kept from the last measure (0.3 of the new)
+# Touch while the sensor or a spotlight is on (owner, 2026-11-24, S1: the game's phone rule, on touch only): a tap counts
+# only within TOUCH_REACH units of the ring's (or the light's) last place and dragged under TOUCH_DRAG; else it's ignored.
+TOUCH_REACH, TOUCH_DRAG = 100, 10
+
 ONCE_EACH, UNLIMITED, OFF = 'once', 'unlimited', 'off'
 POWERUP_MODES = (ONCE_EACH, UNLIMITED, OFF)
 HINT, TIME_WARP, CLAIRVOYANCE = 'hint', 'time_warp', 'clairvoyance'
@@ -259,6 +273,8 @@ class ShadowsRound:
                 self.collecting = []
                 self._find(whole)
                 return whole
+            if self.sensor_on and self.sensor_target == obj:
+                self.sensor_target = self._part_target(whole)        # changeTargetToNextComponent
             return PART
         if kind in (ORDINARY, CLOSE_UP) and obj in self.slots and obj not in self.found:
             if kind == CLOSE_UP and not self.pip_open:
@@ -459,3 +475,107 @@ class ShadowsRound:
                 or not set(self.markers) <= set(self.picked) or not set(self.collecting) <= objects):
             raise ValueError('Invalid Secret in the Shadows round state')
         self.parts = parts
+
+
+# --- the Psychic Sensor's ring (the player draws it; its feel is the game's, worked out here) -----------------------------
+def sensor_distance(box, offset, point):
+    """hotcoldpowerup.updateIndicator: from `point` (the ring) to the target's box (centre x, y, width, height), shifted by
+    its hint `offset`: 0 inside it."""
+    cx, cy, width, height = box
+    dx = max(0.0, abs(cx + offset[0] - point[0]) - width / 2)
+    dy = max(0.0, abs(cy + offset[1] - point[1]) - height / 2)
+    return (dx * dx + dy * dy) ** 0.5
+
+
+def sensor_feel(distance):
+    """(pulses a second, strength, glow RGB, opacity, outer opacity, outer extra scale, sound 0-3, particles) at a smoothed
+    `distance`: SENSOR_POINTS interpolated. The game's sound index between its first two points fell through to the
+    coldest (`2 == i ? 2 : 3 == i ? 1 : 0`); here it is the warmest, as the owner's other fixes (2026-11-24)."""
+    points = SENSOR_POINTS
+    if distance <= points[0][0]:
+        p = points[0]
+        return p[1], p[2], p[3], p[4], p[5], p[6], 3, True
+    if distance >= points[-1][0]:
+        p = points[-1]
+        return p[1], p[2], p[3], p[4], p[5], p[6], 0, False
+    for i in range(1, len(points)):
+        if distance < points[i][0]:
+            a, b = points[i - 1], points[i]
+            t = (distance - a[0]) / (b[0] - a[0])
+            mix = lambda x, y: x * (1 - t) + y * t                      # noqa: E731
+            sound = {1: 3, 2: 2, 3: 1}.get(i, 0)
+            return (mix(a[1], b[1]), mix(a[2], b[2]), tuple(round(mix(x, y)) for x, y in zip(a[3], b[3])),
+                    mix(a[4], b[4]), mix(a[5], b[5]), mix(a[6], b[6]), sound, False)
+
+
+@dataclass
+class SensorRing:
+    """The ring's state between frames (not saved: a reload starts it afresh): the smoothed distance, its pulse (the goal
+    scale falling by strength x rate a second, a pulse and its heartbeat when it drops below 1), the outer circle's extra
+    scale (eased 0.2 a measure), and what the last measure set."""
+    distance: float = 600.0
+    goal: float = 1.0
+    outer: float = 0.65
+    carry: float = 0.0
+    feel: tuple = field(default_factory=lambda: sensor_feel(600.0))
+
+    def step(self, seconds, raw_distance):
+        """`seconds` of play with the ring `raw_distance` from its target: returns the heartbeats to play (sound indexes)."""
+        self.carry += seconds
+        while self.carry >= SENSOR_STEP_S:
+            self.carry -= SENSOR_STEP_S
+            self.distance = SENSOR_SMOOTHING * self.distance + (1 - SENSOR_SMOOTHING) * raw_distance
+            self.feel = sensor_feel(self.distance)
+            self.outer = 0.2 * self.feel[5] + 0.8 * self.outer
+        pulses, strength = self.feel[0], self.feel[1]
+        self.goal -= strength * pulses * seconds
+        beats = []
+        while self.goal < 1.0:
+            self.goal += strength if strength > 0 else 1.0
+            beats.append(self.feel[6])
+        return beats
+
+
+def touch_counts(point, indicator, drag):
+    """The game's phone rule while the sensor or a spotlight is on (S1): a tap at `point`, dragged `drag` units, counts
+    only near the ring's (or the light's) last place `indicator`."""
+    return drag < TOUCH_DRAG and ((point[0] - indicator[0]) ** 2 + (point[1] - indicator[1]) ** 2) ** 0.5 <= TOUCH_REACH
+
+
+# --- spotlight rounds (4 rounds: playHOG mode "spotlight"; the player draws the overlay) ---------------------------------
+SPOTLIGHT_SIZE = (2048, 1536)           # its overlay (spotlight2alpha), centred on the light, in the round's units
+SPOTLIGHT_SPRING = {'mouse': (0.12, 0.32), 'touch': (0.2, 0.5)}     # (pull, damping) a frame, desktop and phone
+SPOTLIGHT_FRAME_S = 1 / 60
+
+
+@dataclass
+class Spotlight:
+    """spotlight.globalUpdate, a 60th of a second at a time: the light follows the pointer on a spring, clamped to a quarter
+    of its overlay from the scene's middle, with a random jitter that also breathes its scale (not saved: presentation)."""
+    x: float = 0.0
+    y: float = 0.0
+    speed: list = field(default_factory=lambda: [0.0, 0.0])
+    jitter: list = field(default_factory=lambda: [0.0, 0.0])
+    wander: list = field(default_factory=lambda: [0.0, 0.0])
+    scale: float = 1.0
+    carry: float = 0.0
+
+    def step(self, seconds, pointer, random, touch=False):
+        """`seconds` of play with the pointer at `pointer` (the round's units, from the scene's middle); `random()` gives
+        0-1 (the game's Math.random)."""
+        pull, damping = SPOTLIGHT_SPRING['touch' if touch else 'mouse']
+        qx, qy = SPOTLIGHT_SIZE[0] / 4, SPOTLIGHT_SIZE[1] / 4
+        self.carry += seconds
+        while self.carry >= SPOTLIGHT_FRAME_S:
+            self.carry -= SPOTLIGHT_FRAME_S
+            dx, dy = pointer[0] - self.x, pointer[1] - self.y
+            if abs(dx) > 5 or abs(dy) > 5 or abs(self.speed[0]) > 0.1 or abs(self.speed[1]) > 0.1:
+                self.speed[0] += pull * dx - damping * self.speed[0]
+                self.speed[1] += pull * dy - damping * self.speed[1]
+                self.x = max(-qx, min(qx, self.x + self.speed[0]))
+                self.y = max(-qy, min(qy, self.y + self.speed[1]))
+            for k in (0, 1):
+                self.wander[k] = 0.9 * self.wander[k] + 0.025 * (random() - 0.5)
+                self.jitter[k] = 0.9985 * self.jitter[k] + self.wander[k]
+                self.speed[k] += self.jitter[k]
+            self.scale = 1 + abs(0.05 * self.jitter[0])
