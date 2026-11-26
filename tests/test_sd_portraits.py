@@ -242,6 +242,20 @@ class SdPortraitsTests(unittest.TestCase):
         self.assertTrue(build_from_map(with_addon, self.map))
         self.assertIsNotNone(with_addon.twin_store().twin(noir_sd))
 
+    def test_a_new_add_on_revision_makes_the_tinted_pictures_it_brings(self):
+        # g54, 2026-11-25: replacing revision 1 with 2 regathered the originals but made no tinted picture.
+        noir_sd, noir_hd = self.tinted_map()
+        library = self.library(addon={26000: self.sd_patchouli}, revision=1)
+        library._assets['hd_12_7'][26002] = noir_hd
+        build_from_map(library, self.map)
+        self.assertIsNone(library.twin_store().twin(noir_sd))
+        stages = []
+        newer = self.library(addon={26000: self.sd_patchouli, 26001: noir_sd}, revision=2)
+        newer._assets['hd_12_7'][26002] = noir_hd
+        self.assertTrue(build_from_map(newer, self.map, lambda done, total, stage=None: stages.append(stage)))
+        self.assertIsNotNone(newer.twin_store().twin(noir_sd))
+        self.assertIn('pictures', stages)                                   # the card has a line for it
+
     def test_a_store_built_before_the_searched_list_takes_the_library_as_searched(self):
         from exp_runtime.hd_twins import new_episodes
         library = self.library()

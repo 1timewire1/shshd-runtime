@@ -747,7 +747,9 @@ def build_from_map(library, twin_map, progress=None) -> bool:
     player's own episodes, and copied into the store under its standard twin's fingerprint; a picture the player's
     files cannot supply is left out, and coverage is counted from what was actually built, so a standard episode loses
     its SD mark only when it really plays entirely in HD. Returns False when the store already came from this map.
-    `progress(done, total)` reports the episodes searched. Runs off the UI thread (the app's preview job).
+    `progress(done, total[, stage])` reports the episodes searched, then (stage 'search') the rest of the library read
+    for an effect's other half, (stage 'pictures') the effect pictures made and (stage 'coverage') the standard episodes
+    measured. Runs off the UI thread (the app's preview job).
 
     A new map version rebuilds the store from nothing, so a pair the new map drops or moves (the 2026-11 art audit's
     corrections) leaves every player's store too, not only the owner's. An entry may carry a fifth field, an effect
@@ -770,7 +772,8 @@ def build_from_map(library, twin_map, progress=None) -> bool:
     # Only episodes imported since the store was built (`new_episodes`), or the SD add-on just added (it carries the
     # standard pictures the tinted backgrounds are fitted from): the pictures they make possible are added, nothing is
     # cleared, and the rest of the library is read only for an effect's other half.
-    incremental = not twins_due and (bool(fresh) or sd_added)
+    # (Any SD add-on change too: a new revision can bring standard pictures tints are fitted from, g54 2026-11-25.)
+    incremental = not twins_due and (bool(fresh) or sd_due)
     held_twins = set() if twins_due else set(store.index)
     wanted, standards = {}, set()                       # hd fingerprint -> [(standard, size, effect)]; effect sources
     if twins_due:
@@ -850,7 +853,9 @@ def build_from_map(library, twin_map, progress=None) -> bool:
                     missing.add(standard if hd in held else hd)
         if missing:
             others = [record for record in library.episodes if record not in fresh]
-            for _, archive in archives(others, addon=False):
+            for done, (_, archive) in enumerate(archives(others, addon=False)):
+                if progress is not None:
+                    progress(done, len(others), 'search')
                 for resource_id in archive.entries:
                     if resource_id < LOCAL_ART:
                         continue
@@ -881,14 +886,15 @@ def build_from_map(library, twin_map, progress=None) -> bool:
             sd_store.pictures.add_pictures(sd_pictures)
     if twins_due or incremental:
         pictures = {}
-        for hd, entries in wanted.items():
-            for standard, size, effect in entries:
-                if not effect or hd not in held or standard not in held:
-                    continue                            # this player lacks one of the two pictures: nothing shows it
-                try:
-                    pictures[standard] = (size, apply_effect(held[standard], held[hd], effect))
-                except (OSError, ValueError) as error:
-                    logging.warning('HD art: %s not recreated: %s', standard, error)
+        making = [(hd, standard, size, effect) for hd, entries in wanted.items() for standard, size, effect in entries
+                  if effect and hd in held and standard in held]     # (else the player lacks one: nothing shows it)
+        for done, (hd, standard, size, effect) in enumerate(making):
+            if progress is not None:
+                progress(done, len(making), 'pictures')
+            try:
+                pictures[standard] = (size, apply_effect(held[standard], held[hd], effect))
+            except (OSError, ValueError) as error:
+                logging.warning('HD art: %s not recreated: %s', standard, error)
         if pictures:
             store.add_pictures(pictures)
         added = len(store.index) - len(held_twins)
@@ -900,9 +906,11 @@ def build_from_map(library, twin_map, progress=None) -> bool:
         store.coverage('')                              # loads the cache: other episodes' entries are kept
         coverage = dict(store._coverage or {})
         ids_by_record = {record['id']: record for record in library.episodes}
-        for record_id, ids in twin_map.COVERAGE.items():
-            if record_id not in ids_by_record or (measured is not None and record_id not in measured):
-                continue
+        measuring = [(record_id, ids) for record_id, ids in twin_map.COVERAGE.items()
+                     if record_id in ids_by_record and (measured is None or record_id in measured)]
+        for done, (record_id, ids) in enumerate(measuring):
+            if progress is not None:
+                progress(done, len(measuring), 'coverage')
             try:
                 total, matched = coverage_counts(library, library.open_episode(record_id), ids)
             except Exception as error:

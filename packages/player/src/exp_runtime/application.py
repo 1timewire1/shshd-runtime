@@ -598,8 +598,9 @@ class Application:
         else:
             from .hd_twins import build_from_map
 
-            def found(done, total):
-                self.progress_text = f'Episode {done + 1} of {total}. This can take a few minutes on a phone.'
+            def found(done, total, stage=None):
+                self.progress_text = (self.hd_art_progress(done, total, 'update', stage) if stage
+                                      else f'Episode {done + 1} of {total}. This can take a few minutes on a phone.')
             build_from_map(library, self.twin_map(library), found)
         return len(library.twin_store())
 
@@ -1958,10 +1959,17 @@ class Application:
         return 'Importing content'
 
     @staticmethod
-    def hd_art_progress(done, total, kind):
+    def hd_art_progress(done, total, kind, stage=None):
         """The busy card's line while HD art is built (owner, 2026-11-25: say why the wait, and that it is once): after
         an update ('update'), for episodes added since ('new'), or for SD Portraits' originals ('sd': its add-on added
-        or removed)."""
+        or removed). Then build_from_map's later stages, which had no line (the g54 showed "Episode 2 of 2" for minutes):
+        the library read for an effect's other half ('search') and the effect pictures made ('pictures')."""
+        if stage == 'search':
+            return f'Episode {done + 1} of {total}: finding the HD pictures to recreate.'
+        if stage == 'pictures':
+            return f'Picture {done + 1} of {total}: recreating HD art to match the standard release.'
+        if stage == 'coverage':
+            return f'Episode {done + 1} of {total}: counting which episodes now play fully in HD.'
         if kind == 'new':
             return f'Episode {done + 1} of {total}: finding the HD art your new episodes add.'
         if kind == 'sd':
@@ -2030,8 +2038,8 @@ class Application:
                     else 'sd' if sd_portraits_due(library, twin_map) else 'new')
             self.job_heading = 'Updating HD Art'
 
-            def found(done, total):
-                self.progress_text = self.hd_art_progress(done, total, kind)
+            def found(done, total, stage=None):
+                self.progress_text = self.hd_art_progress(done, total, kind, stage)
             try:
                 build_from_map(library, twin_map, found)
             finally:
