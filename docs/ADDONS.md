@@ -643,8 +643,8 @@ adding the add-on reads only the add-on, and removing or replacing it gathers th
 `tools/build_sd_addon.py --source LIBRARY --install INSTALL --out DIR` builds it from the player's own standard episodes
 (`--source`: a library holding them, such as a reference library) for what INSTALL (a zip, a folder or an `.exp`, such as
 the tester bulk zip) shows: every HD portrait in INSTALL's files whose originals (the twin map's `SD_OF`, and an
-episode's own different look in `SD_OF_EPISODE`) are all absent from INSTALL. For the v1.1.0 bulk zip that is 444
-portraits. Without it, SD Portraits still shows every original the library's standard episodes hold.
+episode's own different look in `SD_OF_EPISODE`) are all absent from INSTALL. For the v1.1.0 bulk zip that is 471
+pictures (the tinted scenes' 22 backgrounds among them). Without it, SD Portraits still shows every original the library's standard episodes hold.
 
 ## Settings
 
