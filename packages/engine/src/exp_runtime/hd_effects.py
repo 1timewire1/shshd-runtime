@@ -233,6 +233,43 @@ def motion(image, length):
     return ImageChops.offset(out, -((step - 1) // 2), 0)        # centred on each pixel, as a box blur is
 
 
+# ------------------------------------------------------------------------------------------------------------ shape
+
+SHAPE_TOLERANCE = .03       # a background's HD picture whose shape differs more than this from its standard picture's
+
+
+def misshapen(standard_size, hd_size):
+    """Whether a background pair's HD picture has another shape than its standard picture (the Magic School cave:
+    480 x 720 against an HD episode's own 768 x 1024), so drawn as HD art it would leave part of the frame black."""
+    if not standard_size or not hd_size or max(standard_size) < 300:
+        return False                                            # portraits have their own shapes and are fitted apart
+    sx, sy = hd_size[0] / standard_size[0], hd_size[1] / standard_size[1]
+    return abs(sx - sy) / max(sx, sy) > SHAPE_TOLERANCE
+
+
+def cover(image, size):
+    """`image` scaled evenly until it covers `size`, then cropped to it about the centre."""
+    k = max(size[0] / image.width, size[1] / image.height)
+    scaled = image.resize((max(size[0], round(image.width * k)), max(size[1], round(image.height * k))), Image.LANCZOS)
+    left, top = (scaled.width - size[0]) // 2, (scaled.height - size[1]) // 2
+    return scaled.crop((left, top, left + size[0], top + size[1]))
+
+
+def fitted_bytes(data, standard_size):
+    """An HD background's bytes in its standard picture's shape at twice its size (`cover`), as JPEG; `data` itself
+    when the shapes already agree or the picture can't be read."""
+    try:
+        picture = _open(data)
+    except (OSError, ValueError):
+        return data
+    if not misshapen(standard_size, picture.size):
+        return data
+    stream = io.BytesIO()
+    cover(picture.convert('RGB'), (2 * standard_size[0], 2 * standard_size[1])).save(
+        stream, 'JPEG', quality=JPEG_QUALITY, subsampling=0)
+    return stream.getvalue()
+
+
 # ------------------------------------------------------------------------------------------------------------ apply
 
 def recreate(target, hd, effect):
@@ -272,6 +309,9 @@ def apply(standard, hd, effect):
     if not effect:
         return hd
     source, picture = _open(standard), _open(hd)
+    if misshapen(source.size, picture.size):
+        # The HD picture in the standard one's shape first, so the fit compares the same places (the cave).
+        picture = cover(picture.convert('RGB'), (2 * source.width, 2 * source.height))
     keeps_alpha = effect[0] == 'MIRROR' and picture.mode in ('RGBA', 'LA', 'P')
     out = recreate(source, picture.convert('RGBA') if keeps_alpha else picture, effect)
     stream = io.BytesIO()

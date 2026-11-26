@@ -175,7 +175,19 @@ class TwinStore:
                 found = stream.read(entry[1])
         except OSError:
             return None
-        return found if len(found) == entry[1] else None
+        if len(found) != entry[1]:
+            return None
+        if len(entry) > 3:
+            from .hd_effects import fitted_bytes, misshapen
+            if misshapen(entry[2], entry[3]):
+                # A background whose HD picture has another shape (the Magic School cave, 768 x 1024 for 480 x 720)
+                # is served in the standard picture's shape, so it fills the frame as the standard one did. The
+                # store keeps the HD file itself: the shipped map names it by its own fingerprint.
+                fitted = self.__dict__.setdefault('_fitted', {})
+                if key not in fitted:
+                    fitted[key] = fitted_bytes(found, entry[2])
+                return fitted[key]
+        return found
 
     def art(self, data: bytes, mode: str) -> bytes:
         """What to serve for an episode-local picture of a standard episode."""

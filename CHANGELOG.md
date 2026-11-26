@@ -26,7 +26,7 @@
   - **Episodes imported later get their HD art at once:** a standard or HD episode imported after the build is
     searched on its own for the twins, effect pictures and SD originals it makes possible, without a rebuild (before,
     they waited for the next map or Rebuild HD Art).
-  - Coverage of the owner's 80 standard episodes: mean 92.1% → 93.8%, 29 complete (was 28).
+  - Coverage of the owner's 80 standard episodes: mean 92.1% → 93.7%, 29 complete (was 28).
   - New `tools/write_hd_twins.py` writes the store from the reviewed pairs (kept with the art catalogue, outside the
     project). `export_hd_twin_map.py` writes effects and marks the owner's store as built from the new map, and leaves
     the translated games out of coverage. CoD's background effects share the engine's fitting helpers.
@@ -73,8 +73,8 @@
   g54 at 57–60 fps in rounds.
 
 - **SD Portraits** (owner, 2026-11-25; Options › Extras, SHS only). Draws portraits in their standard originals:
-  **Off** (the default), **Everywhere** or **Redesigns Only**, which brings back the 54 portraits the HD release
-  redesigned (Magic School's red-haired Cady, Madame Fortuna, Kevin's lime shirt...) and leaves every redraw in HD.
+  **Off** (the default), **Everywhere** or **Redesigns Only**, which brings back the 49 portraits the HD release
+  redesigned (Magic School's red-haired player, Madame Fortuna, Kevin's lime shirt...) and leaves every redraw in HD.
   - Backgrounds stay HD, and each original is drawn at twice its size, so the layout does not move.
   - A standard episode keeps its own portraits.
   - An HD episode takes the original its story's standard release shows, from the player's standard episodes or the

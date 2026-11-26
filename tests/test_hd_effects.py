@@ -68,6 +68,32 @@ class EffectTests(unittest.TestCase):
         self.assertEqual(out.getpixel((6, 2)), (200, 10, 10, 255))
         self.assertEqual(out.getpixel((1, 2))[3], 0)
 
+    def test_a_background_of_another_shape_is_served_full_frame(self):
+        # The Magic School cave: 480 x 720 against an HD episode's 768 x 1024 left part of the frame black (owner,
+        # 2026-11-25). Portraits keep their own shapes.
+        import tempfile
+        from pathlib import Path
+        from exp_runtime.hd_effects import misshapen
+        from exp_runtime.hd_twins import TwinStore, image_size
+        self.assertTrue(misshapen((480, 720), (768, 1024)))
+        self.assertFalse(misshapen((480, 720), (960, 1440)))
+        self.assertFalse(misshapen((113, 118), (226, 256)))
+        stream = BytesIO()
+        Image.new('RGB', (48, 64), (20, 60, 200)).save(stream, 'PNG')
+        with tempfile.TemporaryDirectory() as folder:
+            store = TwinStore(Path(folder))
+            store.add_pictures({'cave': ((300, 450), stream.getvalue())})
+            served = store.twin_by_key('cave')
+            self.assertEqual(image_size(served), (600, 900))
+            self.assertEqual(Image.open(BytesIO(served)).convert('RGB').getpixel((5, 890))[2] > 150, True)
+
+    def test_an_effect_is_fitted_in_the_standard_pictures_shape(self):
+        standard, hd = BytesIO(), BytesIO()
+        Image.new('RGB', (320, 480), (10, 20, 120)).save(standard, 'PNG')
+        Image.new('RGB', (384, 512), (200, 120, 40)).save(hd, 'PNG')
+        out = Image.open(BytesIO(apply(standard.getvalue(), hd.getvalue(), ('Ecolour',))))
+        self.assertEqual(out.size, (640, 960))
+
     def test_no_effect_keeps_the_hd_bytes_and_an_unknown_one_is_refused(self):
         self.assertIs(apply(b'sd', b'hd', None), b'hd')
         with self.assertRaises(ValueError):

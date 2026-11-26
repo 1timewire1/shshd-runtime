@@ -421,8 +421,8 @@ the new `VERSION` makes every library rebuild once.
 
 **SD Portraits** (Options › Extras; SHS only; owner, 2026-11-25) draws
 portraits in their standard originals: **Off** (the default), **Everywhere**,
-or **Redesigns Only** (the 54 pairs the HD release redesigned, such as Magic
-School's red-haired Cady or Madame Fortuna). Backgrounds are never affected.
+or **Redesigns Only** (the 49 pairs the HD release redesigned, such as Magic
+School's red-haired player or Madame Fortuna). Backgrounds are never affected.
 An original is drawn at twice its size, as `fill` draws a standard picture,
 so the ring and layout stay the same.
 - A standard episode keeps its own portrait instead of the HD twin.
