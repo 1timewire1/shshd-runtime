@@ -103,11 +103,13 @@ folder (never shipped with the project):
 | `shs11` (4) | '11 | Its own app icon (the 480x800 jar's `icon.png`, 102 px) |
 | `shshw` (9) | Surviving Hollywood | Vivendi's banner: the logo and gold reel (`bannerhollywood`, 178 px) |
 | `shsx360` (23) | X360 prototype | It had none: its title logo and the logo's black splat on its rayed sky (MS4's `gui` art, 256 px) |
+| `chc` (3) | Claire Hart Classic | Its title logo (Claire and Paul over the gem banner, as its Title Screen Look) centred on its teal loading backdrop, 256 px (owner, 2026-11-25) |
+| `ch2` (4) | Claire Hart: Secret in the Shadows | Claire's own portrait (her sd normal face, head to waist) centred on the episode select's violet backdrop, 256 px (owner, 2026-11-25) |
 
 `tools/translate/addon_icons.py` makes them: each builder adds them as it builds (`add_icons`, which warns and goes on
 without the reference files), and `addon_icons.py patch IN OUT` adds them to an add-on already built, raising its
-revision by one and keeping every other record byte for byte (how the 2026-11-21 revisions were made). The DSi and
-Claire Hart add-ons have none yet.
+revision by one and keeping every other record byte for byte (how the 2026-11-21 revisions were made, and the Claire
+Hart ones on 2026-11-25). The DSi add-on has none yet.
 
 ## The addons
 
@@ -459,7 +461,7 @@ from either. Since Stage 1 (2026-11-19) `tools/translate/claire_hart.py addon` w
 resources (`chslim.contents(chc=True)`) and everything else of Classic's, used by a case or not, under its own record (`chc`,
 superseding chslim at revision 2). **Revision 2** (2026-11-21) adds Claire Hart UI's pieces for CoD's other screens
 (29109–29118, below); the Classic tester zip carries it (2026-11-24). A library with revision 1 keeps CoD's look on those
-screens, its dialogue skinned as before.
+screens, its dialogue skinned as before. **Revision 3** (2026-11-25) adds only its [picker icon](#picker-icons).
 
 ```sh
 python tools/translate/claire_hart.py addon --mirror CLAIRE_HART_DIR --pairs PAIRS.txt --catalog COD_CATALOG_PORTRAITS \
@@ -578,7 +580,8 @@ The add-on of the translated Secret in the Shadows cases (Other Games/docs/CLAIR
 31900. `tools/translate/claire_hart_shadows.py addon` writes it from the sequel's mirror (build 232). **Revision 1**
 (2026-11-24) has the story's art and music; **revision 2** adds Secret in the Shadows UI (the dialogue skin, above);
 **revision 3** (2026-11-25) adds the Title Screen Look and Music (`--patch` gives a revision 2 build the title without
-rebuilding it). The cases need revision 1; the tester zip carries revision 3. About 653 MB.
+rebuilding it); **revision 4** (2026-11-25) only its [picker icon](#picker-icons). The cases need revision 1; the tester
+zip carries revision 3. About 653 MB.
 
 ```sh
 python tools/translate/claire_hart_shadows.py addon --mirror CH2_DIR --out OUT_DIR [--patch OUT_DIR/CH_Shadows.exp]   # FFmpeg on PATH

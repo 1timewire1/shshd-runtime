@@ -981,6 +981,8 @@ def addon(mirror, pairs, catalog, sources, extras, sequel, progress=print):
             width, height = image.size
         spec['scenes'][folder] = [ident, (width - round(height * 3 / 4)) // 2]     # centred
     resources[SPEC] = json.dumps(spec, separators=(',', ':')).encode('utf-8')
+    import addon_icons
+    addon_icons.add_icons(resources, chslim.CHC_ID)                 # rev 3: the game chooser's icon
     resources[ADDON_RECORD] = provides_bytes(chslim.CHC_ID, chslim.CHC_TITLE, chslim.CHC_REVISION,
                                              supersedes=((chslim.ADDON_ID, chslim.ADDON_REVISION),))
     report.update(portraits=len(mirror.portraits()), looks=len(spec['looks']), backdrops=len(scenes),

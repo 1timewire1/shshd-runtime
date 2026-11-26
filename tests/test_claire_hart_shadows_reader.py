@@ -322,7 +322,7 @@ class TitleLookTests(unittest.TestCase):
             self.assertEqual(picture.getpixel(corner)[3], 0, corner)
         self.assertEqual(picture.getpixel((width // 2, height // 2)), (90, 40, 120, 255))
         self.assertEqual(s2.TITLE_LOOK['background']['cover']['id'], s2.FRAME_BACKDROP)
-        self.assertEqual((s2.TITLE_SPEC, s2.TITLE_MUSIC, s2.ADDON_REVISION), (26960, 26990, 3))
+        self.assertEqual((s2.TITLE_SPEC, s2.TITLE_MUSIC, s2.ADDON_REVISION), (26960, 26990, 4))
 
 
 if __name__ == '__main__':

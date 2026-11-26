@@ -26,6 +26,11 @@ class AddonIconTests(unittest.TestCase):
         self.fake = {'shsbrew': [('brew07', "SHS '07", square('red'), True, '07'), ('brew08', "SHS '08", square('blue'), False, '08')],
                      'shs11': [('shs11', "SHS '11", square('green'), True, None)]}
 
+    def test_the_claire_hart_add_ons_have_their_icons(self):
+        # Owner, 2026-11-25: Classic's title logo on its backdrop, and Claire on the sequel's violet.
+        self.assertEqual([game[:2] for game in self.icons.ICONS['chc']], [('chc', 'Claire Hart Classic')])
+        self.assertEqual([game[:2] for game in self.icons.ICONS['ch2']], [('ch2', 'Claire Hart: Secret in the Shadows')])
+
     def test_records_spec_and_pictures(self):
         with patch.dict(self.icons.ICONS, self.fake, clear=True):
             records = self.icons.icon_resources('shsbrew', Path('unused'))

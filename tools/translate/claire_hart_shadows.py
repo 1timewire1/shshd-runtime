@@ -72,7 +72,8 @@ from claire_hart import markdown_table, mp3, norm, story_text      # noqa: E402
 from exp_runtime.claire_round_services import shadows_key  # noqa: E402
 
 PACK_ID = 31900
-ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'ch2', 'Claire Hart: Secret in the Shadows', 3     # (2: S2b's skin; 3: the title)
+ADDON_ID, ADDON_TITLE, ADDON_REVISION = 'ch2', 'Claire Hart: Secret in the Shadows', 4     # (2: S2b's skin; 3: the title;
+#                                                                                            4: the game chooser's icon)
 # The ch2 revision the cases need: 1. Revision 2 adds only the skin, which the player draws when it finds it (as chc's 2).
 CASES_NEED_CH2 = 1
 TITLE_TAG = ' (CH2)'
@@ -934,6 +935,8 @@ def addon(mirror, progress=print):
     import ch2_dialogue_skin
     resources.update(ch2_dialogue_skin.build(mirror.root))          # (revision 2: Secret in the Shadows UI)
     resources.update(title_resources(mirror))                       # (revision 3)
+    import addon_icons
+    addon_icons.add_icons(resources, ADDON_ID)                      # (revision 4: the game chooser's icon)
     resources[ADDON_RECORD] = provides_bytes(ADDON_ID, ADDON_TITLE, ADDON_REVISION)
     report = dict(portraits=len(ids), pictures=len(set(ids.values())), looks=len(art[0]), backdrops=len(scenes),
                   tracks=len(tracks), story_objects=len(mirror.story_object_ids()), resources=len(resources))
@@ -1221,7 +1224,10 @@ def main(argv=None):
         args.out.mkdir(parents=True, exist_ok=True)
         out = args.out / 'CH_Shadows.exp'
         made = out.with_suffix('.new.exp')
-        size = patch_addon(args.patch, title_resources(mirror), made)
+        import addon_icons
+        added = dict(title_resources(mirror))
+        addon_icons.add_icons(added, ADDON_ID)                          # (revision 4: the game chooser's icon)
+        size = patch_addon(args.patch, added, made)
         made.replace(out)                           # (the patched build may be the one it replaces)
         print(f'addon: {ADDON_TITLE!r} revision {ADDON_REVISION} -> {out} ({size // 2 ** 20} MB)')
     else:

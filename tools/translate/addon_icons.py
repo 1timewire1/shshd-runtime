@@ -77,6 +77,59 @@ def _x360_icon(reference, size=512, out=256):
     return sky.resize((out, out), Image.LANCZOS)
 
 
+CLASSIC = Path('Claire Hart Classic')                         # the Pogo mirrors (claire_hart.py, claire_hart_shadows.py)
+SHADOWS = Path('Claire Hart Secret in the Shadows')
+SHADOWS_ELSEWHERE = Path('D:/SHSHD/reference/Other Games')     # where the owner keeps the sequel's mirror (2026-11-20)
+
+
+def _mirror_picture(root, real_path):
+    """A picture of a Pogo mirror by its game path (bundle_names.csv: several local files can carry one name)."""
+    import csv
+    with open(root / 'bundle_names.csv', encoding='utf-8-sig', newline='') as file:
+        for row in csv.DictReader(file):
+            if row['real_path'] == real_path:
+                try:
+                    image = Image.open(root / row['local_path'])
+                    image.load()
+                    return image.convert('RGBA')
+                except OSError:
+                    continue
+    raise FileNotFoundError(f'{real_path} in {root}')
+
+
+def _centre_square(image):
+    side = min(image.size)
+    return image.crop(((image.width - side) // 2, (image.height - side) // 2,
+                       (image.width + side) // 2, (image.height + side) // 2))
+
+
+def _chc_icon(reference, size=256):
+    """Claire Hart Classic (owner, 2026-11-25): its title logo (Claire and Paul over the gem banner, as `chc`'s Title
+    Screen Look has it) centred on its teal loading backdrop (`chc`'s frame backdrop)."""
+    root = reference / CLASSIC
+    logo = _load(root / 'raw/157/assets/resources/native/17/170baf746.png').crop((3, 3, 459, 384))
+    logo = logo.crop(logo.getbbox())
+    icon = _centre_square(_mirror_picture(root, 'textures/new/loadingscreen_bg16_9')).resize((size, size), Image.LANCZOS)
+    logo = _fit_width(logo, size * 0.9) if logo.width >= logo.height else logo.resize(
+        (round(logo.width * size * 0.9 / logo.height), round(size * 0.9)), Image.LANCZOS)
+    icon.alpha_composite(logo, ((size - logo.width) // 2, (size - logo.height) // 2))
+    return icon
+
+
+def _ch2_icon(reference, size=256):
+    """Claire Hart: Secret in the Shadows (owner, 2026-11-25): Claire's own portrait (her sd normal face, head to waist)
+    centred on the episode select's violet backdrop (`ch2`'s frame backdrop)."""
+    root = reference / SHADOWS if (reference / SHADOWS).is_dir() else SHADOWS_ELSEWHERE / SHADOWS
+    claire = _mirror_picture(root, 'references/characters/Avatar_ClaireHart/sd/avatar_clairehart_normal')
+    claire = claire.crop(claire.getbbox())
+    icon = _centre_square(_mirror_picture(root, 'textures/SD/episodeSelector/episodeselector_bg')).resize(
+        (size, size), Image.LANCZOS)
+    k = size * 0.96 / max(claire.size)
+    claire = claire.resize((round(claire.width * k), round(claire.height * k)), Image.LANCZOS)
+    icon.alpha_composite(claire, ((size - claire.width) // 2, size - claire.height))
+    return icon
+
+
 # Each game: (key, chooser title, how its icon is made from the reference folder, smooth, edition). Owner's picks 2026-11-21.
 ICONS = {
     'shsnr': [('nr', 'Surviving High School: New Rules',
@@ -91,6 +144,9 @@ ICONS = {
     'shshw': [('shw', 'Surviving Hollywood',                                                             # Vivendi's banner
                lambda r: _square(_load(r / VIVENDI / 'bannerhollywood.jpg'), (6, 10, 178)), True, None)],
     'shsx360': [('x360', 'Surviving High School (Xbox 360 prototype)', _x360_icon, True, None)],
+    # Cause of Death's Claire Hart add-ons (owner, 2026-11-25): its title logo, and Claire on the sequel's violet.
+    'chc': [('chc', 'Claire Hart Classic', _chc_icon, True, None)],
+    'ch2': [('ch2', 'Claire Hart: Secret in the Shadows', _ch2_icon, True, None)],
 }
 
 
