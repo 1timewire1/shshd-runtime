@@ -11,7 +11,7 @@
 
 - **HD art for standard episodes: the art audit's corrections** (owner's review, 2026-11-24/25). Every SHS episode,
   standard and HD, was walked through its branches with the engine, and every SD-HD pair checked by eye with the owner.
-  The twin map (`shs/hd_twin_map.py`, version `fd5909bf8dce`) now holds 2,028 pairs (was 1,795):
+  The twin map (`shs/hd_twin_map.py`, version `e84754aafab0`) now holds 2,028 pairs (was 1,795):
   - **Added:** 187 portraits (characters the old short walk never reached, costume looks, art one story shares
     with another story's HD) and 43 backgrounds.
   - **Removed:** a night house paired with a cemetery path, and the rainy windshield whose scenes are about the rain.
@@ -26,7 +26,7 @@
   - **Episodes imported later get their HD art at once:** a standard or HD episode imported after the build is
     searched on its own for the twins, effect pictures and SD originals it makes possible, without a rebuild (before,
     they waited for the next map or Rebuild HD Art).
-  - Coverage of the owner's 80 standard episodes: mean 92.1% → 93.7%, 29 complete (was 28).
+  - Coverage of the owner's 80 standard episodes: mean 92.1% → 93.8%, 29 complete (was 28).
   - New `tools/write_hd_twins.py` writes the store from the reviewed pairs (kept with the art catalogue, outside the
     project). `export_hd_twin_map.py` writes effects and marks the owner's store as built from the new map, and leaves
     the translated games out of coverage. CoD's background effects share the engine's fitting helpers.
