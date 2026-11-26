@@ -185,6 +185,24 @@ class SdPortraitsTests(unittest.TestCase):
         build_from_map(without, self.map)
         self.assertIsNone(without.sd_portraits_store().original('hd_party_fowl', fingerprint(self.hd_viv)))
 
+    def test_a_redesign_tagged_on_its_hd_picture_leaves_a_shared_original_plain_elsewhere(self):
+        # 10_2's costume Ben (hd/0404) and plain HD Ben (hd/0425) both go back to sd/0512: only the costume is a
+        # redesign, so the tag is on its HD picture (owner, 2026-11-25).
+        costume, plain = png((128, 128), 'purple'), png((128, 128), 'navy')
+        ben = png((64, 64), 'teal')
+        self.map.SD_OF[fingerprint(costume)] = (fingerprint(ben),)
+        self.map.SD_OF[fingerprint(plain)] = (fingerprint(ben),)
+        self.map.REDESIGNED = frozenset(self.map.REDESIGNED | {fingerprint(costume)})
+        library = self.library()
+        library._assets['standard_12_7'][26002] = ben
+        build_from_map(library, self.map)
+        library.sd_portraits = 'redesigns'
+        episode = resources(library, 'hd_party_fowl', 'hd', {})
+        self.assertIsNotNone(episode._sd_original(costume))                 # the costume goes back to SD Ben
+        self.assertIsNone(episode._sd_original(plain))                      # plain Ben stays HD
+        standard = resources(library, 'standard_12_7', 'standard', {})
+        self.assertFalse(standard._keeps_standard_portrait(ben))           # a standard episode shows plain Ben's twin
+
     def tinted_map(self):
         """The noir pair: a greyscale standard scene and its colour HD picture, which one HD episode (its own story's)
         lists as tinted and another story shows as it is."""

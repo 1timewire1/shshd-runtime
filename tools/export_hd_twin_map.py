@@ -95,7 +95,8 @@ def main():
             "# ...an HD episode's own original where its story's standard release shows another: (standard, strict), strict\n"
             '# when it is a different look (no fallback to SD_OF)\n'
             f'SD_OF_EPISODE = {{\n{episodes}}}\n\n'
-            '# standard pictures whose pair is a redesign (Redesigns Only)\n'
+            '# pictures whose pair is a redesign (Redesigns Only): the standard original, or the HD picture where the\n'
+            '# original is shared with a plain redraw (SdPortraits.original)\n'
             f'REDESIGNED = frozenset({{\n{redesigned}}})\n\n'
             "# shared-bank ids that are portraits (Everywhere draws Android's)\n"
             f'BANK_PORTRAITS = frozenset({{{bank}}})\n' + tint_text) if portraits else ''

@@ -372,11 +372,15 @@ class SdPortraits:
         return [key] if strict else [key, *shared]
 
     def original(self, record_id, hd_key):
-        """(the original's bytes, whether its pair is a redesign) for an HD episode's portrait, or None."""
+        """(the original's bytes, whether its pair is a redesign) for an HD episode's portrait, or None. A redesign is
+        tagged on the standard original, or (2026-11-25) on the HD picture itself where the standard original is shared
+        with a plain redraw: 10_2_The_Contestants' costume Ben (hd/0404-0408) goes back to sd/0512-0516, which plain HD
+        Ben (hd/0425-0429) in six other stories also goes back to, and those must stay HD under Redesigns Only."""
+        redesigned = self.tables['redesigned']
         for key in self.candidates(record_id, hd_key):
             data = self.pictures.twin_by_key(key)
             if data is not None:
-                return data, key in self.tables['redesigned']
+                return data, key in redesigned or hd_key in redesigned
         return None
 
     def wanted(self):
