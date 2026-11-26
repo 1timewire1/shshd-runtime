@@ -342,14 +342,22 @@ class SdPortraits:
                 data = {}
             self._tables = dict(sd_of=data.get('sd_of', {}), sd_of_episode=data.get('sd_of_episode', {}),
                                 redesigned=set(data.get('redesigned', ())),
-                                bank_portraits=set(data.get('bank_portraits', ())))
+                                bank_portraits=set(data.get('bank_portraits', ())),
+                                tints_of_episode=data.get('tints_of_episode', {}))
         return self._tables
+
+    def tint(self, record_id, resource_id):
+        """SD Background Tints: the standard picture whose tinted HD version this HD episode's background stands for (the
+        scene its story's standard release showed tinted), or None."""
+        return self.tables['tints_of_episode'].get(record_id, {}).get(str(resource_id))
 
     def write_tables(self, twin_map):
         self.pictures.directory.mkdir(parents=True, exist_ok=True)
+        tints = {record: {str(resource): standard for resource, standard in table.items()}
+                 for record, table in getattr(twin_map, 'TINTS_OF_EPISODE', {}).items()}
         data = dict(sd_of=getattr(twin_map, 'SD_OF', {}), sd_of_episode=getattr(twin_map, 'SD_OF_EPISODE', {}),
                     redesigned=sorted(getattr(twin_map, 'REDESIGNED', ())),
-                    bank_portraits=sorted(getattr(twin_map, 'BANK_PORTRAITS', ())))
+                    bank_portraits=sorted(getattr(twin_map, 'BANK_PORTRAITS', ())), tints_of_episode=tints)
         (self.pictures.directory / TABLES).write_text(json.dumps(data, separators=(',', ':')), encoding='utf-8')
         self._tables = None
 
@@ -749,9 +757,16 @@ def build_from_map(library, twin_map, progress=None) -> bool:
     fresh = [] if twins_due else new_episodes(library, twin_map)
     if not twins_due and not sd_due and not fresh:
         return False
-    # Only episodes imported since the store was built (`new_episodes`): the pictures they make possible are added,
-    # nothing is cleared, and the rest of the library is read only for an effect's other half.
-    incremental = not twins_due and bool(fresh)
+    # The SD add-on just added to a store gathered from this map without it: only the add-on is read, for what the
+    # library's episodes lacked (6 minutes on the g54 for a full regather, 2026-11-25). Removed or replaced, the
+    # originals are gathered again from everything.
+    sd_source = sd_store.source() if sd_due else {}
+    sd_added = (sd_due and not twins_due and sd_source.get('map') == twin_map.VERSION
+                and sd_source.get('addon') is None and sd_addon_revision(library) is not None)
+    # Only episodes imported since the store was built (`new_episodes`), or the SD add-on just added (it carries the
+    # standard pictures the tinted backgrounds are fitted from): the pictures they make possible are added, nothing is
+    # cleared, and the rest of the library is read only for an effect's other half.
+    incremental = not twins_due and (bool(fresh) or sd_added)
     held_twins = set() if twins_due else set(store.index)
     wanted, standards = {}, set()                       # hd fingerprint -> [(standard, size, effect)]; effect sources
     if twins_due:
@@ -766,12 +781,6 @@ def build_from_map(library, twin_map, progress=None) -> bool:
             if effect:
                 standards.add(standard)
     originals = set()                                   # SD Portraits: the standard originals of HD portraits
-    # The SD add-on just added to a store gathered from this map without it: only the add-on is read, for what the
-    # library's episodes lacked (6 minutes on the g54 for a full regather, 2026-11-25). Removed or replaced, the
-    # originals are gathered again from everything.
-    sd_source = sd_store.source() if sd_due else {}
-    sd_added = (sd_due and not twins_due and sd_source.get('map') == twin_map.VERSION
-                and sd_source.get('addon') is None and sd_addon_revision(library) is not None)
     if sd_due and not sd_added:
         sd_store.pictures.clear()
         sd_store.write_tables(twin_map)
@@ -789,12 +798,14 @@ def build_from_map(library, twin_map, progress=None) -> bool:
                 yield record.get('name'), library.open_episode(record['id']).archive
             except Exception as error:                  # one unreadable episode must not stop the rest
                 logging.warning('HD art: skipped %s: %s', record.get('name'), error)
-        if addon and originals and sd_due:
-            found_addon = library.addon(SD_ADDON) if hasattr(library, 'addon') else None
-            if found_addon is not None:
-                yield SD_ADDON, found_addon[1]
+        if addon and sd_addon is not None:              # its originals, and the standard pictures tints are fitted from
+            yield SD_ADDON, sd_addon[1]
 
-    total = len(records) + bool(originals and sd_due)
+    try:
+        sd_addon = library.addon(SD_ADDON) if hasattr(library, 'addon') else None
+    except Exception:
+        sd_addon = None
+    total = len(records) + (sd_addon is not None)
     for done, (name, archive) in enumerate(archives(records)):
         if progress is not None:
             progress(min(done, total - 1), total)

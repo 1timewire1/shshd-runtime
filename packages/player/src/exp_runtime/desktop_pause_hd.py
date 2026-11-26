@@ -54,6 +54,9 @@ JOURNAL_LABEL = 'Quest Journal'                # the pause menu's row in a story
 COD_JOURNAL_LABEL = 'Case Journal'            # ...in CoD's (Claire Hart: Secret in the Shadows' case notes)
 ALLOW_UNDO_LABEL = 'Allow Undo'                # Extras: keeps a save at each stop and offers that row (owner, 2026-11-06)
 ALLOW_SKIP_AHEAD_LABEL = 'Allow Skip Ahead'    # Extras: offers that row and key (owner, 2026-11-04)
+# Extras' SD Background Tints (owner, 2026-11-25; with the SD Portraits add-on): HD episodes' scenes tinted as their story's
+# standard release showed them (content.EpisodeResources._sd_tint).
+SD_TINTS_LABEL = 'SD Background Tints'
 GRIDS_AS_MEMORY_LABEL = "Use '11's Memory for Word Grid"     # SHS '11's game in place of letter grids (owner, 2026-11-04)
 SKIP_AD_INTROS_LABEL = 'Skip Ad Intros'
 SKIP_UPSELL_INTROS_LABEL = 'Skip Upsell Intros'    # the store plugs some SHS episodes open with (upsell_intro.py)
@@ -150,7 +153,8 @@ OPTION_CATEGORIES = (('general', 'General'), ('sound', 'Sound'), ('controller', 
                      ('addons', 'Add-Ons'), ('data', 'Data Management'))
 GENERAL_KEYS = ('side_panels', 'device_vibration', 'autoplay', 'skip_ad_intros', 'skip_upsell_intros', 'hd_backdrop',
                 'check_updates')
-EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames', 'skip_ahead', 'undo', 'grids_as_memory')
+EXTRAS_KEYS = ('disable_choice_timer', 'choice_hints', 'skip_minigames', 'skip_ahead', 'undo', 'grids_as_memory',
+               'sd_tints')
 # In the episode lists' order of their games (owner, 2026-11-19): '07, '08, New Rules, X360, '11, then CoD's; last the two
 # that need two add-ons, Use SHW Art in Preview ('07's story with `shshw`) and the X360 Arena Skin.
 ADDON_KEYS = ('arena_minigames', 'brew_08_backgrounds', 'java_look', 'hires_portraits', 'ms3_characters', 'smartphone_music',
@@ -262,7 +266,7 @@ CYCLE_SIZE, CYCLE_POINTS = (104, 34), 18
 SWITCH_LABELS = {'side_panels': SIDE_PANELS_LABEL, 'device_vibration': DEVICE_VIBRATION_LABEL,
                  'autoplay': AUTOPLAY_LABEL, 'disable_choice_timer': DISABLE_CHOICE_TIMER_LABEL, 'choice_hints': CHOICE_HINTS_LABEL,
                  'skip_minigames': SKIP_MINIGAMES_LABEL, 'skip_ad_intros': SKIP_AD_INTROS_LABEL,
-                 'grids_as_memory': GRIDS_AS_MEMORY_LABEL, 'skip_ahead': ALLOW_SKIP_AHEAD_LABEL, 'undo': ALLOW_UNDO_LABEL,
+                 'grids_as_memory': GRIDS_AS_MEMORY_LABEL, 'sd_tints': SD_TINTS_LABEL, 'skip_ahead': ALLOW_SKIP_AHEAD_LABEL, 'undo': ALLOW_UNDO_LABEL,
                  'skip_upsell_intros': SKIP_UPSELL_INTROS_LABEL,
                  'hd_backdrop': HD_BACKDROP_LABEL, 'hires_portraits': HIRES_PORTRAITS_LABEL,
                  'ms3_characters': MS3_CHARACTERS_LABEL, 'java_look': JAVA_LOOK_LABEL, 'brew_08_backgrounds': BREW_08_BACKGROUNDS_LABEL, 'hollywood_art': HOLLYWOOD_ART_LABEL, 'dsi_backgrounds': DSI_BACKGROUNDS_LABEL, 'smartphone_music': SMARTPHONE_MUSIC_LABEL, 'word_grid_skin': WORD_GRID_SKIN_LABEL,

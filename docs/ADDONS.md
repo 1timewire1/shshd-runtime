@@ -633,10 +633,12 @@ About 573 MB. Story objects are resolved by name (decision G2): 630 of 646; the 
 
 ### `shssd`: SD Portraits
 
-Optional, for SHS's **SD Portraits** (Options › Extras; [RUNTIME.md](RUNTIME.md#hd-art-for-standard-episodes-this-fork)).
-Revision 1. It holds the standard originals of the HD portraits an install shows that its own files lack, at 26000 on
-in no particular order: the app finds each by content (`hd_twins.build_from_map` gathers them into `sd_portraits/`,
-and gathers them again when the add-on's revision changes). Its pack is 32100.
+Optional, for SHS's **SD Portraits** and **SD Background Tints** (Options › Extras; the second is offered only with this
+add-on; [RUNTIME.md](RUNTIME.md#hd-art-for-standard-episodes-this-fork)). Revision 2. It holds the standard originals of
+the HD portraits an install shows that its own files lack, and (revision 2, 2026-11-25) the standard backgrounds the
+tinted scenes of `TINTS_OF_EPISODE` are fitted from, at 26000 on in no particular order: the app finds each by content
+(`hd_twins.build_from_map` gathers the originals into `sd_portraits/` and makes the tinted pictures in the twin store;
+adding the add-on reads only the add-on, and removing or replacing it gathers the originals again). Its pack is 32100.
 
 `tools/build_sd_addon.py --source LIBRARY --install INSTALL --out DIR` builds it from the player's own standard episodes
 (`--source`: a library holding them, such as a reference library) for what INSTALL (a zip, a folder or an `.exp`, such as

@@ -81,6 +81,11 @@
     new **SD Portraits add-on** (`shssd`, built by `tools/build_sd_addon.py`). Built for the v1.1.0 bulk zip, it carries
     the 444 originals that install lacks.
   - Changes at once, mid-episode too; saves are unaffected.
+- **SD Background Tints** (owner, 2026-11-25; Options › Extras, SHS, offered with the SD Portraits add-on): HD
+  episodes show the scenes their story's standard release showed tinted: Andy Cannelloni PI's noir scenes and green
+  hallway (18) and The Prince Plot Part 2's noir (8), at HD sharpness. Only those stories' own scenes, matched by
+  resource (`TINTS_OF_EPISODE`): the same HD pictures elsewhere stay in colour. The add-on's revision 2 carries the
+  standard backgrounds they're fitted from. Off by default; changes at once.
 
 - **Claire Hart Classic in the Creator** (Claire Hart plan Stage 6, owner 2026-11-24; `claire-hart` branch). A Cause of Death
   project can take `chc` as its primary add-on (Add-ons and settings…, now open to CoD projects, which also reaches CoD's

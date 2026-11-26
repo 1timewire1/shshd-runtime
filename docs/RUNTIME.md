@@ -425,6 +425,16 @@ or **Redesigns Only** (the 49 pairs the HD release redesigned, such as Magic
 School's red-haired player or Madame Fortuna). Backgrounds are never affected.
 An original is drawn at twice its size, as `fill` draws a standard picture,
 so the ring and layout stay the same.
+
+**SD Background Tints** (Options › Extras; SHS, offered only with the
+`shssd` add-on; owner, 2026-11-25) shows an HD episode's scenes tinted as its
+story's standard release showed them: 34_Andy_Cannelloni_PI's noir scenes and
+green hallway, 38_The_Prince_Plot_Part_2's noir. The map's
+`TINTS_OF_EPISODE` lists them per HD episode and resource, matched to the
+standard release scene by scene, so the same HD picture in another story
+(The Break Up, Big Man On Campus...) stays as it is. The tinted picture is
+the twin store's recreated one (`hd_effects`), fitted from the standard
+picture the add-on carries (`EpisodeResources._sd_tint`).
 - A standard episode keeps its own portrait instead of the HD twin.
 - An HD episode needs the original from elsewhere. The map's `SD_OF` names
   it for each HD portrait, and `SD_OF_EPISODE` an episode's own where its

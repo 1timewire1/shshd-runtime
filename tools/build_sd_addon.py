@@ -27,7 +27,7 @@ from exp_runtime.exp import ExpArchive, Metadata, encode_exp
 from exp_runtime.hd_twins import LOCAL_ART, SD_ADDON, fingerprint
 
 TITLE = 'SD Portraits'
-REVISION = 1
+REVISION = 2                # 2 (2026-11-25): the standard pictures SD Background Tints are fitted from
 PACK_ID = 32100             # its metadata's pack: it has no episodes (past Novel Extended's 32000)
 FIRST = 26000
 NAME = 'SD_Addon_SD_Portraits.exp'
@@ -74,6 +74,10 @@ def needed(twin_map, files):
         for hd, (key, strict) in sorted(twin_map.SD_OF_EPISODE.get(record, {}).items()):
             if strict and hd in keys and key not in held:
                 need.append(key)
+        # SD Background Tints (revision 2): the standard pictures an HD episode's tinted scenes are fitted from.
+        for _, standard in sorted(getattr(twin_map, 'TINTS_OF_EPISODE', {}).get(record, {}).items()):
+            if standard not in held:
+                need.append(standard)
     return list(dict.fromkeys(need))
 
 

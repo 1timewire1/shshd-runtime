@@ -3145,6 +3145,25 @@ class Desktop:
         """Whether SD Portraits concerns this story: an SHS episode."""
         return game_id(self.session.resources) == 'shs'
 
+    sd_tints = False            # SD Background Tints (Extras, with the SD add-on): set_sd_tints
+
+    def set_sd_tints(self, value):
+        """shshd-runtime: Extras' SD Background Tints. The library reads it from the next picture drawn
+        (content.EpisodeResources._sd_tint), and the cached pictures are dropped so the background on screen takes it at
+        once. Saves name resources, never pictures, so they need nothing."""
+        self.sd_tints = bool(value)
+        library = getattr(self.session.resources, 'library', None)
+        if library is not None:
+            library.sd_tints = self.sd_tints
+        self._drop_portraits()
+
+    def sd_tints_switch(self):
+        """Whether SD Background Tints concerns this story: an SHS episode, with the SD Portraits add-on imported."""
+        from .hd_twins import SD_ADDON
+        library = getattr(self.session.resources, 'library', None)
+        return (game_id(self.session.resources) == 'shs' and library is not None and hasattr(library, 'addon')
+                and library.addon(SD_ADDON) is not None)
+
     def _drop_portraits(self):
         self.images.clear()
         cached = [DialogueRenderer.portrait, DialogueRenderer.hd_portrait, DialogueRenderer._portrait_parts,
@@ -4351,6 +4370,7 @@ class Desktop:
                        if self.dsi_switch() else {}),
                     **({'sd_portraits': SD_PORTRAITS_NAMES[self.sd_portraits]}
                        if getattr(self, 'sd_portraits_switch', None) and self.sd_portraits_switch() else {}),
+                    **({'sd_tints': self.sd_tints} if getattr(self, 'sd_tints_switch', None) and self.sd_tints_switch() else {}),
                     **({'preferred_language': LANGUAGE_NAMES[self.preferred_language]}
                        if self.preferred_language_switch() else {}),
                     **({'smartphone_music': self.smartphone_music} if self.smartphone_switch() else {}),
@@ -4721,6 +4741,8 @@ class Desktop:
                 self.word_grid_skin = not self.word_grid_skin
             elif command[1] == 'grids_as_memory':
                 self.grids_as_memory = not self.grids_as_memory
+            elif command[1] == 'sd_tints':
+                self.set_sd_tints(not self.sd_tints)
             elif command[1] == 'ch_portraits':
                 self.set_ch_portraits(not self.ch_portraits)
             elif command[1] == 'ch_43':

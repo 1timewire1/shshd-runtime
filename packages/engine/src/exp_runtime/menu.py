@@ -87,7 +87,7 @@ MAX_NAMES = 4096               # player.json `names`: far more keys than the who
 SHARED_PREFERENCES = dict(
     music=bool, sound=bool, vibration=bool, device_vibration=bool, logging_disabled=bool, choice_hints=bool,
     skip_minigames=bool, skip_ad_intros=bool, skip_upsell_intros=bool, autoplay=bool, disable_choice_timer=bool,
-    side_panels=bool, hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, brew_08_backgrounds=bool, hollywood_art=bool, dsi_backgrounds=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, undo=bool, ch_portraits=bool, ch_backdrop=CH_BACKDROPS, dim_backdrops=bool, ch_43=bool, ch_dialogue=('auto', 'off', 'classic', 'shadows'), sd_portraits=('off', 'all', 'redesigns'), claire_powerups=('once', 'unlimited', 'off'), claire_round_style=('own', 'classic', 'shadows'), arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
+    side_panels=bool, hd_backdrop=bool, hires_portraits=bool, ms3_characters=bool, java_look=bool, brew_08_backgrounds=bool, hollywood_art=bool, dsi_backgrounds=bool, smartphone_music=bool, word_grid_skin=bool, grids_as_memory=bool, skip_ahead=bool, undo=bool, ch_portraits=bool, ch_backdrop=CH_BACKDROPS, dim_backdrops=bool, ch_43=bool, ch_dialogue=('auto', 'off', 'classic', 'shadows'), sd_portraits=('off', 'all', 'redesigns'), sd_tints=bool, claire_powerups=('once', 'unlimited', 'off'), claire_round_style=('own', 'classic', 'shadows'), arena_minigames=bool, arena_skin=bool, skip_sound_prompt=bool, music_volume=range(101), sound_volume=range(101),
     controller_confirm=('south', 'east'), grid_controls=('tap', 'hold'), dsi_pixels=('sharp', 'smooth'),
     text_animation=TEXT_ANIMATIONS,
     preferred_language=PREFERRED_LANGUAGES,
@@ -234,6 +234,8 @@ class MenuState:
                     self.ch_dialogue = skin_choice(data['ch_dialogue'])     # (Off / Cases / Everywhere carry over)
                 if data.get('sd_portraits') in ('off', 'all', 'redesigns'):
                     self.sd_portraits = data['sd_portraits']
+                if type(data.get('sd_tints')) is bool:
+                    self.sd_tints = data['sd_tints']
                 if data.get('claire_powerups') in ('once', 'unlimited', 'off'):
                     self.claire_powerups = data['claire_powerups']
                 if data.get('claire_round_style') in ('own', 'classic', 'shadows'):
@@ -346,6 +348,8 @@ class MenuState:
         # SD Portraits (Extras; owner, 2026-11-25): SHS's portraits in their standard originals: 'off', 'all' or only the
         # pairs the HD release redesigned ('redesigns') (content.EpisodeResources._sd_original)
         self.sd_portraits = 'off'
+        # SD Background Tints (Extras, with the SD add-on): HD episodes' scenes tinted as their standard release showed them
+        self.sd_tints = False
         self.claire_powerups = 'once'           # Claire Hart's rounds' power-ups (R2): once each a round, unlimited, off
         # ...and their Round Style (claire_round_style.py): each game's own rules and screen, or Classic's or the sequel's
         # for both (with both rounds add-ons)
@@ -495,7 +499,7 @@ class MenuState:
                     skip_upsell_intros=self.skip_upsell_intros,
                     autoplay=self.autoplay, disable_choice_timer=self.disable_choice_timer,
                     side_panels=self.side_panels, hd_backdrop=self.hd_backdrop, hires_portraits=self.hires_portraits,
-                    ms3_characters=self.ms3_characters, java_look=self.java_look, brew_08_backgrounds=self.brew_08_backgrounds, hollywood_art=self.hollywood_art, dsi_backgrounds=self.dsi_backgrounds, dsi_pixels=self.dsi_pixels, smartphone_music=self.smartphone_music, word_grid_skin=self.word_grid_skin, grids_as_memory=self.grids_as_memory, skip_ahead=self.skip_ahead, undo=self.undo, ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop, dim_backdrops=self.dim_backdrops, ch_43=self.ch_43, ch_dialogue=self.ch_dialogue, sd_portraits=self.sd_portraits, claire_powerups=self.claire_powerups, claire_round_style=self.claire_round_style,
+                    ms3_characters=self.ms3_characters, java_look=self.java_look, brew_08_backgrounds=self.brew_08_backgrounds, hollywood_art=self.hollywood_art, dsi_backgrounds=self.dsi_backgrounds, dsi_pixels=self.dsi_pixels, smartphone_music=self.smartphone_music, word_grid_skin=self.word_grid_skin, grids_as_memory=self.grids_as_memory, skip_ahead=self.skip_ahead, undo=self.undo, ch_portraits=self.ch_portraits, ch_backdrop=self.ch_backdrop, dim_backdrops=self.dim_backdrops, ch_43=self.ch_43, ch_dialogue=self.ch_dialogue, sd_portraits=self.sd_portraits, sd_tints=self.sd_tints, claire_powerups=self.claire_powerups, claire_round_style=self.claire_round_style,
                     arena_minigames=self.arena_minigames, arena_skin=self.arena_skin,
                     skip_sound_prompt=self.skip_sound_prompt, controller_confirm=self.controller_confirm,
                     grid_controls=self.grid_controls, text_animation=self.text_animation,

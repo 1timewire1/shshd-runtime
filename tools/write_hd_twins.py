@@ -82,8 +82,9 @@ def main():
         (store.directory / EFFECTS).write_text(json.dumps(effects, separators=(',', ':')), encoding='utf-8')
         # SD Portraits' tables, for the export: which original each HD portrait goes back to, the redesigns and the
         # shared bank's portrait ids (`hd_twins.SdPortraits`).
-        tables = {key: document.get(key, {} if key.startswith('sd_of') else [])
-                  for key in ('sd_of', 'sd_of_episode', 'redesigned', 'bank_portraits')}
+        # SD Background Tints' table too: per HD episode, the scenes its story's standard release showed tinted.
+        tables = {key: document.get(key, {} if key.startswith(('sd_of', 'tints')) else [])
+                  for key in ('sd_of', 'sd_of_episode', 'redesigned', 'bank_portraits', 'tints_of_episode')}
         (store.directory / PORTRAITS).write_text(json.dumps(tables, separators=(',', ':')), encoding='utf-8')
         print(f'{len(store)} pictures in {store.directory}')
         for source in sources:

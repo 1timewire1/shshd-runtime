@@ -1339,6 +1339,22 @@ class Application:
             self.game.ch_dialogue = self.state.ch_dialogue
 
     @library_answer
+    def sd_tints_offered(self):
+        """Whether SD Background Tints concerns this library: SHS with the SD Portraits add-on imported (it carries the
+        standard pictures the tints are fitted from)."""
+        from .hd_twins import SD_ADDON
+        return (self.library is not None and self.library.game_id == 'shs'
+                and hasattr(self.library, 'addon') and self.library.addon(SD_ADDON) is not None)
+
+    def apply_sd_tints(self):
+        """SD Background Tints reaches the library (content.EpisodeResources._sd_tint) and a paused episode, which draws
+        its background again."""
+        if self.library is not None:
+            self.library.sd_tints = self.state.sd_tints
+        if self.game:
+            self.game.set_sd_tints(self.state.sd_tints)
+
+    @library_answer
     def sd_portraits_offered(self):
         """Whether SD Portraits concerns this library: SHS, with the shipped twin map's SD tables."""
         return self.library is not None and self.library.game_id == 'shs' and hasattr(self.twin_map(), 'SD_OF')
@@ -1733,6 +1749,7 @@ class Application:
         library.ms3_characters = state.ms3_characters
         library.ch_dialogue = getattr(state, 'ch_dialogue', 'auto')
         library.sd_portraits = getattr(state, 'sd_portraits', 'off')
+        library.sd_tints = getattr(state, 'sd_tints', False)
         library.claire_powerups = getattr(state, 'claire_powerups', 'once')
         library.claire_round_style = getattr(state, 'claire_round_style', 'own')
         library.java_look = state.java_look
@@ -2573,6 +2590,7 @@ class Application:
         self.game.ch_43 = getattr(self.state, 'ch_43', True)
         self.game.ch_dialogue = self.state.ch_dialogue
         self.game.sd_portraits = getattr(self.state, 'sd_portraits', 'off')
+        self.game.sd_tints = getattr(self.state, 'sd_tints', False)
         self.game.claire_powerups = getattr(self.state, 'claire_powerups', 'once')
         self.game.claire_round_style = getattr(self.state, 'claire_round_style', 'own')
         self.game.arena_minigames = self.state.arena_minigames
@@ -2700,6 +2718,7 @@ class Application:
         self.state.ch_43 = getattr(self.game, 'ch_43', True)
         self.state.ch_dialogue = self.game.ch_dialogue
         self.state.sd_portraits = getattr(self.game, 'sd_portraits', 'off')
+        self.state.sd_tints = getattr(self.game, 'sd_tints', False)
         self.state.claire_powerups = getattr(self.game, 'claire_powerups', 'once')
         self.state.claire_round_style = getattr(self.game, 'claire_round_style', 'own')
         self.state.arena_minigames = self.game.arena_minigames
@@ -2965,7 +2984,7 @@ class Application:
                 key = command[1]
                 if key not in ('music', 'sound', 'vibration', 'device_vibration', 'choice_hints', 'skip_minigames',
                                'skip_ad_intros', 'skip_upsell_intros', 'autoplay', 'disable_choice_timer',
-                               'hires_portraits', 'ms3_characters', 'java_look', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'skip_ahead', 'undo', 'ch_portraits',
+                               'hires_portraits', 'ms3_characters', 'java_look', 'smartphone_music', 'word_grid_skin', 'grids_as_memory', 'skip_ahead', 'undo', 'ch_portraits', 'sd_tints',
                                'dim_backdrops', 'ch_43', 'arena_minigames', 'brew_08_backgrounds', 'hollywood_art', 'dsi_backgrounds',
                                'arena_skin'):
                     raise ValueError('Unknown preference')
@@ -2994,6 +3013,8 @@ class Application:
                     self.apply_word_grid_skin()
                 if key == 'grids_as_memory':
                     self.apply_grids_as_memory()
+                if key == 'sd_tints':
+                    self.apply_sd_tints()
                 if key == 'skip_ahead':
                     self.apply_skip_ahead()
                 if key == 'undo':

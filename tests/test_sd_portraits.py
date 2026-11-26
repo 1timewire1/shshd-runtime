@@ -185,6 +185,45 @@ class SdPortraitsTests(unittest.TestCase):
         build_from_map(without, self.map)
         self.assertIsNone(without.sd_portraits_store().original('hd_party_fowl', fingerprint(self.hd_viv)))
 
+    def tinted_map(self):
+        """The noir pair: a greyscale standard scene and its colour HD picture, which one HD episode (its own story's)
+        lists as tinted and another story shows as it is."""
+        noir_sd = png((48, 72), 'gray')
+        stream = BytesIO()
+        Image.new('RGB', (96, 144), (200, 60, 30)).save(stream, 'PNG')
+        noir_hd = stream.getvalue()
+        self.map.TWINS[fingerprint(noir_sd)] = (fingerprint(noir_hd), 48, 72, ('E',))
+        self.map.TINTS_OF_EPISODE = {'hd_12_7': {26002: fingerprint(noir_sd)}}
+        return noir_sd, noir_hd
+
+    def test_sd_background_tints_show_the_tinted_scene_only_where_its_story_had_it(self):
+        noir_sd, noir_hd = self.tinted_map()
+        library = self.library(addon={26000: self.sd_patchouli, 26001: noir_sd})   # the add-on carries the standard
+        library._assets['hd_12_7'][26002] = noir_hd
+        library._assets['hd_party_fowl'][26002] = noir_hd                          # another story's same picture
+        build_from_map(library, self.map)
+        own = resources(library, 'hd_12_7', 'hd', {26002: noir_hd})
+        other = resources(library, 'hd_party_fowl', 'hd', {26002: noir_hd})
+        self.assertIsNone(own._sd_tint(26002))                                     # the switch is off
+        library.sd_tints = True
+        tinted = own._sd_tint(26002)
+        self.assertIsNotNone(tinted)
+        r, g, b = Image.open(BytesIO(tinted)).convert('RGB').getpixel((40, 70))
+        self.assertLess(max(r, g, b) - min(r, g, b), 12)                           # greyscale, as the standard scene
+        self.assertIsNone(other._sd_tint(26002))                                   # not that story's scene
+        self.assertIsNone(own._sd_tint(26003))                                     # nor another scene
+
+    def test_adding_the_add_on_makes_the_tinted_pictures_it_carries_the_standard_for(self):
+        noir_sd, noir_hd = self.tinted_map()
+        library = self.library()
+        library._assets['hd_12_7'][26002] = noir_hd
+        build_from_map(library, self.map)
+        self.assertIsNone(library.twin_store().twin(noir_sd))                      # no standard picture yet
+        with_addon = self.library(addon={26000: noir_sd})
+        with_addon._assets['hd_12_7'][26002] = noir_hd
+        self.assertTrue(build_from_map(with_addon, self.map))
+        self.assertIsNotNone(with_addon.twin_store().twin(noir_sd))
+
     def test_a_store_built_before_the_searched_list_takes_the_library_as_searched(self):
         from exp_runtime.hd_twins import new_episodes
         library = self.library()
@@ -206,6 +245,14 @@ class SettingTests(unittest.TestCase):
         self.assertEqual(SD_PORTRAITS_NAMES, {'off': 'Off', 'all': 'Everywhere', 'redesigns': 'Redesigns Only'})
         self.assertEqual(CHOICE_PARENTS['sd_portraits'], 'options:extras')
         self.assertEqual(SD_PORTRAITS_LABEL, 'SD Portraits')
+
+    def test_extras_has_sd_background_tints_as_a_switch_kept_and_off_by_default(self):
+        from exp_runtime.desktop_pause_hd import EXTRAS_KEYS, SD_TINTS_LABEL
+        from exp_runtime.menu import SHARED_PREFERENCES, MenuState
+        self.assertIn('sd_tints', EXTRAS_KEYS)
+        self.assertEqual(SD_TINTS_LABEL, 'SD Background Tints')
+        self.assertIs(SHARED_PREFERENCES['sd_tints'], bool)
+        self.assertFalse(MenuState.__new__(MenuState).__dict__.get('sd_tints', False))
 
     def test_the_setting_is_kept_and_defaults_to_off(self):
         from exp_runtime.menu import SHARED_PREFERENCES

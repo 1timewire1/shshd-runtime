@@ -380,6 +380,8 @@ class HdShell:
         if self.app.sd_portraits_offered():
             from .desktop_pause_hd import SD_PORTRAITS_NAMES
             settings['sd_portraits'] = SD_PORTRAITS_NAMES[state.sd_portraits]
+        if self.app.sd_tints_offered():
+            settings['sd_tints'] = state.sd_tints               # ...with the SD Portraits add-on
         settings['skip_ahead'] = state.skip_ahead
         settings['undo'] = state.undo
         if self.app.grids_as_memory_offered():
@@ -555,6 +557,8 @@ class HdShell:
             self.app.apply_word_grid_skin()
         if which == 'grids_as_memory':
             self.app.apply_grids_as_memory()
+        if which == 'sd_tints':
+            self.app.apply_sd_tints()
         if which == 'skip_ahead':
             self.app.apply_skip_ahead()
         if which == 'undo':

@@ -934,6 +934,7 @@ class ContentLibrary:
         # SD Portraits (Extras; owner, 2026-11-25): 'off'; 'all', every portrait in its standard original; 'redesigns',
         # only the pairs the HD release redesigned (hd_twins.SdPortraits).
         self.sd_portraits = 'off'
+        self.sd_tints = False           # SD Background Tints (Extras, with the SD add-on): EpisodeResources._sd_tint
         self._portrait_addon_map = None, None
         self._twins = None
         self._sd_portraits = None
@@ -2348,6 +2349,9 @@ class EpisodeResources:
         original = self._sd_original(data) if resource_id >= 26000 else None
         if original is not None:
             return original
+        tinted = self._sd_tint(resource_id) if resource_id >= 26000 else None
+        if tinted is not None:
+            return tinted
         if mode != 'off' and self.record.get('variant') == 'standard':
             if self._keeps_standard_portrait(data):
                 return self.library.twin_store().fill(data) if mode == 'fill' else data
@@ -2381,6 +2385,17 @@ class EpisodeResources:
         if not size or max(size) >= 300:                # a background: SD Portraits is portraits only
             return False
         return mode == 'all' or fingerprint(data) in self.library.sd_portraits_store().tables['redesigned']
+
+    def _sd_tint(self, resource_id):
+        """SD Background Tints (Extras, with the SD add-on; owner, 2026-11-25): in an HD episode whose story's standard
+        release showed this scene tinted (34_Andy_Cannelloni_PI's noir, its green hallway), the HD picture with that tint
+        (the twin store's recreated picture, hd_effects), else None. Only the scenes the map lists for this episode
+        (`TINTS_OF_EPISODE`): the same HD picture stays as it is in another story."""
+        if (not getattr(self.library, 'sd_tints', False) or getattr(self.library, 'game_id', None) != 'shs'
+                or self.record.get('variant') != 'hd' or not hasattr(self.library, 'sd_portraits_store')):
+            return None
+        standard = self.library.sd_portraits_store().tint(self.record.get('id'), resource_id)
+        return None if standard is None else self.library.twin_store().twin_by_key(standard)
 
     def _sd_original(self, data):
         """For an HD episode's portrait, its standard original at twice its size when SD Portraits asks for it, else
